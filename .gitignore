@@ -1,0 +1,13 @@
+# Test-run artifacts (Playwright preview pages get written into public/ so
+# their relative asset links resolve; screenshots/scratch fixtures go to
+# tests/output/). Neither is a build product anyone ships or needs to keep.
+public/_test_*.html
+tests/output/
+__pycache__/
+*.pyc
+
+# Editor/OS cruft
+.DS_Store
+
+# Node (once the relay lands)
+node_modules/

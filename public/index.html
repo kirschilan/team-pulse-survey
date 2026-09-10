@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Squad Pulse</title>
+<meta name="description" content="A no-database team pulse survey and facilitated retro tool, with customizable predefined templates (Five Dysfunctions of a Team, Spotify Squad Health Check, Tuckman's stages).">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="top">
+    <div class="title-block">
+      <h1>Squad Pulse</h1>
+      <p id="tagline">A fast, visual health snapshot across your squads &mdash; so you can see at a glance where things are strong and where to invest next.</p>
+      <span class="model-badge" id="modelBadge" hidden></span>
+    </div>
+    <div class="actions">
+      <span class="sync-note" id="syncNote"><span class="sync-dot" id="syncDot"></span><span id="syncText">Connecting&hellip;</span></span>
+      <button class="btn ghost" id="joinCodeBtn" type="button">Join a retro</button>
+      <div class="view-switch" role="tablist" aria-label="View">
+        <button class="view-btn" data-view="tribe" type="button" role="tab">Tribe view</button>
+        <button class="view-btn" data-view="squad" type="button" role="tab">Squad view</button>
+        <button class="view-btn" data-view="admin" type="button" role="tab">Admin</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= TRIBE VIEW ================= -->
+  <section id="viewTribe">
+    <section class="stats" aria-label="Snapshot at a glance">
+      <div class="stat">
+        <div class="label" id="statAssessedLabel">Squads assessed</div>
+        <div class="value" id="statAssessed">&mdash;</div>
+        <div class="sub" id="statAssessedSub">of the dimensions scored, on average</div>
+      </div>
+      <div class="stat">
+        <div class="label">Items at risk</div>
+        <div class="value crit" id="statRisk">&mdash;</div>
+        <div class="sub" id="statRiskSub">dimensions marked red across all squads</div>
+      </div>
+      <div class="stat">
+        <div class="label">Top systemic hotspot</div>
+        <div class="value" id="statHotspot" style="font-size:19px;">&mdash;</div>
+        <div class="sub" id="statHotspotSub">the dimension struggling most, org&#8209;wide</div>
+      </div>
+    </section>
+
+    <div class="card">
+      <h2>Cross-squad hotspots</h2>
+      <p class="hint">Dimensions where trouble shows up in more than one squad &mdash; likely worth an org-level fix, not a squad-by-squad one. Shown in aggregate; no squad is named here by default.</p>
+      <div class="legend-mini">
+        <span class="sw"><i style="background:var(--crit)"></i>Red</span>
+        <span class="sw"><i style="background:var(--warn)"></i>Yellow</span>
+        <span class="sw"><i style="background:var(--good)"></i>Green</span>
+        <span class="sw"><i style="background:var(--unscored)"></i>Not yet scored</span>
+      </div>
+      <div id="hotspotList"></div>
+    </div>
+
+    <details class="legend" id="squadBreakdown">
+      <summary>Squad-by-squad breakdown <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <div style="padding:0 18px 18px;">
+        <p class="hint" style="margin:0 0 14px;">Collapsed by default so the headline view stays about patterns, not individual squads &mdash; expand any time to see or drill into a specific squad. Read-only here; squads enter their own ratings from Squad view.</p>
+        <div class="card" style="margin-bottom:16px;">
+          <h2>Where to invest first</h2>
+          <p class="hint">Squads ranked by weighted risk (red counts double). Highest first.</p>
+          <div id="rankList"></div>
+        </div>
+        <div class="table-scroll">
+          <table class="grid" id="gridTable"></table>
+        </div>
+      </div>
+    </details>
+
+    <details class="legend">
+      <summary id="legendSummary">How to read the dimensions <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <div class="legend-grid" id="legendGrid"></div>
+      <div class="legend-attrib" id="legendAttrib"></div>
+    </details>
+  </section>
+
+  <!-- ================= SQUAD VIEW ================= -->
+  <section id="viewSquad" hidden>
+    <div class="card">
+      <h2>Choose your squad</h2>
+      <p class="hint">Pick your squad to enter or update this check-in&rsquo;s ratings. Only this squad&rsquo;s own data is shown here.</p>
+      <div class="squad-picker" id="squadPicker"></div>
+    </div>
+    <div id="squadDetail" style="margin-top:16px;"></div>
+  </section>
+
+  <!-- ================= ADMIN VIEW ================= -->
+  <section id="viewAdmin" hidden>
+    <div class="card">
+      <h2>Board setup</h2>
+      <p class="hint">Manage the survey model and squad list. Changes here apply to everyone viewing this board.</p>
+      <div class="actions" style="margin-bottom:4px;">
+        <button class="btn" id="dimManageBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="1.6" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="10" cy="18" r="1.6" fill="currentColor" stroke="none"/></svg>
+          Edit dimensions
+        </button>
+        <button class="btn" id="templatesBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16"/></svg>
+          Templates
+        </button>
+        <button class="btn" id="importCsvBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3m0 0L8 7m4-4l4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          Import CSV
+        </button>
+        <button class="btn" id="exportBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
+          Export CSV
+        </button>
+        <input type="file" id="csvFileInput" accept=".csv,text/csv" hidden>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <h2>Squads</h2>
+      <p class="hint">Add, rename or remove squads. Ratings live with the squad, not the name &mdash; renaming is safe.</p>
+      <div class="tpl-list" id="adminSquadList"></div>
+      <button class="addrow-btn" id="addSquadBtn" type="button">+ Add squad</button>
+    </div>
+
+    <details class="legend" id="diagPanel" style="margin-top:14px;">
+      <summary>Diagnostics (temporary — for troubleshooting save issues) <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <div style="padding:0 18px 16px;">
+        <p class="hint" style="margin:0 0 8px;">If saving isn't working, open this, try rating a cell, then screenshot what appears below.</p>
+        <pre id="diagLog" class="mono" style="margin:0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:11px;line-height:1.6;max-height:160px;overflow:auto;white-space:pre-wrap;">(no activity yet)</pre>
+      </div>
+    </details>
+  </section>
+
+  <!-- ================= JOIN SCREEN (participant device, via ?session=) ================= -->
+  <section id="viewJoin" hidden>
+    <div class="card" id="joinCard">
+      <h2>Connecting&hellip;</h2>
+    </div>
+  </section>
+
+</div>
+
+<!-- ---------- cell rating modal ---------- -->
+<div class="backdrop" id="backdrop" hidden>
+  <div class="modal" id="modal" role="dialog" aria-modal="true">
+    <h3 id="modalTitle" dir="auto">Dimension</h3>
+    <div class="squadline" id="modalSquadline" dir="auto">Squad</div>
+    <div class="anchor-pair">
+      <p><b>Green looks like:</b> <span id="modalGreen" dir="auto"></span></p>
+      <p><b>Red looks like:</b> <span id="modalRed" dir="auto"></span></p>
+    </div>
+    <div class="field-label">Health</div>
+    <div class="swatches" id="swatches">
+      <button class="swatch" data-color="unscored" type="button" title="Not yet scored">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button class="swatch good" data-color="good" type="button" title="Green">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 13l4 4 10-10"/></svg>
+      </button>
+      <button class="swatch warn" data-color="warn" type="button" title="Yellow">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 12h12"/></svg>
+      </button>
+      <button class="swatch crit" data-color="crit" type="button" title="Red">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="field-label">Trend since last check</div>
+    <div class="trendsel" id="trendsel">
+      <button data-trend="up" type="button" title="Improving"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 15l7-7 7 7"/></svg></button>
+      <button data-trend="flat" type="button" title="Steady"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 12h14"/></svg></button>
+      <button data-trend="down" type="button" title="Declining"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 9l7 7 7-7"/></svg></button>
+    </div>
+    <div class="field-label">Note (optional)</div>
+    <textarea class="note" id="modalNote" placeholder="Why this rating? What's driving it?" dir="auto"></textarea>
+    <div class="modal-actions">
+      <button class="btn ghost" id="modalResetOverride" type="button" style="margin-right:auto;" hidden>Use consolidated result</button>
+      <button class="btn ghost" id="modalCancel" type="button">Cancel</button>
+      <button class="btn primary" id="modalSave" type="button">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- dimension manager modal ---------- -->
+<div class="backdrop" id="dimBackdrop" hidden>
+  <div class="modal wide" role="dialog" aria-modal="true">
+    <h3>Edit dimensions</h3>
+    <p class="hint">These are the columns of your snapshot grid. Add, rename, reorder or remove them &mdash; changes apply to everyone viewing this board. Ratings for a removed dimension are hidden, not lost, unless you add a dimension back with the same purpose.</p>
+    <div class="dim-list" id="dimList"></div>
+    <div class="modal-actions split">
+      <button class="btn" id="addDimBtn" type="button">+ Add dimension</button>
+      <button class="btn primary" id="dimDoneBtn" type="button">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- templates modal ---------- -->
+<div class="backdrop" id="templatesBackdrop" hidden>
+  <div class="modal wide" role="dialog" aria-modal="true">
+    <h3>Survey templates</h3>
+    <p class="hint">Swap in a ready-made set of dimensions, or save your current setup so you (or a teammate) can reuse it later.</p>
+    <div class="tpl-list" id="tplList"></div>
+    <div class="tpl-save-row">
+      <input type="text" id="tplNameInput" placeholder="Name this setup, e.g. &quot;My team's checklist&quot;" maxlength="80" dir="auto">
+      <button class="btn" id="tplSaveBtn" type="button">Save current as template</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="tplCloseBtn" type="button">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- CSV import preview modal ---------- -->
+<div class="backdrop" id="importBackdrop" hidden>
+  <div class="modal wide" role="dialog" aria-modal="true">
+    <h3>Import CSV</h3>
+    <p class="hint">Expects the same columns as Export CSV: <span id="importUnitLabel">Squad</span>, Dimension, Health, Trend, Note, Template, Dimension Key. The first column must stay the <span id="importUnitLabel2">Squad</span> name; the rest can be renamed or reordered freely — matching falls back to the original column order if no header names are recognized. The Dimension Key column is what keeps rows matching correctly even after a dimension's name has been edited or translated; without it (older exports), matching falls back to the Dimension name text. The Template column is how a mismatched dimension set gets flagged below.</p>
+    <div id="importSummary"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="importCancel" type="button">Cancel</button>
+      <button class="btn primary" id="importApplyBtn" type="button">Import</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- generic confirm modal ---------- -->
+<div class="backdrop" id="confirmBackdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <h3 id="confirmTitle">Are you sure?</h3>
+    <p class="hint" id="confirmMessage" style="margin-bottom:4px;"></p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="confirmCancel" type="button">Cancel</button>
+      <button class="btn primary danger" id="confirmOk" type="button">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- join-with-code modal ---------- -->
+<div class="backdrop" id="joinCodeBackdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <h3>Join a retro</h3>
+    <p class="hint">Enter the session code your Scrum Master shared.</p>
+    <input type="text" id="joinCodeInput" class="join-code-input" placeholder="e.g. 7K4QXB" maxlength="40" autocapitalize="characters" autocomplete="off" spellcheck="false">
+    <div class="modal-actions">
+      <button class="btn ghost" id="joinCodeCancel" type="button">Cancel</button>
+      <button class="btn primary" id="joinCodeGo" type="button">Join</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- dimension header tooltip (shared, JS-positioned) ---------- -->
+<div class="dim-tooltip" id="dimTooltip" hidden></div>
+
+<!-- ---------- busy overlay ---------- -->
+<div class="busy-overlay" id="busyOverlay" hidden>
+  <div class="busy-box">
+    <div class="spinner"></div>
+    <div id="busyText">Working&hellip;</div>
+  </div>
+</div>
+<script src="vendor/qrcode.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
