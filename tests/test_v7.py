@@ -7,7 +7,7 @@ from fixtures.build_page import build_page, test_output_path
 out_path = build_page(out_name="_test_v7.html")
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+    browser = p.chromium.launch()
 
     # ============ SM device: session shell (Story 2) + join link/QR (Story 3) ============
     page = browser.new_page(viewport={"width":1280,"height":1000})

@@ -18,7 +18,7 @@ from fixtures.build_page import build_page, test_output_path
 out_path = build_page(out_name="_test_v11.html")
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+    browser = p.chromium.launch()
     page = browser.new_page(viewport={"width":1280,"height":1400})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))

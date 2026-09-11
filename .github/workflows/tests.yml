@@ -1,0 +1,29 @@
+name: Regression suite
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Run regression suite
+        run: |
+          status=0
+          for f in tests/test_*.py; do
+            echo "=== $f ==="
+            python3 "$f" || { echo "FAILED: $f"; status=1; }
+          done
+          exit $status

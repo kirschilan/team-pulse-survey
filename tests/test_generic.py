@@ -139,7 +139,7 @@ out_path = pathlib.Path(__file__).resolve().parents[1] / "public" / "_test_gener
 out_path.write_text(INDEX_HTML.replace("</head>", FAKE_CLAUDE_JS + "\n</head>"))
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+    browser = p.chromium.launch()
     page = browser.new_page(viewport={"width":1280,"height":1000})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))

@@ -65,3 +65,15 @@ the join-link/QR flow, `test_v13.py` the direct-rating fix, etc.) rather than
 by what they cover today — `test_generic.py` and `test_v2.py` through
 `test_v13.py` together are the full regression suite; there's no single
 "latest" file that supersedes the others.
+
+Two files break from the `vN` scheme and are named for the coverage gap they
+close instead of a story: `test_tribe_hotspots.py` (Tribe view's cross-squad
+rollup/hotspot ranking — the headline feature described in the top-level
+README, which had no direct coverage before) and `test_local_store.py`
+(`public/local-store.js`, the localStorage-backed `db`/`downloads` shim used
+outside a Claude Artifact — it loads `public/index.html` directly, without
+`build_page.py`'s fake store, since that's the one scenario where
+`local-store.js` is actually the thing driving the app instead of being
+immediately overridden). Both were added ahead of a planned refactor of
+`app.js`, specifically to give that refactor a safety net over code paths
+nothing else exercised.
