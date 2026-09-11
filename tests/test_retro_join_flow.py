@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import build_page, test_output_path
 
-out_path = build_page(out_name="_test_v7.html")
+out_path = build_page(out_name="_test_retro_join.html")
 
 with sync_playwright() as p:
     browser = p.chromium.launch()
@@ -100,7 +100,7 @@ with sync_playwright() as p:
     assert page.query_selector('#startSessionBtn') is not None
     print("FINAL errors (SM device):", errors)
 
-    page.screenshot(path=str(test_output_path("shot_v7_sm.png")), full_page=True)
+    page.screenshot(path=str(test_output_path("shot_retro_join_sm.png")), full_page=True)
 
     # ============ start a session again so we can build join-screen scenarios ============
     page.click('#startSessionBtn')
@@ -113,7 +113,7 @@ with sync_playwright() as p:
     """)
     print("=== second session created for join-screen tests ===")
     print(session_doc_2)
-    page.screenshot(path=str(test_output_path("shot_v7_sm_session_card.png")))
+    page.screenshot(path=str(test_output_path("shot_retro_join_sm_session_card.png")))
 
     sid = session_doc_2["id"]
     sdoc = json.dumps(session_doc_2["doc"])
@@ -125,7 +125,7 @@ with sync_playwright() as p:
     # share a real backend in this test harness), then loading that page at
     # its join URL. This is the QR/link path -- still supported, just no
     # longer the primary path (see the iPhone bug this story fixes).
-    join_out = build_page(seed_js, out_name="_test_v7_join.html")
+    join_out = build_page(seed_js, out_name="_test_retro_join_deviceA.html")
 
     page2 = browser.new_page(viewport={"width":420,"height":900})
     errors2 = []
@@ -159,14 +159,14 @@ with sync_playwright() as p:
     assert page2.query_selector('#joinCard .cell-btn') is None
     print("errors (participant device A):", errors2)
 
-    page2.screenshot(path=str(test_output_path("shot_v7_join.png")), full_page=True)
+    page2.screenshot(path=str(test_output_path("shot_retro_join_deviceA.png")), full_page=True)
 
     # ============ participant device B: join via the "Join a retro" header button + typed code (PRIMARY path) ============
     # This is the fix for the iPhone bug: loads the plain board (no ?session=
     # in the URL at all -- exactly like scanning a QR that dropped the query
     # string, or just opening the app fresh), then uses the header button and
     # types the session code in by hand.
-    code_out = build_page(seed_js, out_name="_test_v7_joincode.html")
+    code_out = build_page(seed_js, out_name="_test_retro_join_deviceB.html")
 
     page3 = browser.new_page(viewport={"width":420,"height":900})
     errors3 = []
@@ -216,10 +216,10 @@ with sync_playwright() as p:
     assert dim_labels3 == ["Easy to release", "Suitable process", "Value"]
     print("errors (participant device B):", errors3)
 
-    page3.screenshot(path=str(test_output_path("shot_v7_joincode.png")), full_page=True)
+    page3.screenshot(path=str(test_output_path("shot_retro_join_deviceB.png")), full_page=True)
 
     # ============ bad/expired code, typed by hand ============
-    badcode_out = build_page(out_name="_test_v7_badcode.html")
+    badcode_out = build_page(out_name="_test_retro_join_badcode.html")
     page4 = browser.new_page(viewport={"width":420,"height":900})
     errors4 = []
     page4.on("pageerror", lambda e: errors4.append(str(e)))
@@ -237,7 +237,7 @@ with sync_playwright() as p:
     print("errors (bad code device):", errors4)
 
     # ============ bad/expired link (?session= query string) ============
-    bad_out = build_page(out_name="_test_v7_badjoin.html")
+    bad_out = build_page(out_name="_test_retro_join_badlink.html")
     page5 = browser.new_page(viewport={"width":420,"height":900})
     errors5 = []
     page5.on("pageerror", lambda e: errors5.append(str(e)))

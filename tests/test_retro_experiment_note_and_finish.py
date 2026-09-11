@@ -15,7 +15,7 @@ from fixtures.build_page import build_page, test_output_path
 # closes the session. A plain "Close session" with nothing to apply should
 # still just close without touching the squad's ratings.
 
-out_path = build_page(out_name="_test_v11.html")
+out_path = build_page(out_name="_test_retro_note_finish.html")
 
 with sync_playwright() as p:
     browser = p.chromium.launch()
@@ -148,7 +148,7 @@ with sync_playwright() as p:
     print("results cell-btn class after finishing (should show 'warn'):", result_cell_class)
     assert "warn" in result_cell_class
     print("errors:", errors)
-    page.screenshot(path=str(test_output_path("shot_v11_finished_squad.png")), full_page=True)
+    page.screenshot(path=str(test_output_path("shot_retro_note_finish.png")), full_page=True)
 
     print("=== ALL ERRORS:", errors)
     browser.close()

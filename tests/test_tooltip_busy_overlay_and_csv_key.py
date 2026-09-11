@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import build_page, test_output_path
 
-out_path = build_page(out_name="_test_v4.html")
+out_path = build_page(out_name="_test_tooltip_busy_csvkey.html")
 
 with sync_playwright() as p:
     browser = p.chromium.launch()
@@ -110,7 +110,7 @@ with sync_playwright() as p:
     print("=== busy overlay: CSV import creating a new squad ===")
     page.evaluate("window.__busyHistory.length = 0;")
     csv_new_squad = "Squad,Dimension,Health,Trend,Note\r\nBrand New Squad,Other dim,Green,,\r\n"
-    new_squad_path = test_output_path("test_v4_newsquad.csv")
+    new_squad_path = test_output_path("test_tooltip_busy_csvkey_newsquad.csv")
     new_squad_path.write_text(csv_new_squad)
     page.set_input_files('#csvFileInput', str(new_squad_path))
     page.wait_for_timeout(200)
@@ -145,7 +145,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(150)
     print("dimension label now:", page.evaluate("window.__FAKE_STORE__['dimensions/other1'].label"))
 
-    reimport_path = test_output_path("test_v4_reimport.csv")
+    reimport_path = test_output_path("test_tooltip_busy_csvkey_reimport.csv")
     reimport_path.write_text(csv_text)
     page.set_input_files('#csvFileInput', str(reimport_path))
     page.wait_for_timeout(250)
@@ -162,7 +162,7 @@ with sync_playwright() as p:
             parts[1] = "Renamed / Translated Label"  # legacy file must use the label as it exists NOW to match
         legacy_rows.append(",".join(parts[0:6]))
     legacy_csv = "\r\n".join(legacy_rows)
-    legacy_path = test_output_path("test_v4_legacy.csv")
+    legacy_path = test_output_path("test_tooltip_busy_csvkey_legacy.csv")
     legacy_path.write_text(legacy_csv)
     page.set_input_files('#csvFileInput', str(legacy_path))
     page.wait_for_timeout(250)
@@ -170,5 +170,5 @@ with sync_playwright() as p:
     page.click('#importCancel')
 
     print("errors:", errors)
-    page.screenshot(path=str(test_output_path("shot_v4.png")), full_page=True)
+    page.screenshot(path=str(test_output_path("shot_tooltip_busy_csvkey.png")), full_page=True)
     browser.close()

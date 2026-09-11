@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import build_page, test_output_path
 
-out_path = build_page(out_name="_test_v3.html")
+out_path = build_page(out_name="_test_csv_column_match.html")
 
 with sync_playwright() as p:
     browser = p.chromium.launch()
@@ -89,5 +89,5 @@ with sync_playwright() as p:
     page.click('#importCancel')
 
     print("errors:", errors)
-    page.screenshot(path=str(test_output_path("shot_v3.png")), full_page=True)
+    page.screenshot(path=str(test_output_path("shot_csv_column_match.png")), full_page=True)
     browser.close()
