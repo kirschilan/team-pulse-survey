@@ -31,10 +31,19 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 window.claude.use("db")   // app.js:2287
 ```
 
-That's a Claude-Artifact-only API — it doesn't exist outside a Claude Artifact sandbox, and there
-is currently **no replacement**. Outside of the test harness's fake store, this app has no real
-backend at all: nothing persists between page loads, and nothing syncs across devices. This is the
-central gap standing between "static site" and "the thing described in `docs/standalone-plan.md`."
+That's a Claude-Artifact-only API — it doesn't exist outside a Claude Artifact sandbox.
+`public/local-store.js` (loaded right before `app.js`) now provides a same-shaped replacement for
+plain deployments: `window.claude.use("db")` resolves to a Firestore-shaped shim backed by this
+browser's own `localStorage`, and `window.claude.use("downloads")` triggers a real browser file
+download instead of the old "paste this into a new tab" fallback. It only installs itself when no
+real `window.claude` is already present, so it's a no-op both inside a Claude Artifact and inside
+the Playwright test harness (`tests/fixtures/fake_store.html` sets its own `window.claude` and
+loads after this file — see `build_page.py`). This satisfies the "board lives in the facilitator's
+own browser" decision below for the squads/dimensions/templates/config board itself. **It does not
+give retro sessions cross-device sync** — that's still the ephemeral encrypted relay in
+`docs/standalone-plan.md`; two tabs of the *same* browser do stay in sync (via the native `storage`
+event), which is enough to self-test the retro flow, but two different devices still won't see each
+other.
 (There's one other `window.claude.use(...)` call, for `"downloads"` at app.js:2028, and a
 `window.claude.hot` hot-reload guard at the bottom of the file that already degrades safely with no
 `window.claude` present — neither of those blocks anything.)
@@ -63,18 +72,17 @@ central gap standing between "static site" and "the thing described in `docs/sta
 |---|---|---|
 | The relay server (`relay/` doesn't exist) | No prod usage yet to justify standing up infra | Ready to test cross-device retro sessions for real |
 | Client-side encryption (fragment key, encrypt/decrypt) | Depends on the relay existing first | Same as above |
-| Replacing `window.claude.use("db")` in `app.js` | Depends on the relay + encryption existing | Same as above |
-| Save-board / Load-board-to-file | Lower priority than getting live sessions working at all | Once someone needs a board to outlive one browser tab |
-| Vercel deployment | Nothing to deploy yet beyond the static site as-is | Whenever a public URL is wanted, even pre-relay |
+| Save-board / Load-board-to-file | `local-store.js` already persists the board via `localStorage`, which covers the same browser/device | Once someone needs a board to move between browsers/devices without a relay |
+| Vercel deployment | Nothing has been deployed yet — the app is now Vercel-ready (`vercel.json` + `local-store.js`), just not connected to a Vercel project | Whenever a public URL is wanted, even pre-relay |
 | Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing | Once the marketing site (separate Claude Code project) is further along |
 
 ## Suggested next step
 
 Two independent tracks, either can go first:
 
-1. **Ship the static site to a public Vercel URL as-is.** No code changes — `vercel.json` is
-   ready. Gets a shareable link even before the relay exists (single-device use only, no
-   cross-device retro sync).
+1. **Ship the static site to a public Vercel URL as-is.** No code changes needed — `vercel.json`
+   is ready and `local-store.js` makes the board work standalone. Gets a shareable link even
+   before the relay exists (single-device use only, no cross-device retro sync).
 2. **Build the relay** per `docs/standalone-plan.md`: a Vercel WebSocket function holding
    in-memory per-session state, then wire `app.js`'s one `db` call point over to it with the
    fragment-key encryption layer. This is the real unblock for cross-device retro sessions.
@@ -93,3 +101,11 @@ Two independent tracks, either can go first:
   board's default Spotify Squad Health Check template in Retro mode — only the facilitator
   could). Full detail and fix description live in `docs/facilitated-retro-spec.md`, not
   duplicated here since it's feature-specific.
+- 2026-09-11 — Added `public/local-store.js`: a localStorage-backed shim for the Firestore-shaped
+  `db` capability and the `downloads` capability, so the app works outside a Claude Artifact
+  sandbox (e.g. deployed on Vercel) instead of sitting in local-only preview mode with nothing
+  persisted. Seeds a starter board (3 squads, the 12 Spotify Squad Health Check dimensions) on
+  first run. Installs only when no real `window.claude` is present, so Claude Artifact previews
+  and the Playwright test harness are unaffected — full regression suite verified passing with
+  zero JS errors. Cross-device retro sync still needs the relay described above; this only covers
+  the board itself plus same-browser multi-tab sync.

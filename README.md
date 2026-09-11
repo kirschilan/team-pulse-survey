@@ -20,11 +20,13 @@ squad's own ratings.
 
 See **`STATUS.md`** for current state, locked-in decisions, what's deliberately
 not built yet, and the session log — that's the one place "what's outstanding"
-lives, kept up to date as work lands. Short version: this app currently has
-**no backend** — it originated as a prototype running inside a Claude
-Artifact's `db` capability, and is being migrated to a standalone deployment
-per `docs/standalone-plan.md`. Right now it runs standalone with everything in
-one browser tab and no cross-device sync.
+lives, kept up to date as work lands. Short version: this app has **no server
+backend** — it originated as a prototype running inside a Claude Artifact's
+`db` capability, and is being migrated to a standalone deployment per
+`docs/standalone-plan.md`. It now runs standalone with the board (squads,
+dimensions, templates) persisted in the browser's own `localStorage` via
+`public/local-store.js`, but still with no cross-device sync — that's a
+deliberate choice (see `STATUS.md`), not a gap to fill with a database.
 
 ## Project layout
 
@@ -33,6 +35,8 @@ STATUS.md          Current state, open items, session log -- start here
 public/            The app itself -- static site, deploys as-is
   index.html
   app.js
+  local-store.js   localStorage-backed replacement for the Claude Artifact `db`/`downloads`
+                   capabilities, so the app works standalone (e.g. on Vercel)
   styles.css
   vendor/
     qrcode.js      Bundled QR generator (kazuhikoarase/qrcode-generator, MIT)
