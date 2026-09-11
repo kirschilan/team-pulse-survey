@@ -18,20 +18,18 @@ squad's own ratings.
 
 ## Status
 
-This app currently has **no backend** — it originated as a prototype running
-inside a Claude Artifact's `db` capability, and is being migrated to a
-standalone deployment. See `docs/standalone-plan.md` for the target
-architecture: no persistent, multi-tenant database, Excalidraw-style —
-a facilitator's own browser is the board's source of truth (with
-save-to-file/load-from-file for keeping it beyond one session), and a small
-end-to-end-encrypted relay handles only the live, ephemeral part of running
-one retro session across multiple devices. That relay hasn't been built yet;
-right now the app runs standalone with everything in one browser tab and no
-cross-device sync.
+See **`STATUS.md`** for current state, locked-in decisions, what's deliberately
+not built yet, and the session log — that's the one place "what's outstanding"
+lives, kept up to date as work lands. Short version: this app currently has
+**no backend** — it originated as a prototype running inside a Claude
+Artifact's `db` capability, and is being migrated to a standalone deployment
+per `docs/standalone-plan.md`. Right now it runs standalone with everything in
+one browser tab and no cross-device sync.
 
 ## Project layout
 
 ```
+STATUS.md          Current state, open items, session log -- start here
 public/            The app itself -- static site, deploys as-is
   index.html
   app.js
