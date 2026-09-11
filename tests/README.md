@@ -18,7 +18,7 @@ playwright install chromium
 Each file is self-contained:
 
 ```
-python3 tests/test_v13.py
+python3 tests/test_retro_direct_rating_flow.py
 ```
 
 Run the whole suite:
@@ -58,10 +58,31 @@ automatically.
 Screenshots and scratch CSV fixtures go through `test_output_path(name)`,
 which resolves to `tests/output/` (gitignored).
 
-## Numbering
+## Naming
 
-Files are named by the story/feature that introduced them (`test_v7.py` added
-the join-link/QR flow, `test_v13.py` the direct-rating fix, etc.) rather than
-by what they cover today — `test_generic.py` and `test_v2.py` through
-`test_v13.py` together are the full regression suite; there's no single
-"latest" file that supersedes the others.
+Every file is named for the feature or flow it covers, not for the order it
+was written in — there's no single "latest" file that supersedes the others;
+together they're the full regression suite. (Earlier versions of this suite
+used `test_v2.py`..`test_v13.py`, numbered by the order each was added —
+renamed once the suite outgrew "which story was that again?". Historical
+mentions of the old names elsewhere, e.g. in `docs/facilitated-retro-spec.md`'s
+own session log, are left as-is since they're dated history, not live
+references.)
+
+| File | Covers |
+|---|---|
+| `test_dimension_and_template_admin.py` | Rating a cell; Admin's dimension manager (rename/add/reorder/delete); saving and reloading a custom template |
+| `test_template_switching_and_csv_import.py` | Switching templates preserves each one's own dimension set and squad ratings underneath; RTL (`dir=auto`) fields; a basic CSV import |
+| `test_csv_import_column_matching.py` | CSV export/import round-tripping through renamed headers, reordered columns, and a template-mismatch warning |
+| `test_tooltip_busy_overlay_and_csv_key.py` | Grid header hover/focus tooltip; the busy overlay during template switches and CSV import; the CSV "Dimension Key" column surviving a dimension rename |
+| `test_view_navigation_and_squad_admin.py` | Tribe view's read-only grid; Squad view rating and its "hotspots" panel; Admin squad CRUD; view/squad selection persisting across reload |
+| `test_scored_template_five_dysfunctions.py` | Loading the Five Dysfunctions starter template (statements/scoreBands/strategies) and reloading it idempotently |
+| `test_scored_template_tuckman.py` | The Tuckman starter template end to end: 20 interleaved statements, source-assessment scoring bands (not a health judgment) |
+| `test_retro_join_flow.py` | Starting/closing a retro session; sharing by code, link, or QR; joining by each path; bad/expired code or link |
+| `test_retro_statement_survey_submission.py` | A teammate's full statement-based survey submission across every dimension, personal results, facilitator live view |
+| `test_retro_direct_rating_flow.py` | The same submission flow for a direct-rating (non-statement) template |
+| `test_retro_reveal_mode_and_consolidation.py` | The hold/live reveal toggle, majority consolidation, and calmer-bucket tie-breaking |
+| `test_retro_override_and_response_table.py` | Facilitator override of a consolidated result, resetting it, and the per-response anonymized table |
+| `test_retro_experiment_note_and_finish.py` | The shared sprint-experiment note; finishing a retro writes results into the squad, or no-ops with nothing submitted |
+| `test_tribe_hotspots.py` | Tribe view's cross-squad hotspot rollup and ranking (`renderHotspots`/`renderStats`) |
+| `test_local_store.py` | `public/local-store.js` itself — seeding, reload persistence, cross-tab sync, real CSV download, non-interference with a real `window.claude` |

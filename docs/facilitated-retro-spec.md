@@ -264,9 +264,9 @@ Verified end to end with a new dedicated test (a teammate submits swatch picks f
 of a Spotify-template session, one deliberately red; the facilitator sees the consolidated live
 results, overrides the red one to yellow, and finishing the retro writes Green/Green/Yellow into the
 squad's real ratings) plus the full regression suite, zero JS errors. One older test
-(`test_v7.py`, predating the statement-survey work) had encoded the very bug being fixed — it
-asserted the Spotify dimensions showed up read-only — and was updated to assert they're now
-answerable direct-rating rows instead. Published as Version 22.
+(`test_retro_join_flow.py`, then named `test_v7.py`, predating the statement-survey work) had encoded
+the very bug being fixed — it asserted the Spotify dimensions showed up read-only — and was updated
+to assert they're now answerable direct-rating rows instead. Published as Version 22.
 
 ## Deliberately not built (yet)
 

@@ -12,10 +12,10 @@ from fixtures.build_page import build_page, test_output_path
 # and that the consolidation math still holds with several submissions in
 # at once (including a real tie, resolved to the calmer bucket).
 
-out_path = build_page(out_name="_test_v9.html")
+out_path = build_page(out_name="_test_retro_reveal_consolidation.html")
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+    browser = p.chromium.launch()
     page = browser.new_page(viewport={"width":1280,"height":1000})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -102,7 +102,7 @@ with sync_playwright() as p:
         row = next(t for t in row_texts if label in t)
         assert "Green" in row, label + " should be unanimous green"
     print("errors:", errors)
-    page.screenshot(path=str(test_output_path("shot_v9_live_5subs.png")), full_page=True)
+    page.screenshot(path=str(test_output_path("shot_retro_reveal_consolidation.png")), full_page=True)
 
     print("=== exact tie (2 good / 2 crit) on a fresh dimension -- must resolve to calmer (good) ===")
     # overwrite just the trust responses to a clean 2-good/2-crit tie (drop the 5th)

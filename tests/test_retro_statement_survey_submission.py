@@ -10,10 +10,10 @@ from fixtures.build_page import build_page, test_output_path
 # toggle that now gates whether the facilitator sees anything beyond the
 # submission count) is covered separately in test_v9.py.
 
-out_path = build_page(out_name="_test_v8.html")
+out_path = build_page(out_name="_test_retro_stmt_survey.html")
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+    browser = p.chromium.launch()
 
     # ============ SM device: load the Five Dysfunctions template, start a session ============
     page = browser.new_page(viewport={"width":1280,"height":1000})
@@ -61,7 +61,7 @@ with sync_playwright() as p:
     # ============ participant device A: submit ALL 15 statements ============
     sdoc = json.dumps(session_info["doc"])
     seed_js = "STORE['sessions/" + sid + "'] = " + sdoc + ";"
-    good_out = build_page(seed_js, out_name="_test_v8_good.html")
+    good_out = build_page(seed_js, out_name="_test_retro_stmt_survey_participant.html")
 
     pageA = browser.new_page(viewport={"width":420,"height":2000})
     errorsA = []
@@ -139,7 +139,7 @@ with sync_playwright() as p:
     # no leftover "rest of survey" placeholder now that every dimension is scored
     assert "isn" not in pageA.eval_on_selector('#joinCard', 'el => el.textContent').lower() or True
     print("errors (participant A):", errorsA)
-    pageA.screenshot(path=str(test_output_path("shot_v8_result_all5.png")), full_page=True)
+    pageA.screenshot(path=str(test_output_path("shot_retro_stmt_survey_results.png")), full_page=True)
 
     # ============ facilitator: flip to live, see all 5 dimensions' pills ============
     # NOTE: pageA is a genuinely separate page with its own independent fake
@@ -172,7 +172,7 @@ with sync_playwright() as p:
     print("SM-side pills after 1 all-Usually submission (should all be Green):", pills_sm)
     assert pills_sm == ["Green"] * 5
     print("errors:", errors)
-    page.screenshot(path=str(test_output_path("shot_v8_sm_live_all5.png")), full_page=True)
+    page.screenshot(path=str(test_output_path("shot_retro_stmt_survey_sm_live.png")), full_page=True)
 
     print("=== ALL ERRORS: SM=", errors, "participantA=", errorsA)
     browser.close()

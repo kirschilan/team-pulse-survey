@@ -12,10 +12,10 @@ from fixtures.build_page import build_page, test_output_path
 # (covered in test_v11.py), and it reuses the existing rating-editor modal
 # in a distinct "session" mode.
 
-out_path = build_page(out_name="_test_v10.html")
+out_path = build_page(out_name="_test_retro_override_table.html")
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+    browser = p.chromium.launch()
     page = browser.new_page(viewport={"width":1280,"height":1200})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -152,7 +152,7 @@ with sync_playwright() as p:
     print("trust column across the 3 responses (good, good, crit):", trust_col_pills)
     assert trust_col_pills == ["Green", "Green", "Red"]
     print("errors:", errors)
-    page.screenshot(path=str(test_output_path("shot_v10_override_and_table.png")), full_page=True)
+    page.screenshot(path=str(test_output_path("shot_retro_override_table.png")), full_page=True)
 
     print("=== ALL ERRORS:", errors)
     browser.close()

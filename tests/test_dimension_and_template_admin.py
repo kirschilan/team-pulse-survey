@@ -135,11 +135,11 @@ FAKE_CLAUDE_JS = r"""
 """
 
 INDEX_HTML = (pathlib.Path(__file__).resolve().parents[1] / "public" / "index.html").read_text()
-out_path = pathlib.Path(__file__).resolve().parents[1] / "public" / "_test_generic.html"
+out_path = pathlib.Path(__file__).resolve().parents[1] / "public" / "_test_dim_tpl_admin.html"
 out_path.write_text(INDEX_HTML.replace("</head>", FAKE_CLAUDE_JS + "\n</head>"))
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+    browser = p.chromium.launch()
     page = browser.new_page(viewport={"width":1280,"height":1000})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -231,5 +231,5 @@ with sync_playwright() as p:
     print("JS errors:", errors)
     print("console errors:", console_errors)
 
-    page.screenshot(path=str(test_output_path("shot_generic.png")), full_page=True)
+    page.screenshot(path=str(test_output_path("shot_dim_tpl_admin.png")), full_page=True)
     browser.close()

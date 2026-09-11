@@ -16,10 +16,10 @@ from fixtures.build_page import build_page, test_output_path
 # statement-based ones do, the facilitator can override and finish the
 # retro, and the result lands in the squad's real ratings.
 
-out_path = build_page(out_name="_test_v13.html")
+out_path = build_page(out_name="_test_retro_direct_rating.html")
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+    browser = p.chromium.launch()
 
     # ============ SM device: default (Spotify) template, start a session ============
     page = browser.new_page(viewport={"width":1280,"height":1400})
@@ -55,7 +55,7 @@ with sync_playwright() as p:
     # ============ participant device: full direct-rating form ============
     sdoc = json.dumps(session_info["doc"])
     seed_js = "STORE['sessions/" + sid + "'] = " + sdoc + ";"
-    join_out = build_page(seed_js, out_name="_test_v13_join.html")
+    join_out = build_page(seed_js, out_name="_test_retro_direct_rating_participant.html")
 
     pageA = browser.new_page(viewport={"width":420,"height":2600})
     errorsA = []
@@ -115,7 +115,7 @@ with sync_playwright() as p:
     assert pills.count("Green") == len(dim_keys) - 1
     assert pills.count("Red") == 1
     print("errors (participant):", errorsA)
-    pageA.screenshot(path=str(test_output_path("shot_v13_direct_results.png")), full_page=True)
+    pageA.screenshot(path=str(test_output_path("shot_retro_direct_rating_participant.png")), full_page=True)
 
     # ============ facilitator: mirror the response, flip to live, override, finish ============
     page.evaluate("""
@@ -166,7 +166,7 @@ with sync_playwright() as p:
     print("overridden dimension's cell-btn class on the squad view (should show 'warn'):", result_cell_class)
     assert "warn" in result_cell_class
     print("errors (SM):", errors)
-    page.screenshot(path=str(test_output_path("shot_v13_finished_squad.png")), full_page=True)
+    page.screenshot(path=str(test_output_path("shot_retro_direct_rating_finished.png")), full_page=True)
 
     print("=== ALL ERRORS: SM=", errors, "participant=", errorsA)
     browser.close()

@@ -14,10 +14,10 @@ from fixtures.build_page import build_page, test_output_path
 # dimensions x 4 statements (not 3) and different score thresholds
 # (good:10, warn:8, not good:8, warn:6).
 
-out_path = build_page(out_name="_test_v12.html")
+out_path = build_page(out_name="_test_tpl_tuckman.html")
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+    browser = p.chromium.launch()
     page = browser.new_page(viewport={"width":1280,"height":1200})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -67,7 +67,7 @@ with sync_playwright() as p:
     # ============ participant device: full 20-statement form ============
     sdoc = json.dumps(session_info["doc"])
     seed_js = "STORE['sessions/" + sid + "'] = " + sdoc + ";"
-    good_out = build_page(seed_js, out_name="_test_v12_join.html")
+    good_out = build_page(seed_js, out_name="_test_tpl_tuckman_participant.html")
 
     pageA = browser.new_page(viewport={"width":420,"height":2600})
     errorsA = []
@@ -122,7 +122,7 @@ with sync_playwright() as p:
         assert expected_score in block
         assert expected_band in block
     print("errors (participant):", errorsA)
-    pageA.screenshot(path=str(test_output_path("shot_v12_tuckman_results.png")), full_page=True)
+    pageA.screenshot(path=str(test_output_path("shot_tpl_tuckman_results.png")), full_page=True)
 
     # ============ facilitator: mirror the response, flip to live ============
     stored = pageA.evaluate("""
@@ -148,7 +148,7 @@ with sync_playwright() as p:
     assert any("Forming" in t and "Green" in t for t in row_texts)
     assert any("Adjourning" in t and "Green" in t for t in row_texts)
     print("errors (SM):", errors)
-    page.screenshot(path=str(test_output_path("shot_v12_tuckman_facilitator.png")), full_page=True)
+    page.screenshot(path=str(test_output_path("shot_tpl_tuckman_facilitator.png")), full_page=True)
 
     print("=== ALL ERRORS: SM=", errors, "participant=", errorsA)
     browser.close()

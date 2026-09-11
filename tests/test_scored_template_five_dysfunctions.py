@@ -4,10 +4,10 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import build_page, test_output_path
 
-out_path = build_page(out_name="_test_v6.html")
+out_path = build_page(out_name="_test_tpl_five_dysfunctions.html")
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium")
+    browser = p.chromium.launch()
     page = browser.new_page(viewport={"width":1280,"height":1000})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -110,5 +110,5 @@ with sync_playwright() as p:
     page.click('#dimDoneBtn')
 
     print("=== FINAL errors:", errors)
-    page.screenshot(path=str(test_output_path("shot_v6_templates.png")), full_page=True)
+    page.screenshot(path=str(test_output_path("shot_tpl_five_dysfunctions.png")), full_page=True)
     browser.close()
