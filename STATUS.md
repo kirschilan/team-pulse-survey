@@ -26,6 +26,12 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 - `vercel.json` is in place for zero-config static hosting (`outputDirectory: "public"`), but
   **nothing has been deployed to Vercel yet** — this repo has never been connected to a Vercel
   project.
+- **Retro sessions now sync across real devices.** `relay/` is a small standalone Node/`ws`
+  WebSocket server; `public/js/relay-client.js` + `public/js/crypto.js` route every
+  `sessions`-rooted `db` call to it (encrypted, per the decision below) instead of `localStorage`,
+  while squads/dimensions/templates/config stay local as before. Verified end to end — real relay
+  process, two independent browser contexts, real WebSocket, real AES-GCM — by
+  `tests/test_relay_cross_device_sync.py`. Not yet deployed anywhere public; see `relay/README.md`.
 
 ## The app's file layout
 
@@ -45,6 +51,8 @@ along the seams the original file already had (`// ---------- section ----------
 | `dimensions-templates.js` | The dimension manager and template save/load/delete. |
 | `csv.js` | CSV export and import (parsing, column matching, preview, apply). |
 | `db.js` | `initDb()` — the Firestore-shaped snapshot listeners that wire `db` writes into `state` and back into a render. |
+| `crypto.js` | AES-256-GCM encrypt/decrypt for retro-session documents, key derived from the session code. |
+| `relay-client.js` | The other half of `local-store.js`'s router: a `collection()`/`doc()` implementation for `sessions`-rooted paths, backed by a real WebSocket to `relay/server.js` instead of `localStorage`. |
 
 **These are plain classic `<script>` files sharing the global scope, not ES modules** — Chromium
 blocks cross-file `import` over `file://` with a CORS error, which would break both the Playwright
@@ -66,17 +74,18 @@ window.claude.use("db")
 
 That's a Claude-Artifact-only API — it doesn't exist outside a Claude Artifact sandbox.
 `public/local-store.js` (loaded before every `js/*.js` file) now provides a same-shaped replacement
-for plain deployments: `window.claude.use("db")` resolves to a Firestore-shaped shim backed by this
-browser's own `localStorage`, and `window.claude.use("downloads")` triggers a real browser file
-download instead of the old "paste this into a new tab" fallback. It only installs itself when no
-real `window.claude` is already present, so it's a no-op both inside a Claude Artifact and inside
-the Playwright test harness (`tests/fixtures/fake_store.html` sets its own `window.claude` and
-loads after this file — see `build_page.py`). This satisfies the "board lives in the facilitator's
-own browser" decision below for the squads/dimensions/templates/config board itself. **It does not
-give retro sessions cross-device sync** — that's still the ephemeral encrypted relay in
-`docs/standalone-plan.md`; two tabs of the *same* browser do stay in sync (via the native `storage`
-event), which is enough to self-test the retro flow, but two different devices still won't see each
-other.
+for plain deployments, and it's a small **router**, not one flat store: for any path rooted at
+`"sessions"`, it delegates to `SquadPulseRelay` (`public/js/relay-client.js`), which speaks the
+same `collection()`/`doc()` shape but syncs over a real WebSocket to `relay/server.js`, encrypting
+every document with `public/js/crypto.js` before it leaves the browser. Everything else (squads,
+dimensions, templates, `meta/config`) still goes to this browser's own `localStorage`, unchanged.
+`window.claude.use("downloads")` still triggers a real browser file download. The whole shim only
+installs itself when no real `window.claude` is already present, so it's a no-op both inside a
+Claude Artifact and inside the Playwright test harness (`tests/fixtures/fake_store.html` sets its
+own `window.claude` and loads after this file — see `build_page.py`). **Retro sessions now
+genuinely sync across different devices/browsers** through the relay — see the new bullet above and
+`relay/README.md`. Squads/dimensions/templates/config still don't sync across devices, per the
+locked decision below; only a session's own content does.
 (There's one other `window.claude.use(...)` call, for `"downloads"` in `public/js/csv.js`, and a
 `window.claude.hot` hot-reload guard at the bottom of `app.js` that already degrades safely with no
 `window.claude` present — neither of those blocks anything.)
@@ -90,9 +99,16 @@ other.
 - **Only a live retro session touches a server**, and only for that session's lifetime — an
   ephemeral, in-memory, per-session-code relay (dimensions snapshot + responses + status/
   revealMode/overrides/experimentNote), forgotten once the room empties. No database.
-- **Self-hosted relay + end-to-end encryption**, chosen deliberately over Firebase/Supabase.
-  Excalidraw-style: the join link carries `#s=<code>&k=<key>` in the URL fragment, which never
-  reaches a server on a normal page load — the relay only ever sees ciphertext.
+- **Self-hosted relay + client-side encryption**, chosen deliberately over Firebase/Supabase.
+  Built 2026-09-11 — see `relay/` and `public/js/crypto.js`/`relay-client.js`. One deviation from
+  the original sketch, made deliberately: the encryption key is **derived from the session code
+  itself** (`SHA-256(code)`), not an independent random secret in a URL fragment. The reason is the
+  app's *primary* join path is typing the 6-character code by hand (the fix for a real iPhone
+  QR-handoff bug already in this codebase) — a path with no fragment to carry a separate key.
+  Deriving the key from the code keeps both join paths working. Be honest about what this does and
+  doesn't buy: real protection against passive network eavesdropping and against answers sitting in
+  plaintext in relay logs/memory/backups — but NOT protection against a relay operator who
+  deliberately computes the same public hash, since the code and the room id are the same value.
   Full rationale and the researched Excalidraw/Vercel architecture this is based on:
   `docs/standalone-plan.md`.
 - **Retro-session feature behavior** (consolidation rule, anonymity model, per-template scoring)
@@ -103,22 +119,23 @@ other.
 
 | Not built | Why it's cut for now | What would trigger building it |
 |---|---|---|
-| The relay server (`relay/` doesn't exist) | No prod usage yet to justify standing up infra | Ready to test cross-device retro sessions for real |
-| Client-side encryption (fragment key, encrypt/decrypt) | Depends on the relay existing first | Same as above |
+| Relay deployed anywhere public | Built and tested (see above), but this session had no Vercel/hosting account access to actually deploy it | Whenever cross-device retro sessions are wanted for real, not just tested locally |
+| Co-facilitator "finish retro" ownership | A session doc is self-contained, so a co-facilitator's device can watch/reveal/override live over the relay with no extra work — but "Finish & apply" writes into the SQUAD's own rating, which lives in whichever browser's local board actually holds that squad. A co-facilitator on a genuinely different, independently-seeded browser doesn't have that squad locally, so their "Finish" would write nowhere useful. Open question, not yet resolved: should only the session's originating device be allowed to finish, or does finishing need to become a relay-carried action the owning board listens for? | Whenever a real second facilitator device needs to finish a retro, not just watch one |
 | Save-board / Load-board-to-file | `local-store.js` already persists the board via `localStorage`, which covers the same browser/device | Once someone needs a board to move between browsers/devices without a relay |
-| Vercel deployment | Nothing has been deployed yet — the app is now Vercel-ready (`vercel.json` + `local-store.js`), just not connected to a Vercel project | Whenever a public URL is wanted, even pre-relay |
+| Vercel deployment (the static site itself) | Nothing has been deployed yet — the app is now Vercel-ready (`vercel.json` + `local-store.js`), just not connected to a Vercel project | Whenever a public URL is wanted |
 | Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing | Once the marketing site (separate Claude Code project) is further along |
 
 ## Suggested next step
 
 Two independent tracks, either can go first:
 
-1. **Ship the static site to a public Vercel URL as-is.** No code changes needed — `vercel.json`
-   is ready and `local-store.js` makes the board work standalone. Gets a shareable link even
-   before the relay exists (single-device use only, no cross-device retro sync).
-2. **Build the relay** per `docs/standalone-plan.md`: a Vercel WebSocket function holding
-   in-memory per-session state, then wire `app.js`'s one `db` call point over to it with the
-   fragment-key encryption layer. This is the real unblock for cross-device retro sessions.
+1. **Deploy the relay and the static site somewhere public.** No code changes needed for either —
+   `relay/README.md` covers any small Node host for the relay; `vercel.json` is ready for the
+   static site. This is the real unblock for testing cross-device retro sessions with a real team,
+   not just in this repo's own tests.
+2. **Resolve the co-facilitator "finish retro" question** above, then build whatever it takes
+   (likely a relay-carried "finish" action the session's owning device listens for and applies
+   locally, rather than a raw squads-collection write from any device).
 
 ## Session log
 
@@ -153,3 +170,21 @@ Two independent tracks, either can go first:
   plain classic scripts, not ES modules (Chromium blocks `import` over `file://`, which the test
   suite and the "open index.html directly" workflow both rely on). Zero intended behavior change;
   verified by the full 15-file regression suite passing with zero JS errors both before and after.
+- 2026-09-11 — Built the relay: `relay/server.js` (Node + `ws`, tiny in-memory per-code room store,
+  2-minute empty-room grace period), `public/js/crypto.js` (AES-256-GCM via Web Crypto, key derived
+  from the session code — see the locked decision above for why and its honest limits), and
+  `public/js/relay-client.js` (same `collection()`/`doc()` shape as `local-store.js`, so `db.js`
+  needed zero changes). `local-store.js` now routes any `sessions`-rooted path to the relay client
+  instead of `localStorage`. Two real bugs found and fixed along the way, both by actually testing
+  against a live relay rather than trusting the design: (1) Chromium's ES-module CORS block over
+  `file://` doesn't apply to WebSocket connections or `crypto.subtle` — verified both directly
+  before relying on either; (2) the broad `db.collection("sessions").onSnapshot(...)` listener
+  (used to notice a facilitator's own already-open session after reload) captured the "known
+  codes" list once at subscribe time and never revisited it, so a session started *after* boot
+  never appeared — fixed with a small pub/sub (`broadListeners` in relay-client.js) that any newly
+  ‑discovered room notifies. Verified end to end by `tests/test_relay_cross_device_sync.py`: a real
+  relay subprocess, two independent Playwright browser contexts (facilitator + participant) with
+  their own localStorage, and a third late-joiner confirming a closed session is really gone —
+  zero JS errors. Full existing 16-file suite re-verified passing with zero regressions. Not yet
+  deployed anywhere public (see `relay/README.md` for how). Left open: co-facilitator "finish
+  retro" ownership (see the not-built table above) — explicitly out of scope for this step.

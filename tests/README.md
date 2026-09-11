@@ -1,10 +1,14 @@
 # Regression suite
 
 Playwright + Python end-to-end tests against `public/index.html` running over
-`file://`. There's no real backend yet, so every test drives the app through
-`tests/fixtures/fake_store.html` — an in-memory stand-in for the Firestore-shaped
-`db` API the app is written against (see `docs/standalone-plan.md` for what
-replaces it). Each test file is a standalone script, not a pytest suite.
+`file://`. Most tests drive the app through `tests/fixtures/fake_store.html` —
+an in-memory stand-in for the Firestore-shaped `db` API the app is written
+against — rather than the real board/relay backends, so they stay fast and
+deterministic. Two files deliberately don't use it, because they exist
+specifically to test what it stands in for: `test_local_store.py` (the real
+`localStorage`-backed board) and `test_relay_cross_device_sync.py` (the real
+relay, over a real WebSocket, with real encryption — see `relay/README.md`).
+Each test file is a standalone script, not a pytest suite.
 
 ## Setup
 
@@ -86,3 +90,4 @@ references.)
 | `test_retro_experiment_note_and_finish.py` | The shared sprint-experiment note; finishing a retro writes results into the squad, or no-ops with nothing submitted |
 | `test_tribe_hotspots.py` | Tribe view's cross-squad hotspot rollup and ranking (`renderHotspots`/`renderStats`) |
 | `test_local_store.py` | `public/local-store.js` itself — seeding, reload persistence, cross-tab sync, real CSV download, non-interference with a real `window.claude` |
+| `test_relay_cross_device_sync.py` | The real relay end to end: starts `relay/server.js` as a subprocess and drives two independent browser contexts (facilitator + participant) through a full retro over a real encrypted WebSocket connection, plus a third late-joiner confirming a closed session is really gone |

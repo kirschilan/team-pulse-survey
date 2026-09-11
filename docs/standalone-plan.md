@@ -5,8 +5,12 @@ codebase deployed on Vercel, in the Excalidraw model (facilitator's browser is a
 multi-tenant database, share a link, save/reload to a file), so it can be embedded on the Dr. Agile
 website as a self-serve offering for visitors.
 
-This is a proposal only — nothing described here has been built yet. It lays out the architecture,
-the repo/migration plan, and the open questions to settle before writing any code.
+This started as a proposal only. As of 2026-09-11, the relay and encryption pieces below are now
+actually built — see `relay/README.md` and STATUS.md's "What's real right now" for the current
+state, and the two update notes inline below for where the real implementation deviated from this
+original sketch (both times, to keep an existing UX path working). The rest of this document
+(embedding decisions, the local-first board itself) is still exactly what it was: architecture and
+open questions, not yet acted on.
 
 ## What "the Excalidraw model" means here, precisely
 
@@ -50,6 +54,19 @@ that key *before* it leaves the browser. The relay stores and rebroadcasts ciphe
 read what anyone answered. That's a genuinely strong, honest thing to say to a visitor trying this on
 your website: *your team's answers are visible only to your team, not to us.*
 
+> **Update, 2026-09-11 — built, with one deliberate deviation from the paragraph above:** the actual
+> key is `SHA-256(session code)`, not an independent random secret in a URL fragment. The app's
+> *primary* join path by this point is typing the 6-character code by hand (added later, to fix a
+> real iPhone bug where scanning a QR code doesn't reliably carry a fragment/query string through) —
+> a path with no fragment to carry a separate key at all. Deriving the key from the code keeps that
+> path working, at a real cost to the claim above: since the relay already sees the code (it's the
+> room id), a relay operator who deliberately computes the same public hash can derive the same key.
+> The honest version of the claim is narrower: this protects against passive network eavesdropping
+> and against answers sitting in plaintext in relay logs, memory, or backups — not against a relay
+> operator who chooses to snoop. See `public/js/crypto.js` and STATUS.md's locked decisions for the
+> full writeup. If the fragment-key version above is ever wanted for real (e.g. a link-only join
+> flow with no typed-code fallback), it can still be added as an option alongside this one.
+
 **Reconnection** works the same way it does today, just server-held instead of client-held: a
 participant who refreshes, or joins a few minutes late, asks the relay for the room's current
 ciphertext blob and picks up from there — the same recovery Excalidraw gets from Firebase, just
@@ -64,6 +81,14 @@ scoped to one sitting instead of forever, and without needing a database to get 
   instances*; at the traffic a consultancy's website demo will see, one instance comfortably holds
   every concurrently active room, so there's no database to run or pay for here at all. If usage ever
   outgrows that, Vercel KV is the one thing to add later — not a redesign.
+  > **Update, 2026-09-11:** `relay/server.js` is built exactly this way (plain Node + `ws`, an
+  > in-memory `Map` keyed by session code) and works, verified against real WebSocket connections
+  > and real encrypted traffic — see `relay/README.md`. It has NOT been deployed as a Vercel
+  > Function specifically; that would need Vercel account access this session didn't have to verify
+  > end-to-end, and Vercel's WebSocket support is a narrower, newer feature worth confirming against
+  > directly rather than assuming. As written it's a completely ordinary Node process, so it'll also
+  > run unmodified on any small host that keeps a process alive and reachable (Render, Fly.io,
+  > Railway, a small VPS, a container) — pick whichever is easiest to actually stand up first.
 - **Frontend**: the same single-page app, deployed as a static site. Zero-config on Vercel either
   way.
 

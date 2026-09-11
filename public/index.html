@@ -262,6 +262,16 @@
   </div>
 </div>
 <script src="vendor/qrcode.js"></script>
+<script>
+  // Where retro sessions actually live-sync (relay-client.js + crypto.js
+  // below) -- ws:// for a plain local relay, wss:// once it's deployed
+  // somewhere real. Defaults to a locally-run relay (see relay/README.md);
+  // override by setting this before local-store.js loads, e.g. from a
+  // small inline script added at deploy time.
+  window.SQUAD_PULSE_RELAY_URL = window.SQUAD_PULSE_RELAY_URL || "ws://localhost:8787";
+</script>
+<script src="js/crypto.js"></script>
+<script src="js/relay-client.js"></script>
 <script src="local-store.js"></script>
 <script src="js/state.js"></script>
 <script src="js/helpers.js"></script>

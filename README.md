@@ -20,13 +20,14 @@ squad's own ratings.
 
 See **`STATUS.md`** for current state, locked-in decisions, what's deliberately
 not built yet, and the session log — that's the one place "what's outstanding"
-lives, kept up to date as work lands. Short version: this app has **no server
-backend** — it originated as a prototype running inside a Claude Artifact's
-`db` capability, and is being migrated to a standalone deployment per
-`docs/standalone-plan.md`. It now runs standalone with the board (squads,
-dimensions, templates) persisted in the browser's own `localStorage` via
-`public/local-store.js`, but still with no cross-device sync — that's a
-deliberate choice (see `STATUS.md`), not a gap to fill with a database.
+lives, kept up to date as work lands. Short version: this app originated as a
+prototype running inside a Claude Artifact's `db` capability and has been
+migrated to run standalone. The board (squads, dimensions, templates) stays in
+the browser's own `localStorage` via `public/local-store.js` — deliberately
+per-device, not synced (see `STATUS.md`). A live retro **session**, on the
+other hand, now genuinely syncs across real devices through a small
+self-hosted relay (`relay/`) with client-side encryption — see
+`relay/README.md`.
 
 ## Project layout
 
@@ -40,10 +41,12 @@ public/            The app itself -- static site, deploys as-is
   js/              Feature modules app.js boots (plain scripts, not ES modules -- see STATUS.md
                    for why and for the file-by-file map)
     state.js, helpers.js, render.js, modals.js, squads.js, retro.js,
-    dimensions-templates.js, csv.js, db.js
+    dimensions-templates.js, csv.js, db.js, crypto.js, relay-client.js
   styles.css
   vendor/
     qrcode.js      Bundled QR generator (kazuhikoarase/qrcode-generator, MIT)
+relay/             The one server this app has -- a small WebSocket relay for live retro
+                   sessions only (see relay/README.md); everything else stays client-side
 tests/             Playwright + Python regression suite (see tests/README.md)
 docs/
   facilitated-retro-spec.md   Feature spec + history for the retro-session work
@@ -53,21 +56,32 @@ vercel.json
 
 ## Running locally
 
-It's a static site with no build step — open `public/index.html` directly, or
-serve the `public/` directory with any static file server:
+The app itself is a static site with no build step — open `public/index.html`
+directly, or serve the `public/` directory with any static file server:
 
 ```
 cd public && python3 -m http.server 8000
 ```
 
-Note that without a real backend wired up yet (see Status above), most
-multi-device features (retro sessions across devices, live Tribe-view sync)
-won't do anything useful outside of the test harness's fake in-memory store.
+For a real multi-device retro session (not just the fake in-memory store the
+test harness uses), also run the relay:
+
+```
+cd relay && npm install && npm start
+```
+
+`index.html` defaults to `ws://localhost:8787`, so a local relay plus either
+of the above is enough to try a full retro across two browser windows. Tribe
+view and the rest of the board never touch the relay — only a live session
+does.
 
 ## Testing
 
 See `tests/README.md`. Every change is expected to pass the full regression
-suite with zero JavaScript errors before it ships.
+suite with zero JavaScript errors before it ships. `relay/` has its own
+`npm test` (see `relay/README.md`); `tests/test_relay_cross_device_sync.py`
+runs the relay for real against two independent browser contexts as part of
+the main suite.
 
 ## License
 
