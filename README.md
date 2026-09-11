@@ -34,9 +34,13 @@ deliberate choice (see `STATUS.md`), not a gap to fill with a database.
 STATUS.md          Current state, open items, session log -- start here
 public/            The app itself -- static site, deploys as-is
   index.html
-  app.js
+  app.js           Entry point: view-switch wiring, the Escape-key handler, boot -- thin on purpose
   local-store.js   localStorage-backed replacement for the Claude Artifact `db`/`downloads`
                    capabilities, so the app works standalone (e.g. on Vercel)
+  js/              Feature modules app.js boots (plain scripts, not ES modules -- see STATUS.md
+                   for why and for the file-by-file map)
+    state.js, helpers.js, render.js, modals.js, squads.js, retro.js,
+    dimensions-templates.js, csv.js, db.js
   styles.css
   vendor/
     qrcode.js      Bundled QR generator (kazuhikoarase/qrcode-generator, MIT)

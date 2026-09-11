@@ -6,34 +6,67 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 
 ## What's real right now
 
-- `public/` is a working static site — `index.html` + `app.js` + `styles.css` +
-  `vendor/qrcode.js` — ported verbatim from the original Claude Artifact prototype
-  (`squad-pulse.html`) with zero behavioral change. No build step; open `public/index.html`
-  directly or serve `public/` with any static file server.
+- `public/` is a working static site — `index.html` + `styles.css` + `vendor/qrcode.js` +
+  `local-store.js` + `app.js` + nine feature modules under `public/js/` (see "The app's file
+  layout" below). Originally ported verbatim from the Claude Artifact prototype
+  (`squad-pulse.html`) as one 2396-line `app.js`, then split by feature on 2026-09-11 with zero
+  intended behavior change. No build step; open `public/index.html` directly or serve `public/`
+  with any static file server.
 - Full feature set works standalone in one browser tab: squad ratings across a customizable
   dimension template, Tribe-view cross-squad rollup, and the facilitated live-retro flow (join by
   code/QR, blind statement survey or direct green/yellow/red pick depending on the dimension,
   live or held reveal, facilitator override, finish-and-apply into the squad's real ratings).
-- 12 built-in template stories' worth of regression coverage: `tests/test_generic.py` and
-  `tests/test_v2.py` through `tests/test_v13.py`, all passing with zero JS errors as of the last
-  run (2026-09-10), driven by Playwright against a fake in-memory store
-  (`tests/fixtures/fake_store.html` + `tests/fixtures/build_page.py`) standing in for the real
-  backend described below. See `tests/README.md` for how to run them.
+- 15 files' worth of regression coverage under `tests/` (named for the feature/flow each one
+  covers — see `tests/README.md`), all passing with zero JS errors as of the last run
+  (2026-09-11), driven by Playwright against a fake in-memory store (`tests/fixtures/fake_store.html`
+  + `tests/fixtures/build_page.py`) standing in for the real backend described below, plus one file
+  (`tests/test_local_store.py`) that deliberately loads the real `public/index.html` to cover
+  `local-store.js` itself. Runs automatically on every push/PR via
+  `.github/workflows/tests.yml`. See `tests/README.md` for how to run them locally.
 - `vercel.json` is in place for zero-config static hosting (`outputDirectory: "public"`), but
   **nothing has been deployed to Vercel yet** — this repo has never been connected to a Vercel
   project.
 
-## The one thing to know before touching app.js
+## The app's file layout
 
-`public/app.js` persists everything through a single call:
+`public/app.js` used to be one 2396-line file (a single IIFE, ported verbatim from the Claude
+Artifact prototype). It's now a thin entry point — view-switch wiring, the one cross-cutting
+Escape-key handler, and `start()`/boot — and the actual feature code lives in `public/js/`, split
+along the seams the original file already had (`// ---------- section ----------` comments):
+
+| File | Covers |
+|---|---|
+| `state.js` | Shared `state` object, starter templates, placeholder squads/dimensions, initial UI-prefs load. Loads first. |
+| `helpers.js` | Pure helpers used everywhere: `esc`, `diag`, banding/consolidation math, `sortedSquads`/`sortedDimensions`, `findSquad`, unit-label helpers. |
+| `render.js` | `renderAll` and everything it drives — header/stats/ranking/hotspots/grid/legend, grid tooltip. |
+| `modals.js` | The generic confirm modal, the cell-rating modal, and the busy overlay — shared widgets several features reuse. |
+| `squads.js` | Squad CRUD, Admin's squad list, Squad view, and the two `persistDimensionRating(s)` writers. |
+| `retro.js` | Retro sessions end to end: start/close, the session card, override + sprint note, finish-and-apply, the live response tally, and the join screen (participant side). |
+| `dimensions-templates.js` | The dimension manager and template save/load/delete. |
+| `csv.js` | CSV export and import (parsing, column matching, preview, apply). |
+| `db.js` | `initDb()` — the Firestore-shaped snapshot listeners that wire `db` writes into `state` and back into a render. |
+
+**These are plain classic `<script>` files sharing the global scope, not ES modules** — Chromium
+blocks cross-file `import` over `file://` with a CORS error, which would break both the Playwright
+suite (every test navigates via `file://`) and the README's "open `index.html` directly" workflow.
+`index.html` loads them in the order above, then `app.js` last; load order only matters for the
+handful of top-level `document.getElementById(...)` lookups each file does for elements that are
+already in the DOM by the time these scripts run (they sit at the end of `<body>`) — every actual
+cross-file *call* happens inside a function body triggered later (an event handler, or `start()`),
+by which point every file has finished loading, so the specific order between the nine files
+doesn't otherwise matter.
+
+## The one thing to know before touching the app
+
+`public/js/db.js`'s `initDb()` persists everything through a single call:
 
 ```js
-window.claude.use("db")   // app.js:2287
+window.claude.use("db")
 ```
 
 That's a Claude-Artifact-only API — it doesn't exist outside a Claude Artifact sandbox.
-`public/local-store.js` (loaded right before `app.js`) now provides a same-shaped replacement for
-plain deployments: `window.claude.use("db")` resolves to a Firestore-shaped shim backed by this
+`public/local-store.js` (loaded before every `js/*.js` file) now provides a same-shaped replacement
+for plain deployments: `window.claude.use("db")` resolves to a Firestore-shaped shim backed by this
 browser's own `localStorage`, and `window.claude.use("downloads")` triggers a real browser file
 download instead of the old "paste this into a new tab" fallback. It only installs itself when no
 real `window.claude` is already present, so it's a no-op both inside a Claude Artifact and inside
@@ -44,8 +77,8 @@ give retro sessions cross-device sync** — that's still the ephemeral encrypted
 `docs/standalone-plan.md`; two tabs of the *same* browser do stay in sync (via the native `storage`
 event), which is enough to self-test the retro flow, but two different devices still won't see each
 other.
-(There's one other `window.claude.use(...)` call, for `"downloads"` at app.js:2028, and a
-`window.claude.hot` hot-reload guard at the bottom of the file that already degrades safely with no
+(There's one other `window.claude.use(...)` call, for `"downloads"` in `public/js/csv.js`, and a
+`window.claude.hot` hot-reload guard at the bottom of `app.js` that already degrades safely with no
 `window.claude` present — neither of those blocks anything.)
 
 ## Decisions locked in (don't re-litigate these)
@@ -109,3 +142,14 @@ Two independent tracks, either can go first:
   and the Playwright test harness are unaffected — full regression suite verified passing with
   zero JS errors. Cross-device retro sync still needs the relay described above; this only covers
   the board itself plus same-browser multi-tab sync.
+- 2026-09-11 — Hardened the regression suite ahead of refactoring `app.js`: renamed the 13
+  `test_v2.py`..`test_v13.py`/`test_generic.py` files to names that describe what they cover (see
+  `tests/README.md`'s naming table), added `test_tribe_hotspots.py` and `test_local_store.py` to
+  close two real coverage gaps (Tribe view's cross-squad rollup, and `local-store.js` itself — both
+  had zero tests), removed a sandbox-specific hardcoded browser path from all 15 files so the suite
+  actually runs in CI, and added `.github/workflows/tests.yml` to run it on every push/PR.
+- 2026-09-11 — Split `app.js` (2396 lines, one IIFE) into `app.js` (thin entry point) + nine feature
+  modules under `public/js/` — see "The app's file layout" above for the map and for why they're
+  plain classic scripts, not ES modules (Chromium blocks `import` over `file://`, which the test
+  suite and the "open index.html directly" workflow both rely on). Zero intended behavior change;
+  verified by the full 15-file regression suite passing with zero JS errors both before and after.
