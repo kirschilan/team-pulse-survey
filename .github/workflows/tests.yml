@@ -31,7 +31,10 @@ jobs:
         working-directory: relay
         run: npm test
 
-      - name: Run regression suite
+      - name: Run frontend unit tests
+        run: node --test tests/unit/test_*.js
+
+      - name: Run Playwright regression suite
         run: |
           status=0
           for f in tests/test_*.py; do

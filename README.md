@@ -96,8 +96,10 @@ Two intended uses, both covered:
 
 ## Testing
 
-See `tests/README.md`. Every change is expected to pass the full regression
-suite with zero JavaScript errors before it ships. `relay/` has its own
+See `tests/README.md`. Two tiers: fast, dependency-free Node unit tests for
+pure logic (`tests/unit/`), and a Playwright suite for everything that needs
+a real browser (`tests/test_*.py`). Every change is expected to pass both
+with zero JavaScript errors before it ships. `relay/` has its own
 `npm test` (see `relay/README.md`); `tests/test_relay_cross_device_sync.py`
 runs the relay for real against two independent browser contexts as part of
 the main suite.

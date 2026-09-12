@@ -254,6 +254,16 @@ function applyImportRatingsToSquad(sq, dims){
   }
 }
 
+// See helpers.js's matching block for why this exists and why it's safe:
+// a no-op in the browser (`module` is undefined there), unlocking direct
+// `require()` from tests/unit/*.js in plain Node.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    parseCSV: parseCSV, colorFromWord: colorFromWord, trendFromWord: trendFromWord,
+    mapImportColumns: mapImportColumns, buildImportPlan: buildImportPlan, toCSV: toCSV
+  };
+}
+
 function applyImportPlan(plan){
   var newOnes = plan.patches.filter(function(p){ return !p.existing; });
   function applyAll(){

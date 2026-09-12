@@ -186,3 +186,20 @@ function findSquad(id){
   for(var i=0;i<state.squads.length;i++){ if(state.squads[i].id===id) return state.squads[i]; }
   return null;
 }
+
+// Lets tests/unit/*.js `require()` this file's pure functions directly with
+// plain Node -- no browser, no Playwright -- instead of only reaching them
+// indirectly through a full page load and UI clicks. `module` doesn't exist
+// in a browser, so this is a complete no-op there; nothing about how the
+// real app loads or runs this file changes. See tests/unit/README.md.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    esc: esc, slugify: slugify, weight: weight,
+    bandForScore: bandForScore, consolidateBand: consolidateBand,
+    bandForResponse: bandForResponse, effectiveDimResult: effectiveDimResult,
+    sortedDimensions: sortedDimensions, sortedSquads: sortedSquads,
+    squadScore: squadScore, dimByKey: dimByKey, findSquad: findSquad,
+    retroDimensions: retroDimensions, statementDimensions: statementDimensions,
+    directRatingDimensions: directRatingDimensions
+  };
+}

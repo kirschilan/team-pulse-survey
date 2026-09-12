@@ -1,14 +1,27 @@
 # Regression suite
 
-Playwright + Python end-to-end tests against `public/index.html` running over
-`file://`. Most tests drive the app through `tests/fixtures/fake_store.html` —
-an in-memory stand-in for the Firestore-shaped `db` API the app is written
-against — rather than the real board/relay backends, so they stay fast and
-deterministic. Two files deliberately don't use it, because they exist
-specifically to test what it stands in for: `test_local_store.py` (the real
-`localStorage`-backed board) and `test_relay_cross_device_sync.py` (the real
-relay, over a real WebSocket, with real encryption — see `relay/README.md`).
-Each test file is a standalone script, not a pytest suite.
+Two tiers:
+
+- **`tests/unit/`** — plain Node (`node:test`, nothing to install) tests of
+  pure logic with no DOM dependency: consolidation/scoring math, CSV
+  parsing/column-matching. Milliseconds, not seconds. See
+  `tests/unit/README.md`.
+- **`tests/test_*.py`** (this directory) — Playwright + Python end-to-end
+  tests against `public/index.html` running over `file://`, for everything
+  that needs a real browser: UI interaction, real DOM state, real
+  WebSocket/`crypto.subtle`. Most drive the app through
+  `tests/fixtures/fake_store.html` — an in-memory stand-in for the
+  Firestore-shaped `db` API the app is written against — rather than the
+  real board/relay backends, so they stay fast and deterministic. A few
+  files deliberately don't use it, because they exist specifically to test
+  what it stands in for: `test_local_store.py` (the real
+  `localStorage`-backed board) and `test_relay_cross_device_sync.py` (the
+  real relay, over a real WebSocket, with real encryption — see
+  `relay/README.md`). Each file is a standalone script, not a pytest suite.
+
+Together, these are the full regression suite — a change to consolidation
+math or CSV matching should get a unit test; a change to what the user sees
+or clicks needs a Playwright test.
 
 ## Setup
 
@@ -17,9 +30,11 @@ pip install playwright
 playwright install chromium
 ```
 
+(`tests/unit/` needs nothing beyond Node itself.)
+
 ## Running
 
-Each file is self-contained:
+Each Playwright file is self-contained:
 
 ```
 python3 tests/test_retro_direct_rating_flow.py
@@ -28,6 +43,7 @@ python3 tests/test_retro_direct_rating_flow.py
 Run the whole suite:
 
 ```
+node --test tests/unit/test_*.js
 for f in tests/test_*.py; do python3 "$f" || echo "FAILED: $f"; done
 ```
 

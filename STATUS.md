@@ -16,15 +16,18 @@ docs in `docs/` are reference material this file points to, not duplicates of it
   dimension template, Tribe-view cross-squad rollup, and the facilitated live-retro flow (join by
   code/QR, blind statement survey or direct green/yellow/red pick depending on the dimension,
   live or held reveal, facilitator override, finish-and-apply into the squad's real ratings).
-- 19 files' worth of regression coverage under `tests/` (named for the feature/flow each one
-  covers — see `tests/README.md`), all passing with zero JS errors as of the last run
-  (2026-09-12). Most drive the app through a fake in-memory store
-  (`tests/fixtures/fake_store.html` + `tests/fixtures/build_page.py`) standing in for the real
-  backend, for speed and determinism; a handful deliberately bypass it because they exist
-  specifically to test what it stands in for — `test_local_store.py` (the real `localStorage`
-  board), `test_relay_cross_device_sync.py` (the real relay, WebSocket, and encryption, together),
-  and `test_relay_error_handling.py` (the relay's failure modes). Runs automatically on every
-  push/PR via `.github/workflows/tests.yml`. See `tests/README.md` for how to run them locally.
+- Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-12) — see
+  `tests/README.md`. **`tests/unit/`**: 2 plain-Node files (`node:test`, nothing to install) for
+  pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
+  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 21 Playwright files
+  (named for the feature/flow each one covers) for everything that needs a real browser, running in
+  under 2 minutes total after a 2026-09-12 speedup (see the session log below) — zero JS errors on
+  the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
+  + `tests/fixtures/build_page.py`) standing in for the real backend, for speed and determinism; a
+  handful deliberately bypass it because they exist specifically to test what it stands in for —
+  `test_local_store.py` (the real `localStorage` board), `test_relay_cross_device_sync.py` (the real
+  relay, WebSocket, and encryption, together), and `test_relay_error_handling.py` (the relay's
+  failure modes). Both tiers run automatically on every push/PR via `.github/workflows/tests.yml`.
 - `vercel.json` is in place for zero-config static hosting (`outputDirectory: "public"`), and the
   repo **is now connected to Vercel** — feature branches deploy to preview URLs (confirmed
   2026-09-12 via real testing on one). The relay is not part of that deployment and isn't deployed
@@ -330,3 +333,21 @@ Two independent tracks, either can go first:
   (`test_relay_error_handling.py`); and, over the real relay, a just-closed session confirmed to read
   as "ended" while a never-existed code still reads as the generic message
   (`test_relay_cross_device_sync.py`). Full 20-file suite re-verified passing with zero regressions.
+- 2026-09-12 — Confirmed working end to end on a real deployed preview: a facilitator on Chrome ran
+  a full retro with a participant on an iPhone and another on Safari, over the deployed relay.
+  Separately, assessed whether Playwright was the right tool for the whole suite — it wasn't, for
+  part of it: pure logic with zero DOM dependency (consolidation/scoring math in `helpers.js`, CSV
+  parsing/column-matching in `csv.js`) was only reachable indirectly, by loading a full page and
+  clicking through the UI to exercise it. Added `tests/unit/` — plain Node (`node:test`, nothing to
+  install) tests that `require()` those functions directly, via a small guarded
+  `module.exports` block at the end of each file (a no-op in the browser, since `module` doesn't
+  exist there — see `tests/unit/README.md`) and a deliberately permissive fake DOM
+  (`tests/unit/fake_dom.js`) so a file that also does real DOM wiring at its top level doesn't crash
+  on load. 29 tests covering banding/consolidation (including the calmer-tie-break rule), override
+  precedence, and CSV round-tripping (quoted fields, Dimension-Key-before-label matching, column
+  reordering, template-mismatch flagging) run in ~0.1s total — instant compared to driving the same
+  logic through a browser. Playwright stays exactly where it already was for what actually needs a
+  browser (UI interaction, real WebSocket/`crypto.subtle`) — this doesn't replace any of that
+  coverage, it adds a faster, more precise layer under it. `.github/workflows/tests.yml` now runs
+  both tiers. Full suite timed end to end: 29 unit tests (~0.2s) + 21 Playwright files (~1m52s) ≈
+  1m53s total, all green.
