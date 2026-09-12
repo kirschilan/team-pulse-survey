@@ -25,13 +25,23 @@
 // presents the same collection()/doc() shape the rest of app.js already
 // expects from `db`.
 //
-// Rooms are in-memory only and forgotten once empty (after a grace period
-// that tolerates a normal reload/reconnect blip -- see EMPTY_ROOM_TTL_MS).
-// There is no persistence, no auth, and no plaintext: this process holding
-// no data at rest is the whole point.
+// Rooms live in memory (the `rooms` Map below) and are forgotten once
+// empty (after a grace period that tolerates a normal reload/reconnect
+// blip -- see EMPTY_ROOM_TTL_MS). There is no auth and no plaintext --
+// this process never holding readable data is the whole point, unchanged.
+//
+// Whether a room's docs also survive a process RESTART is a separate
+// question, answered by a pluggable storage adapter (see storage/index.js)
+// -- the default keeps today's exact behavior (nothing survives a
+// restart); opting into RELAY_STORAGE=file persists each room's encrypted
+// blobs to local disk so a redeploy or crash doesn't lose an in-progress
+// session. Either way the adapter only ever sees the same opaque
+// {path: envelope} shape this file already broadcasts -- still no
+// plaintext, at rest or in flight.
 
 const { WebSocketServer } = require("ws");
 const { URL } = require("url");
+const { createStorage } = require("./storage/index.js");
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8787;
 const EMPTY_ROOM_TTL_MS = 2 * 60 * 1000; // survive a brief reload/reconnect
@@ -44,23 +54,65 @@ const MAX_ROOMS = 10000; // sanity cap so a bug/abuse can't grow this unbounded
 /** @type {Map<string, { docs: Map<string, unknown>, clients: Set<import('ws').WebSocket>, emptyTimer: NodeJS.Timeout|null }>} */
 const rooms = new Map();
 
+// One storage adapter for the whole process, same lifetime as `rooms` --
+// see storage/index.js. startServer() may override this (tests do, to
+// inject a FileAdapter pointed at a temp dir, or a fake to prove server.js
+// calls the contract correctly without touching real disk).
+var storage = createStorage();
+
+// A brand-new code's very first connection has to await storage.load()
+// before a room exists to hand back -- this dedupes concurrent connections
+// racing to create the SAME new room (two tabs opening a fresh session at
+// once) onto one shared load, instead of one silently clobbering the
+// other's freshly-created room.
+const roomCreationPromises = new Map();
+
 function getOrCreateRoom(code){
   var room = rooms.get(code);
   if(room){
     if(room.emptyTimer){ clearTimeout(room.emptyTimer); room.emptyTimer = null; }
-    return room;
+    return Promise.resolve(room);
   }
-  if(rooms.size >= MAX_ROOMS) return null;
-  room = { docs: new Map(), clients: new Set(), emptyTimer: null };
-  rooms.set(code, room);
-  return room;
+  if(rooms.size >= MAX_ROOMS) return Promise.resolve(null);
+  var pending = roomCreationPromises.get(code);
+  if(pending) return pending;
+
+  var promise = storage.load(code).then(function(savedDocs){
+    roomCreationPromises.delete(code);
+    var existing = rooms.get(code); // another connection created it while we awaited the load
+    if(existing) return existing;
+    var docs = new Map();
+    if(savedDocs){ Object.keys(savedDocs).forEach(function(p){ docs.set(p, savedDocs[p]); }); }
+    var newRoom = { docs: docs, clients: new Set(), emptyTimer: null };
+    rooms.set(code, newRoom);
+    return newRoom;
+  }).catch(function(err){
+    roomCreationPromises.delete(code);
+    console.error("relay: failed to load persisted room " + code + ":", err);
+    var newRoom = { docs: new Map(), clients: new Set(), emptyTimer: null };
+    rooms.set(code, newRoom);
+    return newRoom;
+  });
+  roomCreationPromises.set(code, promise);
+  return promise;
+}
+
+function persistRoom(code, room){
+  storage.save(code, snapshotOf(room)).catch(function(err){
+    console.error("relay: failed to persist room " + code + ":", err);
+  });
 }
 
 function scheduleRoomCleanup(code, room){
   if(room.emptyTimer) clearTimeout(room.emptyTimer);
   room.emptyTimer = setTimeout(function(){
     var current = rooms.get(code);
-    if(current && current.clients.size === 0) rooms.delete(code);
+    if(current && current.clients.size === 0){
+      rooms.delete(code);
+      storage.remove(code).catch(function(err){
+        console.error("relay: failed to remove persisted room " + code + ":", err);
+      });
+    }
   }, EMPTY_ROOM_TTL_MS);
   if(typeof room.emptyTimer.unref === "function") room.emptyTimer.unref();
 }
@@ -86,8 +138,11 @@ function snapshotOf(room){
   return docs;
 }
 
-function startServer(){
-  var wss = new WebSocketServer({ port: PORT });
+function startServer(opts){
+  opts = opts || {};
+  if(opts.storage) storage = opts.storage;
+
+  var wss = new WebSocketServer({ port: opts.port || PORT });
 
   wss.on("connection", function(ws, req){
     var url;
@@ -95,45 +150,52 @@ function startServer(){
     var code = url.searchParams.get("code");
     if(!isValidCode(code)){ ws.close(1008, "missing or invalid code"); return; }
 
-    var room = getOrCreateRoom(code);
-    if(!room){ ws.close(1013, "relay is full"); return; }
-    room.clients.add(ws);
-    send(ws, { op: "snapshot", docs: snapshotOf(room) });
+    getOrCreateRoom(code).then(function(room){
+      if(!room){ ws.close(1013, "relay is full"); return; }
+      if(ws.readyState !== ws.OPEN) return; // client gave up while the room was loading
+      room.clients.add(ws);
+      send(ws, { op: "snapshot", docs: snapshotOf(room) });
 
-    ws.on("message", function(raw){
-      var msg;
-      try{ msg = JSON.parse(raw.toString()); }catch(e){ send(ws, { op:"error", message:"invalid JSON" }); return; }
-      if(!msg || typeof msg.path !== "string" || msg.path.length === 0 || msg.path.length > MAX_PATH_LENGTH){
-        send(ws, { op:"error", message:"invalid path" }); return;
-      }
-      if(msg.op === "put"){
-        if(msg.envelope === undefined){ send(ws, { op:"error", message:"put needs an envelope" }); return; }
-        if(Buffer.byteLength(JSON.stringify(msg.envelope)) > MAX_ENVELOPE_BYTES){
-          send(ws, { op:"error", message:"envelope too large" }); return;
+      ws.on("message", function(raw){
+        var msg;
+        try{ msg = JSON.parse(raw.toString()); }catch(e){ send(ws, { op:"error", message:"invalid JSON" }); return; }
+        if(!msg || typeof msg.path !== "string" || msg.path.length === 0 || msg.path.length > MAX_PATH_LENGTH){
+          send(ws, { op:"error", message:"invalid path" }); return;
         }
-        if(!room.docs.has(msg.path) && room.docs.size >= MAX_DOCS_PER_ROOM){
-          send(ws, { op:"error", message:"room is full" }); return;
+        if(msg.op === "put"){
+          if(msg.envelope === undefined){ send(ws, { op:"error", message:"put needs an envelope" }); return; }
+          if(Buffer.byteLength(JSON.stringify(msg.envelope)) > MAX_ENVELOPE_BYTES){
+            send(ws, { op:"error", message:"envelope too large" }); return;
+          }
+          if(!room.docs.has(msg.path) && room.docs.size >= MAX_DOCS_PER_ROOM){
+            send(ws, { op:"error", message:"room is full" }); return;
+          }
+          room.docs.set(msg.path, msg.envelope);
+          broadcast(room, { op:"put", path: msg.path, envelope: msg.envelope });
+          persistRoom(code, room);
+        } else if(msg.op === "delete"){
+          room.docs.delete(msg.path);
+          broadcast(room, { op:"delete", path: msg.path });
+          persistRoom(code, room);
+        } else {
+          send(ws, { op:"error", message:"unknown op" });
         }
-        room.docs.set(msg.path, msg.envelope);
-        broadcast(room, { op:"put", path: msg.path, envelope: msg.envelope });
-      } else if(msg.op === "delete"){
-        room.docs.delete(msg.path);
-        broadcast(room, { op:"delete", path: msg.path });
-      } else {
-        send(ws, { op:"error", message:"unknown op" });
-      }
+      });
+
+      ws.on("close", function(){
+        room.clients.delete(ws);
+        if(room.clients.size === 0) scheduleRoomCleanup(code, room);
+      });
+    }).catch(function(err){
+      console.error("relay: failed to open room " + code + ":", err);
+      ws.close(1011, "internal error");
     });
 
-    ws.on("close", function(){
-      room.clients.delete(ws);
-      if(room.clients.size === 0) scheduleRoomCleanup(code, room);
-    });
-
-    ws.on("error", function(){ /* the close handler above still fires */ });
+    ws.on("error", function(){ /* the close/catch handlers above still fire */ });
   });
 
   wss.on("listening", function(){
-    console.log("Squad Pulse relay listening on ws://localhost:" + PORT);
+    console.log("Squad Pulse relay listening on ws://localhost:" + (opts.port || PORT) + " (storage: " + (process.env.RELAY_STORAGE || "none") + ")");
   });
 
   return wss;

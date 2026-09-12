@@ -11,3 +11,7 @@ __pycache__/
 
 # Node (once the relay lands)
 node_modules/
+
+# relay/storage/file-adapter.js's default RELAY_DATA_DIR -- only exists
+# locally when RELAY_STORAGE=file is opted into; never something to commit.
+relay/data/

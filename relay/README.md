@@ -150,9 +150,32 @@ A room is created on the first connection for a new code, and forgotten
 `EMPTY_ROOM_TTL_MS` (2 minutes, in `server.js`) after the *last* connection
 for that code closes — long enough to survive a normal page reload or a
 brief network blip without losing the retro in progress, short enough that
-nothing accumulates once everyone's actually gone. There is no persistence
-beyond that: restart the process and every in-progress retro is gone,
-by design.
+nothing accumulates once everyone's actually gone.
+
+## Storage adapters
+
+Whether a room's docs also survive a **process restart** (a redeploy, a
+crash, Render's free tier spinning the process down) is a separate,
+pluggable question — see `storage/index.js` for the three-method adapter
+contract (`load`/`save`/`remove`), `storage/none-adapter.js` (the
+default — nothing persists, identical to this relay's original
+behavior), and `storage/file-adapter.js` (a real one — one JSON file per
+room on local disk, keyed by a hash of the room code so an odd code can
+never touch an unexpected path).
+
+```
+RELAY_STORAGE=file npm start          # persist rooms to ./data (or RELAY_DATA_DIR)
+```
+
+Either way, whatever the adapter stores is exactly the same opaque
+`{path: envelope}` shape this relay already broadcasts — still no
+plaintext, at rest or in flight. Writing your own adapter (Redis,
+Postgres, S3, whatever your host offers) means implementing those three
+methods and passing it to `startServer({ storage })`, or adding a case to
+`createStorage()` — `server.js` itself never needs to change. That's the
+whole point of the adapter shape: moving off Render, or forking this repo
+onto infrastructure that offers its own storage, is a small, isolated
+change instead of a rewrite.
 
 ## Testing
 
