@@ -17,6 +17,15 @@ async function initDb(){
     state.live = true;
     setSyncStatus(true);
 
+    // Step 4 of STATUS.md's "Board sync" plan: if this device has a team
+    // code connected (board-sync.js), pull in whatever the team's shared
+    // board last synced to BEFORE the squads/dimensions/config listeners
+    // below register -- so their very first fire already reflects the
+    // hydrated data instead of the stale local one, then a second fire
+    // moments later once hydration writes land. A no-op with no team code
+    // set (the default).
+    await hydrateFromTeamCodeIfConnected();
+
     if(isJoinMode()){
       listenJoinSession();
     } else {
