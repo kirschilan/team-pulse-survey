@@ -131,6 +131,14 @@ locked decision below; only a session's own content does.
 - **Retro-session feature behavior** (consolidation rule, anonymity model, per-template scoring)
   is specified and versioned in `docs/facilitated-retro-spec.md` — that file has its own session
   log for that feature's history; don't duplicate it here.
+- **"This retro has ended" vs. "this retro isn't open" is a real distinction, but only within the
+  relay's own room lifetime — not indefinitely.** `closeSession()` writes `status:"closed"` instead
+  of deleting the doc, so the join screen can say "ended" for as long as that doc still exists (the
+  relay's own room-empty grace period, or longer if someone's still connected). Once the relay has
+  genuinely forgotten a room (garbage-collected, or the process restarted), a closed-long-ago code
+  and a code that never existed are the same thing again — there is no way to keep that distinction
+  forever without adding real persistence, which is exactly the trade-off already rejected for the
+  relay itself (see the Vercel Function decision above). This is the deliberate stopping point.
 
 ## Deliberately not built yet (and why)
 
@@ -268,3 +276,42 @@ Two independent tracks, either can go first:
   actually clicked "deploy" on the relay yet, since that needs a Render (or equivalent) account this
   session doesn't have — the Render blueprint and the Vercel env var are the two concrete steps left
   for whoever does.
+- 2026-09-12 — Three rounds of fixes chasing a real "session isn't open" report from an iPhone
+  joining a live Vercel preview, each one uncovering the next:
+  1. The join screen (`#viewJoin`) has no nav back to Admin's own Diagnostics panel by design (a
+     participant shouldn't see the facilitator's board), which meant it also had no way to show
+     ANY diagnostic info — a stuck participant had nothing to screenshot. `diag()` now updates every
+     element with `class="diag-log"` instead of only Admin's `#diagLog` by id; the join screen gets
+     its own collapsed-by-default "Trouble joining? Tap for diagnostics" panel.
+  2. That surfaced a second, worse gap on the facilitator's own device: clicking "Start retro
+     session" left the button disabled forever with NOTHING new in Diagnostics — every explicit
+     `diag()` call in the app lives inside a `.then()`/`.catch()`, so a synchronous throw upstream of
+     those vanished without a trace. `helpers.js` now forwards `window`'s own `error` and
+     `unhandledrejection` events into `diag()` unconditionally, so the log always shows *something*.
+  3. That, in turn, revealed the actual bug on the next attempt: `new WebSocket(...)` throws a
+     SyntaxError SYNCHRONOUSLY for a malformed scheme, and the real-world cause was a one-letter
+     typo in the `SQUAD_PULSE_RELAY_URL` Vercel env var (`was://` instead of `wss://`). `getRoom()`
+     in `relay-client.js` now validates the scheme up front and fails the same clean,
+     catchable way "no relay configured" already did, instead of an uncaught exception.
+  Separately, answered a real design question this raised — can "this retro isn't open" (bad/never-
+  existed code) be told apart from "this retro has ended" (closed) without a database? Partially,
+  honestly: `closeSession()` now writes `status:"closed"` (an `update`) instead of deleting the doc
+  outright, so a participant already on the join screen, or one who opens a stale link soon after,
+  sees a real "This retro has ended" — for as long as the relay's own room-empty grace period keeps
+  that doc around, since nothing here is a real database and a code the relay has fully forgotten is
+  genuinely indistinguishable from one that never existed. Also added a third, distinct message —
+  "Can't connect to the retro server" — for when this device never reached the relay at all, as
+  opposed to reaching it and finding no such room; `relay-client.js` now carries an `unavailable`
+  flag on every doc snapshot so `retro.js` can tell the two apart. Closing a session also now
+  explicitly forgets its code from this device's local "known codes" bookkeeping the moment it's
+  marked closed (previously only a hard delete did this), so a status-only update can't leave this
+  device silently reconnecting to every session it's ever started, forever.
+  Verified end to end, not just by inspection: a synthetic sync throw and a synthetic unhandled
+  rejection both confirmed reaching `#diagLog`
+  (`test_uncaught_error_diagnostics.py`); the join screen's own diagnostics panel confirmed reachable
+  and populated for a real "not found" case (`test_retro_join_flow.py`); the malformed-scheme case
+  confirmed to fail with zero WebSocket attempts and zero uncaught exceptions, and the real join
+  screen confirmed to show "Can't connect" (not "isn't open") for an unreachable-but-valid URL
+  (`test_relay_error_handling.py`); and, over the real relay, a just-closed session confirmed to read
+  as "ended" while a never-existed code still reads as the generic message
+  (`test_relay_cross_device_sync.py`). Full 20-file suite re-verified passing with zero regressions.

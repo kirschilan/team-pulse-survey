@@ -93,9 +93,19 @@ with sync_playwright() as p:
     print("confirm dialog text:", page.eval_on_selector('#confirmMessage', 'el=>el.textContent'))
     page.click('#confirmOk')
     page.wait_for_timeout(250)
-    session_keys_after = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k=>k.startsWith('sessions/'))")
-    print("session keys after close (should be empty):", session_keys_after)
-    assert session_keys_after == []
+    # closeSession() writes status:"closed" rather than deleting the doc
+    # outright (so a participant already on the join screen sees a real
+    # "this retro has ended" -- see renderJoinScreen()), so the doc itself
+    # is still there; what matters for the facilitator's own view is that
+    # it's no longer treated as an OPEN session.
+    session_after = page.evaluate("""
+      (function(){
+        var k = Object.keys(window.__FAKE_STORE__).filter(function(x){ return x.startsWith('sessions/') && x.split('/').length===2; })[0];
+        return k ? window.__FAKE_STORE__[k] : null;
+      })();
+    """)
+    print("session doc after close (should still exist, now closed):", session_after)
+    assert session_after is not None and session_after["status"] == "closed"
     print("Start session button reappeared:", page.query_selector('#startSessionBtn') is not None)
     assert page.query_selector('#startSessionBtn') is not None
     print("FINAL errors (SM device):", errors)
@@ -107,7 +117,13 @@ with sync_playwright() as p:
     page.wait_for_timeout(250)
     session_doc_2 = page.evaluate("""
       (function(){
-        var k = Object.keys(window.__FAKE_STORE__).filter(function(x){ return x.startsWith('sessions/'); })[0];
+        // The FIRST session's doc is still sitting in the store too, now
+        // status:"closed" rather than deleted (see closeSession() in
+        // retro.js) -- filter for the OPEN one specifically, not just any
+        // top-level sessions/* key, or this can pick up that stale doc.
+        var k = Object.keys(window.__FAKE_STORE__).filter(function(x){
+          return x.startsWith('sessions/') && x.split('/').length===2 && window.__FAKE_STORE__[x].status === 'open';
+        })[0];
         return { id: k.split('/')[1], doc: window.__FAKE_STORE__[k] };
       })();
     """)

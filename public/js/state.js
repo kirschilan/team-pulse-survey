@@ -250,6 +250,10 @@ var state = {
   // never the Tribe/Squad/Admin switcher, regardless of ui.view above
   joinSessionId: null,
   joinSession: null,
+  // set by listenJoinSession() when the relay itself couldn't be reached at
+  // all (vs. reachable-but-no-such-doc) -- lets the join screen tell "can't
+  // connect to the relay" apart from "this code doesn't match a session"
+  joinUnavailable: false,
   // this device's in-progress/completed answers for the *current* session --
   // never synced anywhere except the anonymous submission itself; purely
   // local so this one browser knows what it's already answered/is drafting

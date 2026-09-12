@@ -74,7 +74,15 @@ function uniqueSessionCode(){
 
 function closeSession(sessionId){
   if(state.live && state.db){
-    state.db.collection("sessions").doc(sessionId).delete().catch(function(err){
+    // An update to status:"closed" rather than a delete -- a participant
+    // already on the join screen (or one who opens a stale link soon
+    // after) then sees a real "this retro has ended" instead of the same
+    // generic "isn't open" a bad code or an unreachable relay produces.
+    // The doc still goes away eventually once the relay's own room-empty
+    // grace period elapses (see relay/server.js) -- this only widens the
+    // window in which "closed" is distinguishable, it doesn't make it
+    // permanent, since nothing here is a real database.
+    state.db.collection("sessions").doc(sessionId).update({ status:"closed", closedAt: nowIso() }).catch(function(err){
       diag("Close session failed: " + (err && err.code ? err.code : String(err)));
     });
   } else {
@@ -571,10 +579,31 @@ function renderJoinScreen(){
     return;
   }
   var sess = state.joinSession;
-  if(!sess || sess.status !== "open"){
+  // Three distinct outcomes, told apart as honestly as a database-free
+  // relay allows (see STATUS.md's locked decisions): a session that was
+  // explicitly closed (the doc still exists, briefly, with status:"closed"
+  // -- see closeSession()) is a different situation from this device never
+  // reaching the relay at all, which is different again from the relay
+  // being reachable but genuinely having no such room. That last case is
+  // the one honest limit: a bad code and a code that expired so long ago
+  // the relay has completely forgotten it are indistinguishable, since
+  // nothing here persists beyond the room's own lifetime.
+  if(sess && sess.status === "closed"){
     el.innerHTML =
-      '<h2>This retro session isn&rsquo;t open</h2>' +
-      '<p class="hint">Check the link with whoever is running the retro &mdash; it may have already ended, or the link may be out of date.</p>';
+      '<h2>This retro has ended</h2>' +
+      '<p class="hint">The facilitator closed this session. Ask them for a new link if another one is starting.</p>';
+    return;
+  }
+  if(!sess || sess.status !== "open"){
+    if(state.joinUnavailable){
+      el.innerHTML =
+        '<h2>Can&rsquo;t connect to the retro server</h2>' +
+        '<p class="hint">This device never reached the relay. Check your connection, or ask whoever&rsquo;s running the retro if it&rsquo;s up.</p>';
+    } else {
+      el.innerHTML =
+        '<h2>This retro session isn&rsquo;t open</h2>' +
+        '<p class="hint">Check the link with whoever is running the retro &mdash; it may have already ended, or the link may be out of date.</p>';
+    }
     return;
   }
   // Every dimension in the retro is answerable by teammates now: dimensions
@@ -764,7 +793,12 @@ function bindStatementForm(stmtDims, directDims){
 function listenJoinSession(){
   state.db.doc("sessions/" + state.joinSessionId).onSnapshot(function(snap){
     state.joinSession = snap.exists ? Object.assign({ id: snap.id }, snap.data()) : null;
-    diag("Join session snapshot: " + (state.joinSession ? state.joinSession.status : "not found"));
+    // `unavailable` (relay-client.js only -- local-store.js's other,
+    // non-session snapshots never set it, so this is falsy/absent there)
+    // means this device never reached the relay at all, as distinct from
+    // reaching it and finding no such document -- see renderJoinScreen().
+    state.joinUnavailable = !!snap.unavailable;
+    diag("Join session snapshot: " + (state.joinSession ? state.joinSession.status : (state.joinUnavailable ? "relay unavailable" : "not found")));
     renderJoinScreen();
   }, function(err){
     diag("Join session listener error: " + (err && err.code ? err.code : String(err)));

@@ -170,6 +170,18 @@ var SquadPulseRelay = (function(){
       return room;
     }
 
+    // A malformed SQUAD_PULSE_RELAY_URL (real example: "was://..." instead
+    // of "wss://...", a one-letter typo in a Vercel env var) makes `new
+    // WebSocket(...)` throw a SyntaxError SYNCHRONOUSLY -- before any of
+    // this module's own error handling runs -- which previously left the
+    // "Start retro session" button disabled forever with nothing in
+    // Diagnostics to explain why. Check the scheme up front so a bad URL
+    // fails the same clean, catchable way "no relay configured" does.
+    if(!/^wss?:\/\//i.test(RELAY_URL)){
+      giveUp(room, "SQUAD_PULSE_RELAY_URL is not a valid ws:// or wss:// URL: " + RELAY_URL);
+      return room;
+    }
+
     var keyPromise = SquadPulseCrypto.deriveKey(code);
     connectRoom(room, keyPromise);
 
@@ -184,6 +196,13 @@ var SquadPulseRelay = (function(){
   function putDoc(room, path, data){
     room.docs[path] = data; // optimistic local update, same "latency compensation" the rest of the app already assumes
     notifyPath(room, path);
+    // A session doc moving to status:"closed" (retro.js's closeSession(),
+    // an update not a delete -- see below) means this device no longer
+    // needs to keep reconnecting to it after a reload the way an actually
+    // OPEN session does; forgetting it here, the moment the transition is
+    // observed, is what keeps subscribeBroadSessions() from accumulating
+    // one live WebSocket per session this device has EVER started.
+    if(path === "sessions/" + room.code && data && data.status === "closed") forgetCode(room.code);
     SquadPulseCrypto.deriveKey(room.code).then(function(key){
       return SquadPulseCrypto.encrypt(key, data);
     }).then(function(envelope){
@@ -213,7 +232,7 @@ var SquadPulseRelay = (function(){
   function notifyPath(room, path){
     room.docListeners.filter(function(l){ return l.path===path; }).forEach(function(l){
       var d = room.docs[path];
-      l.cb({ id: path.split("/").pop(), exists: !!d, data: function(){ return d ? deepFreezeClone(d) : undefined; } });
+      l.cb({ id: path.split("/").pop(), exists: !!d, unavailable: !!room.unavailable, data: function(){ return d ? deepFreezeClone(d) : undefined; } });
     });
     room.collListeners.forEach(function(l){
       if(path.indexOf(l.path + "/") === 0) l.cb(buildSnapshot(room, l.path));
@@ -223,7 +242,7 @@ var SquadPulseRelay = (function(){
   function notifyEverything(room){
     room.docListeners.forEach(function(l){
       var d = room.docs[l.path];
-      l.cb({ id: l.path.split("/").pop(), exists: !!d, data: function(){ return d ? deepFreezeClone(d) : undefined; } });
+      l.cb({ id: l.path.split("/").pop(), exists: !!d, unavailable: !!room.unavailable, data: function(){ return d ? deepFreezeClone(d) : undefined; } });
     });
     room.collListeners.forEach(function(l){ l.cb(buildSnapshot(room, l.path)); });
     notifyBroadListeners();
@@ -240,7 +259,7 @@ var SquadPulseRelay = (function(){
       get: function(){
         return room.ready.then(function(){
           var d = room.docs[path];
-          return { id: path.split("/").pop(), exists: !!d, data: function(){ return d; } };
+          return { id: path.split("/").pop(), exists: !!d, unavailable: !!room.unavailable, data: function(){ return d; } };
         });
       },
       set: function(data){
@@ -269,7 +288,7 @@ var SquadPulseRelay = (function(){
         room.docListeners.push(l);
         room.ready.then(function(){
           var d = room.docs[path];
-          next({ id: path.split("/").pop(), exists: !!d, data: function(){ return d ? deepFreezeClone(d) : undefined; } });
+          next({ id: path.split("/").pop(), exists: !!d, unavailable: !!room.unavailable, data: function(){ return d ? deepFreezeClone(d) : undefined; } });
         });
         return function(){ room.docListeners = room.docListeners.filter(function(x){ return x!==l; }); };
       }

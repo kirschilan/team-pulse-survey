@@ -1,5 +1,8 @@
 from playwright.sync_api import sync_playwright
 import pathlib, subprocess, os, time, socket
+import sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from fixtures.build_page import write_plain_index
 
 # This is the one test that proves cross-device sync actually works, not
 # just "the code looks right": it starts the REAL relay/server.js as a
@@ -7,14 +10,15 @@ import pathlib, subprocess, os, time, socket
 # (their own localStorage, standing in for two different devices/browsers)
 # against it over a real WebSocket, through public/local-store.js +
 # public/js/relay-client.js + public/js/crypto.js -- no fake store, no
-# build_page.py splice. If the facilitator's session card and the
-# participant's join screen actually converge on the same live state, the
-# relay, the encryption, and the db-shim routing are all doing their job
-# together, end to end.
+# build_page.py splice (write_plain_index only strips the Google Fonts
+# <link> that would otherwise stall every page load -- see its docstring).
+# If the facilitator's session card and the participant's join screen
+# actually converge on the same live state, the relay, the encryption, and
+# the db-shim routing are all doing their job together, end to end.
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 RELAY_DIR = REPO_ROOT / "relay"
-INDEX = REPO_ROOT / "public" / "index.html"
+INDEX = write_plain_index(out_name="_test_relay_sync_index.html")
 INDEX_URL = "file://" + str(INDEX.resolve())
 RELAY_PORT = 8791
 RELAY_URL = "ws://localhost:%d" % RELAY_PORT
@@ -134,7 +138,16 @@ try:
         assert fac.query_selector('#startSessionBtn') is not None, "the session card should show 'start a new session' again once finished"
         print("errors:", fac_errors)
 
-        print("=== a late-joining THIRD device, after the session already closed, sees it's gone ===")
+        print("=== a late-joining THIRD device, after the session already closed, sees it really ended ===")
+        # closeSession() writes status:"closed" rather than deleting the doc
+        # outright (see retro.js) specifically so this case reads as "ended"
+        # rather than the generic "isn't open" a bad/never-existed code
+        # gets -- this is the real, honest distinction that's possible
+        # without any persistent database (see STATUS.md's locked
+        # decisions): the doc still exists for as long as the relay's own
+        # room-empty grace period keeps the room alive, which a
+        # just-finished session (facilitator's tab, at least, still open a
+        # moment ago) comfortably is.
         late_ctx = browser.new_context(viewport={"width":420,"height":900})
         late_ctx.add_init_script(point_at_test_relay)
         late = late_ctx.new_page()
@@ -144,8 +157,22 @@ try:
         late.wait_for_timeout(600)
         late_heading = late.eval_on_selector('#joinCard h2', 'el=>el.textContent')
         print("late joiner heading:", late_heading)
-        assert "isn" in late_heading.lower() and "open" in late_heading.lower()
+        assert "ended" in late_heading.lower()
         print("errors:", late_errors)
+
+        print("=== a device joining a code that never existed at all sees the generic message, not 'ended' ===")
+        never_ctx = browser.new_context(viewport={"width":420,"height":900})
+        never_ctx.add_init_script(point_at_test_relay)
+        never = never_ctx.new_page()
+        never_errors = []
+        never.on("pageerror", lambda e: never_errors.append(str(e)))
+        never.goto(INDEX_URL + "?session=NEVER01", wait_until="domcontentloaded")
+        never.wait_for_timeout(600)
+        never_heading = never.eval_on_selector('#joinCard h2', 'el=>el.textContent')
+        print("never-existed code heading:", never_heading)
+        assert "isn" in never_heading.lower() and "open" in never_heading.lower()
+        assert "ended" not in never_heading.lower()
+        print("errors:", never_errors)
 
         print("=== ALL ERRORS: facilitator=", fac_errors, "participant=", team_errors, "late=", late_errors)
         browser.close()

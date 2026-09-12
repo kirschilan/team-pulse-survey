@@ -112,6 +112,39 @@ with sync_playwright() as p:
     assert "attempt 2/8" in log2
     print("OK (full exhaustion-then-give-up behavior verified manually against the real timing; not re-timed here to keep the suite fast)")
 
+    # ============ 2b. malformed SQUAD_PULSE_RELAY_URL (a real one-letter env var typo: "was://" instead of "wss://") ============
+    # `new WebSocket(...)` throws a SyntaxError SYNCHRONOUSLY for a bad
+    # scheme -- before connectRoom()'s own try/catch-free event wiring runs
+    # -- which previously left "Start retro session" disabled forever with
+    # nothing in Diagnostics. getRoom() now validates the scheme up front
+    # and fails the same clean way "no relay configured" does: immediately,
+    # with no WebSocket attempt, and a write that actually rejects.
+    print("=== malformed relay URL scheme: fails clean and fast, no WebSocket attempt, no uncaught exception ===")
+    harness2b = build_relay_isolation_harness('"was://relay.example.com"', "_test_relay_bad_scheme.html")
+    page2b = browser.new_page()
+    console2b = []
+    page2b.on("console", lambda m: console2b.append(m.type + ": " + m.text))
+    page2b.on("pageerror", lambda e: console2b.append("PAGEERROR: " + str(e)))
+    page2b.goto("file://" + str(harness2b.resolve()), wait_until="domcontentloaded")
+    result2b = page2b.evaluate("""
+      (async () => {
+        try {
+          await SquadPulseRelay.doc("sessions/BADSCHEME").set({hello:"world"});
+          return "resolved (unexpected)";
+        } catch(e) { return e.code; }
+      })()
+    """)
+    print("set() result:", result2b)
+    assert result2b == "unavailable"
+    log2b = page2b.eval_on_selector("#diagLog", "el=>el.textContent")
+    print("diag log:", log2b.strip())
+    assert "not a valid ws:// or wss:// URL" in log2b
+    assert "was://relay.example.com" in log2b
+    ws_attempts_2b = [m for m in console2b if "PAGEERROR" in m or "WebSocket" in m]
+    print("uncaught errors / WebSocket attempts (should be none):", ws_attempts_2b)
+    assert ws_attempts_2b == [], "a bad scheme should be caught before new WebSocket() ever runs, not thrown as an uncaught SyntaxError"
+    print("OK")
+
     # ============ 3. the real app: a rapid double-click starts only ONE session ============
     # The bug report showed nine different session codes all reconnecting at
     # once -- almost certainly nine clicks on a button that gave no feedback.
@@ -124,7 +157,7 @@ with sync_playwright() as p:
     print("=== real app: rapid double-click on Start Session creates only one session ===")
     import sys
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-    from fixtures.build_page import build_page  # noqa: E402  (path inserted just above)
+    from fixtures.build_page import build_page, write_plain_index  # noqa: E402  (path inserted just above)
 
     app_out = build_page(out_name="_test_relay_double_click.html")
     page3 = browser.new_page(viewport={"width":1280,"height":1000})
@@ -173,6 +206,28 @@ with sync_playwright() as p:
     print("content updates again once selection clears:", "line three" in after)
     assert "line three" in after
     print("errors:", errors3)
+
+    # ============ 5. join screen: "can't connect" is a different message from "isn't open" ============
+    # Real index.html + local-store.js + relay-client.js (not fake_store.html,
+    # which implements its own sessions handling and never touches
+    # relay-client.js at all -- see fixtures/fake_store.html) pointed at a
+    # relay URL that's syntactically valid but nothing answers, via a
+    # participant's join link. Distinct from a bad/never-existed code: this
+    # device never even reached the relay, and the join screen should say
+    # so rather than the generic "isn't open".
+    print("=== join screen distinguishes 'can't connect' from 'isn't open' ===")
+    index_url = "file://" + str(write_plain_index(out_name="_test_relay_error_index.html").resolve())
+    page5 = browser.new_page(viewport={"width":420,"height":900})
+    errors5 = []
+    page5.on("pageerror", lambda e: errors5.append(str(e)))
+    page5.add_init_script("window.SQUAD_PULSE_RELAY_URL = 'was://bogus-scheme-typo';")
+    page5.goto(index_url + "?session=ABCDEF", wait_until="domcontentloaded")
+    page5.wait_for_timeout(400)
+    heading5 = page5.eval_on_selector('#joinCard h2', 'el => el.textContent')
+    print("heading:", heading5)
+    assert "connect" in heading5.lower()
+    assert "isn" not in heading5.lower()
+    print("errors:", errors5)
 
     browser.close()
 
