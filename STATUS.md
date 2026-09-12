@@ -20,7 +20,7 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 - Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-12) — see
   `tests/README.md`. **`tests/unit/`**: 2 plain-Node files (`node:test`, nothing to install) for
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
-  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 24 Playwright files
+  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 25 Playwright files
   (named for the feature/flow each one covers) for everything that needs a real browser, running in
   under 2 minutes total after a 2026-09-12 speedup (see the session log below) — zero JS errors on
   the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
@@ -210,8 +210,15 @@ is set on a device:
    BOTH directions: a device booting with a team code already set pulls another device's
    already-pushed board with zero clicks, then after that second device makes its own change, the
    first device's next reload pulls the newer state back too.
-5. Live subscribe: board updates propagate to other currently-open devices in real time, not just
-   on load.
+5. **DONE (2026-09-12).** Live subscribe: `board-sync.js`'s `subscribeToTeamBoardIfConnected()`
+   keeps `boards/<teamCode>`'s relay connection open (same one-persistent-WebSocket-per-room-code
+   machinery retro sessions already use) and reacts to every future update via the shared
+   `maybeApplyRemote()` guard, rather than only checking once at boot. Started right after the
+   boot-time hydrate and right after a fresh "Connect"; stopped on "Disconnect"
+   (`stopTeamBoardSubscription()`). New `tests/test_board_sync_live_subscribe.py` proves two
+   devices connected to the same team code AT THE SAME TIME converge on a squad add in BOTH
+   directions with zero reloads (unlike step 4, which needed one), and that disconnecting stops
+   live updates too, not just outgoing pushes.
 6. Wire "finish retro" through the shared board doc — the actual fix for the Mac/iOS divergence
    bug and the co-facilitator question above.
 7. Promote from opt-in to default-on once proven; retire the "no persistent database" language in
@@ -546,3 +553,18 @@ Two independent tracks, either can go first:
   re-verified passing. Safe to ship to `main` as-is: with no team code set, hydrate is a no-op, and
   the "Connect" flow only changes for someone opting into a code that already has a newer remote
   board.
+- 2026-09-12 — **Board sync step 5:** live subscribe. `board-sync.js` gained
+  `subscribeToTeamBoardIfConnected()`/`stopTeamBoardSubscription()`, and refactored step 4's
+  apply-if-newer logic into a shared `maybeApplyRemote()` used by both the one-shot boot hydrate
+  and every live callback — the subscription's own first callback (onSnapshot always fires
+  immediately with current state, same as any Firestore-shaped listener in this app) safely no-ops
+  since it's just re-announcing what hydrate already applied moments earlier. The subscription
+  reuses the exact same relay-client.js machinery retro sessions already rely on for this: one
+  persistent WebSocket per room code, kept open for as long as the tab stays connected to that team
+  code. Started right after boot-time hydrate and right after a fresh "Connect"; stopped on
+  "Disconnect". New `tests/test_board_sync_live_subscribe.py` proves two devices connected to the
+  same team code AT THE SAME TIME converge on a squad add in both directions with zero reloads
+  (the real gap step 4 left open), and that disconnecting stops live updates too, not just outgoing
+  pushes. Full 25-file Playwright + 35-test unit suite re-verified passing. Safe to ship to `main`
+  as-is: identical no-team-code-set behavior; the only change for a connected device is seeing
+  updates sooner (live vs. next reload), never a different final state than step 4 already produced.

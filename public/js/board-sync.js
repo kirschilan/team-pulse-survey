@@ -118,25 +118,63 @@ function applyRemoteBoardSnapshot(remote){
   });
 }
 
+// Shared by both the one-shot boot-time hydrate below and the live
+// subscription (step 5) -- applies a remote board only if it's genuinely
+// newer than what this device already knows about, so the live
+// subscription's very first callback (which always fires immediately with
+// whatever's already there, same as any onSnapshot) safely no-ops when
+// it's just echoing what hydrate already applied a moment earlier.
+function maybeApplyRemote(remote){
+  if(!remote || !remote.updatedAt) return Promise.resolve();
+  var code = getTeamCode();
+  var known = getSyncedAt(code);
+  if(known && remote.updatedAt <= known) return Promise.resolve();
+  hydrating = true;
+  return applyRemoteBoardSnapshot(remote).then(function(){
+    setSyncedAt(code, remote.updatedAt);
+    hydrating = false;
+  }, function(err){
+    hydrating = false;
+    throw err;
+  });
+}
+
 function hydrateFromTeamCodeIfConnected(){
   var code = getTeamCode();
   if(!code || !state.db) return Promise.resolve();
   return state.db.doc("boards/" + code).get().then(function(snap){
     if(!snap.exists) return; // no device has pushed this team code's board yet
-    var remote = snap.data();
-    var known = getSyncedAt(code);
-    if(!remote.updatedAt || (known && remote.updatedAt <= known)) return; // nothing newer than what we already know
-    hydrating = true;
-    return applyRemoteBoardSnapshot(remote).then(function(){
-      setSyncedAt(code, remote.updatedAt);
-      hydrating = false;
-    }, function(err){
-      hydrating = false;
-      throw err;
-    });
+    return maybeApplyRemote(snap.data());
   }).catch(function(err){
     diag("Team sync hydrate failed: " + (err && err.code ? err.code : String(err)));
   });
+}
+
+// Step 5 of STATUS.md's "Board sync" plan: unlike hydrateFromTeamCodeIfConnected()
+// (a one-shot fetch, only ever checked again on the next boot or reconnect),
+// this keeps the relay connection for boards/<teamCode> open and reacts to
+// every future update another currently-open device pushes, live -- no
+// reload needed. Reuses the exact same relay-client.js machinery retro
+// sessions already rely on for this (one persistent WebSocket per room
+// code); subscribing is what keeps that connection open for as long as
+// this tab stays on this team code.
+var teamBoardUnsubscribe = null;
+
+function subscribeToTeamBoardIfConnected(){
+  stopTeamBoardSubscription();
+  var code = getTeamCode();
+  if(!code || !state.db) return;
+  teamBoardUnsubscribe = state.db.doc("boards/" + code).onSnapshot(function(snap){
+    if(!snap.exists) return;
+    maybeApplyRemote(snap.data()).catch(function(err){
+      diag("Team sync live update failed: " + (err && err.code ? err.code : String(err)));
+    });
+  }, function(err){
+    diag("Team sync subscription error: " + (err && err.code ? err.code : String(err)));
+  });
+}
+function stopTeamBoardSubscription(){
+  if(teamBoardUnsubscribe){ teamBoardUnsubscribe(); teamBoardUnsubscribe = null; }
 }
 
 function renderTeamSyncStatus(){
@@ -169,10 +207,14 @@ document.getElementById("teamCodeConnectBtn").addEventListener("click", function
   // Hydrate first (in case another device already has a newer board under
   // this code), THEN push -- so connecting doesn't blindly clobber an
   // existing team board with whatever this device happened to have locally.
-  hydrateFromTeamCodeIfConnected().then(function(){ pushBoardSnapshotIfConnected(); });
+  hydrateFromTeamCodeIfConnected().then(function(){
+    pushBoardSnapshotIfConnected();
+    subscribeToTeamBoardIfConnected();
+  });
 });
 document.getElementById("teamCodeDisconnectBtn").addEventListener("click", function(){
   diag("Team sync: disconnected from team code " + getTeamCode());
+  stopTeamBoardSubscription();
   setTeamCode("");
   renderTeamSyncStatus();
 });

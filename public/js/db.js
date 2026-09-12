@@ -25,6 +25,7 @@ async function initDb(){
     // moments later once hydration writes land. A no-op with no team code
     // set (the default).
     await hydrateFromTeamCodeIfConnected();
+    subscribeToTeamBoardIfConnected();
 
     if(isJoinMode()){
       listenJoinSession();
