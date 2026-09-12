@@ -19,6 +19,30 @@ test("slugify() lowercases, hyphenates, and trims to a URL-safe id", () => {
   assert.equal(helpers.slugify("!!!", "fallback-id"), "fallback-id", "an all-symbol string strips to nothing, same as empty");
 });
 
+test("colorWord() labels a color band, defaulting to 'Not yet scored'", () => {
+  assert.equal(helpers.colorWord("good"), "Green");
+  assert.equal(helpers.colorWord("warn"), "Yellow");
+  assert.equal(helpers.colorWord("crit"), "Red");
+  assert.equal(helpers.colorWord("unscored"), "Not yet scored");
+  assert.equal(helpers.colorWord(undefined), "Not yet scored");
+});
+
+test("trendWord() has a standalone form and an inline-suffix form", () => {
+  assert.equal(helpers.trendWord("up"), "Improving");
+  assert.equal(helpers.trendWord("down"), "Declining");
+  assert.equal(helpers.trendWord("flat"), "");
+  assert.equal(helpers.trendWord("up", true), ", improving");
+  assert.equal(helpers.trendWord("down", true), ", declining");
+  assert.equal(helpers.trendWord("flat", true), "");
+});
+
+test("isStatementDimension() distinguishes scored dimensions from direct-rating ones", () => {
+  assert.equal(helpers.isStatementDimension({ key: "trust", statements: ["a"] }), true);
+  assert.equal(helpers.isStatementDimension({ key: "release" }), false);
+  assert.equal(helpers.isStatementDimension({ key: "release", statements: [] }), false, "an empty array still isn't statement-based");
+  assert.equal(helpers.isStatementDimension(null), false);
+});
+
 test("weight() maps color bands to the health-score scale", () => {
   assert.equal(helpers.weight("crit"), 2);
   assert.equal(helpers.weight("warn"), 1);
@@ -103,6 +127,31 @@ test("retroDimensions/statementDimensions/directRatingDimensions split a session
   assert.deepEqual(helpers.retroDimensions(dims).map((d) => d.key), ["release", "trust"], "sorted by order");
   assert.deepEqual(helpers.statementDimensions(dims).map((d) => d.key), ["trust"]);
   assert.deepEqual(helpers.directRatingDimensions(dims).map((d) => d.key), ["release"]);
+});
+
+test("liveOr() runs the live branch when connected, local branch otherwise", () => {
+  global.state = { live: true, db: {} };
+  assert.equal(helpers.liveOr(() => "live", () => "local"), "live");
+  global.state = { live: false, db: {} };
+  assert.equal(helpers.liveOr(() => "live", () => "local"), "local");
+  global.state = { live: true, db: null };
+  assert.equal(helpers.liveOr(() => "live", () => "local"), "local", "db missing counts as not connected even if live is true");
+});
+
+test("syncLiveIfConnected() fires the write only when connected, and reports a rejection via diag()", async () => {
+  global.state = { live: false, db: {} };
+  var calledWhileOffline = false;
+  helpers.syncLiveIfConnected(() => { calledWhileOffline = true; return Promise.resolve(); }, "test write");
+  assert.equal(calledWhileOffline, false, "no write attempted when not connected");
+
+  global.state = { live: true, db: {} };
+  var calledWhileOnline = false;
+  helpers.syncLiveIfConnected(() => { calledWhileOnline = true; return Promise.resolve(); }, "test write");
+  assert.equal(calledWhileOnline, true);
+
+  helpers.syncLiveIfConnected(() => Promise.reject({ code: "unavailable" }), "test write");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.ok(helpers.DIAG_LINES.some((l) => l.indexOf("test write failed: unavailable") !== -1));
 });
 
 test("sortedDimensions/sortedSquads/dimByKey/findSquad/squadScore read from global state", () => {

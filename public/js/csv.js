@@ -245,13 +245,11 @@ function applyImportRatingsToSquad(sq, dims){
     if(d.note) rec.note = d.note;
     sq.dimensions[dimKey] = rec;
   });
-  if(state.live && state.db){
+  syncLiveIfConnected(function(){
     var patch = { dimensions:{}, updatedAt: nowIso() };
     Object.keys(dims).forEach(function(dimKey){ patch.dimensions[dimKey] = sq.dimensions[dimKey]; });
-    state.db.collection("squads").doc(sq.id).update(patch).catch(function(err){
-      diag("CSV import: write failed for squads/" + sq.id + ": " + (err && err.code ? err.code : String(err)));
-    });
-  }
+    return state.db.collection("squads").doc(sq.id).update(patch);
+  }, "CSV import write for squads/" + sq.id);
 }
 
 // See helpers.js's matching block for why this exists and why it's safe:

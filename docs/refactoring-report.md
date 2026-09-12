@@ -12,6 +12,13 @@ live retro sessions) without a cleanup pass in between.
 of it safely. Treat this as a backlog, not a fire. The "Suggested order"
 section at the end ranks by risk/reward, not by section order above it.
 
+**Status, 2026-09-12**: items 1-5 of the suggested order below are done —
+see `STATUS.md`'s session log for that date. Left in this document
+unmarked below (rather than edited out) so the reasoning stays visible;
+the items themselves are complete. Still open: `state.editing`'s hidden
+dual shape, splitting `dimensions-templates.js`, naming/abbreviation
+consistency, and the `esc()` safety audit.
+
 ## Executive summary
 
 The app's single biggest structural cost is **`retro.js` at 808 lines**,

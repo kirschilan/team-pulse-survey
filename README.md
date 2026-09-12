@@ -40,8 +40,9 @@ public/            The app itself -- static site, deploys as-is
                    capabilities, so the app works standalone (e.g. on Vercel)
   js/              Feature modules app.js boots (plain scripts, not ES modules -- see STATUS.md
                    for why and for the file-by-file map)
-    state.js, helpers.js, render.js, modals.js, squads.js, retro.js,
-    dimensions-templates.js, csv.js, db.js, crypto.js, relay-client.js
+    state.js, helpers.js, render.js, modals.js, squads.js,
+    retro-facilitator.js, retro-join.js, dimensions-templates.js,
+    csv.js, db.js, crypto.js, relay-client.js
   styles.css
   vendor/
     qrcode.js      Bundled QR generator (kazuhikoarase/qrcode-generator, MIT)

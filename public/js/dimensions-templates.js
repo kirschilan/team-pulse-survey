@@ -30,7 +30,7 @@ function renderDimList(){
         '<div><label class="grn">Green looks like</label><textarea data-field="green" placeholder="What healthy looks like" dir="auto">'+esc(d.green)+'</textarea></div>' +
         '<div><label class="rd">Red looks like</label><textarea data-field="red" placeholder="What unhealthy looks like" dir="auto">'+esc(d.red)+'</textarea></div>' +
       '</div>' +
-      (d.statements && d.statements.length ?
+      (isStatementDimension(d) ?
         '<p class="hint" style="margin:8px 0 0;">Scored from '+d.statements.length+' self-assessment statements (not editable here yet) — rating this dimension still uses the swatches above until the statement-based entry flow ships.</p>' : "") +
     '</div>';
   }).join("");
@@ -69,12 +69,10 @@ function updateDimensionField(key, field, value){
   d[field] = value;
   renderAll();
   renderDimList();
-  if(state.live && state.db){
+  syncLiveIfConnected(function(){
     var patch = {}; patch[field] = value; patch.updatedAt = nowIso();
-    state.db.collection("dimensions").doc(key).update(patch).catch(function(err){
-      diag("Dimension field update failed for " + key + ": " + (err && err.code ? err.code : String(err)));
-    });
-  }
+    return state.db.collection("dimensions").doc(key).update(patch);
+  }, "Dimension field update for " + key);
 }
 
 function moveDimension(key, delta){
@@ -86,25 +84,27 @@ function moveDimension(key, delta){
   var tmp = a.order; a.order = b.order; b.order = tmp;
   renderAll();
   renderDimList();
-  if(state.live && state.db){
-    state.db.collection("dimensions").doc(a.key).update({ order:a.order, updatedAt: nowIso() }).catch(function(){});
-    state.db.collection("dimensions").doc(b.key).update({ order:b.order, updatedAt: nowIso() }).catch(function(){});
-  }
+  syncLiveIfConnected(function(){
+    return state.db.collection("dimensions").doc(a.key).update({ order:a.order, updatedAt: nowIso() });
+  }, "Move dimension " + a.key);
+  syncLiveIfConnected(function(){
+    return state.db.collection("dimensions").doc(b.key).update({ order:b.order, updatedAt: nowIso() });
+  }, "Move dimension " + b.key);
 }
 
 function addDimension(){
   var maxOrder = state.dimensions.reduce(function(m,d){ return Math.max(m, d.order||0); }, 0);
   var payload = { label:"New dimension", green:"", red:"", order:maxOrder+1, updatedAt: nowIso() };
-  if(state.live && state.db){
+  liveOr(function(){
     // no local push -- the live dimensions listener delivers this write
     // straight back (latency-compensated) and fully replaces state.dimensions
-    state.db.collection("dimensions").add(payload)
+    return state.db.collection("dimensions").add(payload)
       .catch(function(err){ diag("Add dimension failed: " + (err && err.code ? err.code : String(err))); });
-  } else {
+  }, function(){
     state.dimensions.push({ key:"local-dim-"+Date.now(), label:payload.label, green:"", red:"", order:payload.order });
     renderAll();
     renderDimList();
-  }
+  });
 }
 document.getElementById("addDimBtn").addEventListener("click", addDimension);
 
@@ -112,9 +112,9 @@ function removeDimension(key){
   state.dimensions = state.dimensions.filter(function(d){ return d.key!==key; });
   renderAll();
   renderDimList();
-  if(state.live && state.db){
-    state.db.collection("dimensions").doc(key).delete().catch(function(){});
-  }
+  syncLiveIfConnected(function(){
+    return state.db.collection("dimensions").doc(key).delete();
+  }, "Remove dimension " + key);
 }
 
 // ---------- templates ----------
@@ -130,7 +130,7 @@ document.getElementById("tplCloseBtn").addEventListener("click", closeTemplates)
 templatesBackdrop.addEventListener("click", function(e){ if(e.target===templatesBackdrop) closeTemplates(); });
 
 function templateRowHtml(t, opts){
-  var scoredCount = (t.dimensions||[]).filter(function(d){ return d.statements && d.statements.length; }).length;
+  var scoredCount = (t.dimensions||[]).filter(isStatementDimension).length;
   var meta = t.dimensions.length+' dimension'+(t.dimensions.length===1?"":"s")+(t.unit?(' &middot; rates '+esc(t.unitPlural||t.unit)):"") +
     (scoredCount ? (' &middot; '+scoredCount+' scored from statements') : "");
   return '<div class="tpl-row" data-id="'+esc(t.id)+'">' +
@@ -192,7 +192,7 @@ function saveCurrentAsTemplate(name){
   // of the load creating fresh (and therefore rating-less) dimensions
   var dims = sortedDimensions().map(function(d){
     var spec = { key:d.key, label:d.label, green:d.green, red:d.red, order:d.order };
-    if(d.statements && d.statements.length) spec.statements = d.statements;
+    if(isStatementDimension(d)) spec.statements = d.statements;
     if(d.scoreBands) spec.scoreBands = d.scoreBands;
     if(d.strategies && d.strategies.length) spec.strategies = d.strategies;
     return spec;
@@ -201,24 +201,24 @@ function saveCurrentAsTemplate(name){
     name:name, unit:state.config.unit, unitPlural:state.config.unitPlural,
     attribution:"", dimensions:dims, createdAt: nowIso()
   };
-  if(state.live && state.db){
+  liveOr(function(){
     // no local push -- the live templates listener delivers this write
     // straight back (latency-compensated) and fully replaces state.templates
-    state.db.collection("templates").add(payload).then(function(){
+    return state.db.collection("templates").add(payload).then(function(){
       diag("Saved template '" + name + "'.");
     }).catch(function(err){ diag("Save template failed: " + (err && err.code ? err.code : String(err))); });
-  } else {
+  }, function(){
     state.templates.push(Object.assign({ id:"local-tpl-"+Date.now() }, payload));
     renderTemplateList();
-  }
+  });
 }
 
 function deleteTemplate(id){
   state.templates = state.templates.filter(function(t){ return t.id!==id; });
   renderTemplateList();
-  if(state.live && state.db){
-    state.db.collection("templates").doc(id).delete().catch(function(){});
-  }
+  syncLiveIfConnected(function(){
+    return state.db.collection("templates").doc(id).delete();
+  }, "Delete template " + id);
 }
 
 function loadTemplate(t){
@@ -235,7 +235,7 @@ function loadTemplate(t){
   var newDimSpecs = t.dimensions.map(function(d, i){
     var key = d.key || slugify(t.id + "-" + d.label, t.id + "-dim-" + (i+1));
     var spec = { key:key, label:d.label, green:d.green||"", red:d.red||"", order:d.order||(i+1) };
-    if(d.statements && d.statements.length) spec.statements = d.statements;
+    if(isStatementDimension(d)) spec.statements = d.statements;
     if(d.scoreBands) spec.scoreBands = d.scoreBands;
     if(d.strategies && d.strategies.length) spec.strategies = d.strategies;
     return spec;

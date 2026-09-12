@@ -85,6 +85,14 @@ function consolidateBand(bands){
   return null;
 }
 
+// The one thing that discriminates a dimension's whole shape -- statement
+// -scored (Five Dysfunctions/Tuckman style, summed through scoreBands) vs.
+// direct-rating (Spotify Squad Health Check style, one color pick with
+// nothing to sum). Named and centralized so a THIRD shape, if one's ever
+// added, only needs a new branch here rather than a hunt through every
+// place this was previously inlined as `dim.statements && dim.statements.length`.
+function isStatementDimension(dim){ return !!(dim && dim.statements && dim.statements.length); }
+
 // One response's band for a single dimension (null if that response didn't
 // cover this dimension -- shouldn't happen post-Story-5's atomic submit,
 // but an older/partial response snapshot could still lack a key).
@@ -97,7 +105,7 @@ function consolidateBand(bands){
 function bandForResponse(dim, response){
   var ans = response && response.answers && response.answers[dim.key];
   if(ans===undefined || ans===null) return null;
-  if(dim.statements && dim.statements.length){
+  if(isStatementDimension(dim)){
     if(!ans.length) return null;
     var sum = ans.reduce(function(a,b){ return a+b; }, 0);
     return bandForScore(sum, dim.scoreBands);
@@ -138,13 +146,13 @@ function retroDimensions(dims){
 }
 // The subset that uses the blind, interleaved Likert-statement survey.
 function statementDimensions(dims){
-  return retroDimensions(dims).filter(function(d){ return d.statements && d.statements.length; });
+  return retroDimensions(dims).filter(isStatementDimension);
 }
 // The subset that's answered with one direct color pick instead (Spotify
 // Squad Health Check style) -- shown openly labeled, same as Spotify's own
 // exercise, not hidden/interleaved like the statement dimensions above.
 function directRatingDimensions(dims){
-  return retroDimensions(dims).filter(function(d){ return !(d.statements && d.statements.length); });
+  return retroDimensions(dims).filter(function(d){ return !isStatementDimension(d); });
 }
 function dimByKey(key){
   for(var i=0;i<state.dimensions.length;i++){ if(state.dimensions[i].key===key) return state.dimensions[i]; }
@@ -161,6 +169,24 @@ function squadScore(squad){
     if(color!=="unscored"){ scored++; score += weight(color); }
   });
   return { score:score, scored:scored, counts:counts, total: dims.length };
+}
+
+// Human-readable labels for a color band / trend, used everywhere a cell,
+// grid, or session card needs to say a rating out loud (aria-labels, pills,
+// summaries) -- centralized so the four-way ternary chain doesn't get
+// re-typed at every call site (it previously was, in render.js, squads.js,
+// and retro.js, each with its own slightly different default/edge wording).
+function colorWord(color){
+  return color==="good" ? "Green" : color==="warn" ? "Yellow" : color==="crit" ? "Red" : "Not yet scored";
+}
+function trendWord(trend, suffix){
+  // `suffix` picks between the two phrasings actually used: an aria-label
+  // wants ", improving" appended to a sentence; a standalone label wants
+  // just "Improving". Defaults to the standalone form.
+  if(suffix){
+    return trend==="up" ? ", improving" : trend==="down" ? ", declining" : "";
+  }
+  return trend==="up" ? "Improving" : trend==="down" ? "Declining" : "";
 }
 
 function trendIcon(trend){
@@ -187,6 +213,37 @@ function findSquad(id){
   return null;
 }
 
+// ---------- live/local write helpers ----------
+// Every mutation in this app follows one of two shapes depending on
+// whether it's safe to also apply locally before the live write confirms:
+//
+// liveOr(liveFn, localFn) -- for a CREATE where applying it locally too
+// would show a duplicate row until the live listener's own echo arrives
+// (adding a squad, starting a session, ...). Exactly one of the two ever
+// runs; whichever does, its return value (often a promise some callers
+// chain on) passes straight through.
+//
+// syncLiveIfConnected(writeFn, describe) -- for everything else (rename,
+// reorder, delete, ...), where the caller has ALREADY mutated `state` and
+// rendered by the time this runs. The live write is fire-and-forget from
+// the caller's point of view; only a failure is worth reporting, tagged
+// with `describe` so the diagnostic log says which write it was.
+//
+// Neither of these is new behavior -- both shapes already existed at every
+// call site, just re-typed each time with `if(state.live && state.db){...}
+// else {...}`, twelve-plus times across squads.js, dimensions-templates.js,
+// and retro.js. Centralizing the shape doesn't change what any one call
+// site does; it just gives that shape one name instead of one retyping.
+function liveOr(liveFn, localFn){
+  return (state.live && state.db) ? liveFn() : localFn();
+}
+function syncLiveIfConnected(writeFn, describe){
+  if(!(state.live && state.db)) return;
+  writeFn().catch(function(err){
+    diag(describe + " failed: " + (err && err.code ? err.code : String(err)));
+  });
+}
+
 // Lets tests/unit/*.js `require()` this file's pure functions directly with
 // plain Node -- no browser, no Playwright -- instead of only reaching them
 // indirectly through a full page load and UI clicks. `module` doesn't exist
@@ -200,6 +257,8 @@ if (typeof module !== "undefined" && module.exports) {
     sortedDimensions: sortedDimensions, sortedSquads: sortedSquads,
     squadScore: squadScore, dimByKey: dimByKey, findSquad: findSquad,
     retroDimensions: retroDimensions, statementDimensions: statementDimensions,
-    directRatingDimensions: directRatingDimensions
+    directRatingDimensions: directRatingDimensions,
+    isStatementDimension: isStatementDimension, colorWord: colorWord, trendWord: trendWord,
+    liveOr: liveOr, syncLiveIfConnected: syncLiveIfConnected, DIAG_LINES: DIAG_LINES
   };
 }

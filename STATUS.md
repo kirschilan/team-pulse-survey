@@ -7,10 +7,11 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 ## What's real right now
 
 - `public/` is a working static site — `index.html` + `styles.css` + `vendor/qrcode.js` +
-  `local-store.js` + `app.js` + nine feature modules under `public/js/` (see "The app's file
+  `local-store.js` + `app.js` + ten feature modules under `public/js/` (see "The app's file
   layout" below). Originally ported verbatim from the Claude Artifact prototype
-  (`squad-pulse.html`) as one 2396-line `app.js`, then split by feature on 2026-09-11 with zero
-  intended behavior change. No build step; open `public/index.html` directly or serve `public/`
+  (`squad-pulse.html`) as one 2396-line `app.js`, then split by feature on 2026-09-11 (and
+  `retro.js` split again, into its facilitator/participant halves, on 2026-09-12) with zero
+  intended behavior change either time. No build step; open `public/index.html` directly or serve `public/`
   with any static file server.
 - Full feature set works standalone in one browser tab: squad ratings across a customizable
   dimension template, Tribe-view cross-squad rollup, and the facilitated live-retro flow (join by
@@ -51,11 +52,12 @@ along the seams the original file already had (`// ---------- section ----------
 | File | Covers |
 |---|---|
 | `state.js` | Shared `state` object, starter templates, placeholder squads/dimensions, initial UI-prefs load. Loads first. |
-| `helpers.js` | Pure helpers used everywhere: `esc`, `diag`, banding/consolidation math, `sortedSquads`/`sortedDimensions`, `findSquad`, unit-label helpers. |
+| `helpers.js` | Pure helpers used everywhere: `esc`, `diag`, banding/consolidation math, `colorWord`/`trendWord`, `isStatementDimension`, `sortedSquads`/`sortedDimensions`, `findSquad`, unit-label helpers, and the `liveOr`/`syncLiveIfConnected` write-shape helpers every mutator uses. |
 | `render.js` | `renderAll` and everything it drives — header/stats/ranking/hotspots/grid/legend, grid tooltip. |
 | `modals.js` | The generic confirm modal, the cell-rating modal, and the busy overlay — shared widgets several features reuse. |
-| `squads.js` | Squad CRUD, Admin's squad list, Squad view, and the two `persistDimensionRating(s)` writers. |
-| `retro.js` | Retro sessions end to end: start/close, the session card, override + sprint note, finish-and-apply, the live response tally, and the join screen (participant side). |
+| `squads.js` | Squad CRUD, Admin's squad list, Squad view, and the `persistDimensionRating(s)` writer. |
+| `retro-facilitator.js` | The FACILITATOR half of retro sessions: start/close, the session card, reveal-mode/override + sprint note, finish-and-apply, the live response tally, QR rendering. Split out from a single `retro.js` on 2026-09-12 — see the session log below. |
+| `retro-join.js` | The PARTICIPANT half: the join screen, the blind interleaved statement survey, direct-rating swatches, submission, and the personal-result view. Shares almost no code with `retro-facilitator.js` (different device, different role) — that's what made the split clean. |
 | `dimensions-templates.js` | The dimension manager and template save/load/delete. |
 | `csv.js` | CSV export and import (parsing, column matching, preview, apply). |
 | `db.js` | `initDb()` — the Firestore-shaped snapshot listeners that wire `db` writes into `state` and back into a render. |
@@ -69,7 +71,7 @@ suite (every test navigates via `file://`) and the README's "open `index.html` d
 handful of top-level `document.getElementById(...)` lookups each file does for elements that are
 already in the DOM by the time these scripts run (they sit at the end of `<body>`) — every actual
 cross-file *call* happens inside a function body triggered later (an event handler, or `start()`),
-by which point every file has finished loading, so the specific order between the nine files
+by which point every file has finished loading, so the specific order between the ten files
 doesn't otherwise matter.
 
 ## The one thing to know before touching the app
@@ -351,3 +353,31 @@ Two independent tracks, either can go first:
   coverage, it adds a faster, more precise layer under it. `.github/workflows/tests.yml` now runs
   both tiers. Full suite timed end to end: 29 unit tests (~0.2s) + 21 Playwright files (~1m52s) ≈
   1m53s total, all green.
+- 2026-09-12 — Worked through `docs/refactoring-report.md`'s prioritized list, verifying with the
+  full test suite after each step rather than as one big change:
+  1. Centralized `colorWord()`/`trendWord()` and named `isStatementDimension()` in `helpers.js`,
+     replacing duplicated ternary chains and inline `dim.statements && dim.statements.length`
+     checks across `render.js`, `squads.js`, `retro.js` (before the split below), and
+     `dimensions-templates.js`.
+  2. Added `diag()` calls to five previously-silent `.catch(function(){})` sites (`renameSquad`,
+     `removeSquad`, `removeDimension`, `deleteTemplate`, `moveDimension`'s two writes) — a rename or
+     delete that failed to persist previously left zero trace to debug from.
+  3. Collapsed `persistDimensionRating`/`persistDimensionRatings` (90% duplicate code) into one
+     function, the single-key case now just calling the batch case with a one-item array.
+  4. Added `liveOr(liveFn, localFn)` and `syncLiveIfConnected(writeFn, describe)` to `helpers.js` —
+     the two shapes every "write live, else write local" branch in the app already followed,
+     duplicated 12+ times across `squads.js`, `dimensions-templates.js`, `retro.js`, and `csv.js`.
+     Applied both everywhere that fit the shape cleanly; deliberately left `loadTemplate()`'s and
+     `applyImportPlan()`'s live branches alone, since their complexity comes from a genuinely
+     different multi-step async chain, not mechanical duplication — forcing them into the same
+     helper would have cost clarity, not saved it.
+  5. Split `retro.js` (808 lines) into `retro-facilitator.js` and `retro-join.js` along the device
+     -role seam the report identified: the two halves shared almost no code, so this was closer to
+     "move code" than "redesign code" — see "The app's file layout" above.
+  Added tests alongside each step rather than after: `colorWord`/`trendWord`/`isStatementDimension`/
+  `liveOr`/`syncLiveIfConnected` all got new `tests/unit/test_helpers.js` cases (34 unit tests now,
+  up from 29). The full 21-file Playwright suite was re-run after every one of the 5 steps above,
+  not just at the end, so a regression would have been caught at the step that introduced it rather
+  than discovered later; all 5 runs were clean. Deliberately not touched this round (still on the
+  report's backlog, lower priority): `state.editing`'s hidden dual shape, splitting
+  `dimensions-templates.js`, naming/abbreviation consistency, and the `esc()` safety audit.
