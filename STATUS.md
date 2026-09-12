@@ -22,7 +22,7 @@ docs in `docs/` are reference material this file points to, not duplicates of it
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
   running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 25 Playwright files
   (named for the feature/flow each one covers) for everything that needs a real browser, running in
-  under 2 minutes total after a 2026-09-12 speedup (see the session log below) — zero JS errors on
+  around 2 minutes total after two 2026-09-12 perf passes (see the session log below) — zero JS errors on
   the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
   + `tests/fixtures/build_page.py`) standing in for the real backend, for speed and determinism; a
   handful deliberately bypass it because they exist specifically to test what it stands in for —
@@ -639,3 +639,23 @@ Two independent tracks, either can go first:
   clarified mid-session that "safe to push to main" is a standing capability they want, not a
   standing instruction to auto-merge every finished increment: from here on, increments land on the
   feature branch and stay there, tested and ready, until the user explicitly says to merge.
+- 2026-09-12 — **Playwright suite perf pass**, prompted by the user noticing the suite had gotten
+  slow again. Timed all 25 files individually (`time python3 tests/test_*.py` per file) before
+  touching anything: 133.65s sequential total, one huge outlier —
+  `test_dimension_and_template_admin.py` at 17.58s, more than double the next-slowest file. Root
+  cause: it built its own test page by reading `public/index.html` and splicing its fake store in
+  by hand, instead of calling `tests/fixtures/build_page.py`'s `build_page()`/`write_plain_index()`
+  — bypassing the Google Fonts `<link>` strip those apply, and re-triggering the exact ~12-second
+  stall `build_page.py`'s own header comment already documented as the reason that strip exists in
+  the first place. Fixed by adding `build_custom_page(extra_head_html, out_name)` (same strip, for
+  a test needing its own bespoke fake store shape) and switching this file to use it:
+  17.58s → 5.03s. Also trimmed `test_csv_import_column_matching.py`'s "renamed headers" scenario
+  (positional-fallback header matching, preview-only, never applies anything) since
+  `tests/unit/test_csv.js`'s "`mapImportColumns()` falls back to `toCSV()`'s fixed column order"
+  already covers the exact same logic, and the file's other two scenarios already prove the same
+  preview-rendering pipeline works: 3.44s → 3.08s. No other file was found reading `index.html` by
+  hand, and no other fully-redundant Playwright-vs-unit-test overlap was found on this pass — every
+  other file exercises real DOM rendering, `localStorage`, a real WebSocket, or `crypto.subtle` that
+  a unit test structurally can't reach. New sequential total: 118.9s (down from 133.65s). Documented
+  the pattern and a "run this if it gets slow again" note in `tests/README.md` so this doesn't
+  quietly regress a third time. Full 25-file Playwright + 38-test unit suite re-verified passing.

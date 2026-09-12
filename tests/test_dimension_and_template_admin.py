@@ -2,7 +2,7 @@ from playwright.sync_api import sync_playwright
 import pathlib
 import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from fixtures.build_page import build_page, test_output_path
+from fixtures.build_page import build_custom_page, test_output_path
 
 FAKE_CLAUDE_JS = r"""
 <script>
@@ -134,9 +134,7 @@ FAKE_CLAUDE_JS = r"""
 </script>
 """
 
-INDEX_HTML = (pathlib.Path(__file__).resolve().parents[1] / "public" / "index.html").read_text()
-out_path = pathlib.Path(__file__).resolve().parents[1] / "public" / "_test_dim_tpl_admin.html"
-out_path.write_text(INDEX_HTML.replace("</head>", FAKE_CLAUDE_JS + "\n</head>"))
+out_path = build_custom_page(FAKE_CLAUDE_JS, out_name="_test_dim_tpl_admin.html")
 
 with sync_playwright() as p:
     browser = p.chromium.launch()

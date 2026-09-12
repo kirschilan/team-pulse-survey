@@ -78,6 +78,47 @@ automatically.
 Screenshots and scratch CSV fixtures go through `test_output_path(name)`,
 which resolves to `tests/output/` (gitignored).
 
+A test needing a materially different fake store than `fake_store.html`
+provides (a custom `window.claude` shape, extra test-only globals) can call
+`build_custom_page(extra_head_html, out_name)` instead, splicing its own
+`<script>` block in the same way. **Never** read and splice
+`public/index.html` by hand (`(public_dir/"index.html").read_text()...`) —
+that bypasses the Google Fonts `<link>` strip both `build_page()` and
+`write_plain_index()` apply, and costs the file real, measured wall-clock
+time (~12s) per run: found in a 2026-09-12 perf pass, where it was most of
+one file's 17.6s runtime — see `test_dimension_and_template_admin.py`'s
+history and STATUS.md's session log.
+
+## Performance
+
+Run `for f in tests/test_*.py; do time python3 "$f"; done` (or write a
+small runner) if the suite ever feels slow again — the fake-store files
+should mostly run in the 2-6s range each; anything past ~10s is worth a
+look before just letting it slide, and a `page.goto()` in the file that
+reads/splices `index.html` by hand rather than calling `build_page()` /
+`write_plain_index()` / `build_custom_page()` is the first thing to check
+(see above). The relay-backed files (`test_relay_*`, `test_board_sync_*`)
+are inherently a bit slower — a real Node subprocess plus real WebSocket
+round trips per test — that overhead is the cost of them being genuine,
+not fake-store, integration tests, and isn't itself something to optimize
+away.
+
+Before adding a new Playwright test, check whether what it would prove is
+already fully covered by a `tests/unit/*.js` test on the same underlying
+pure function (see `docs/` and `tests/unit/README.md` — `helpers.js`'s
+consolidation/scoring math and `csv.js`'s column-matching/import-plan
+logic are the two richest examples). A Playwright test earns its slower,
+real-browser cost by covering something a unit test structurally can't:
+real DOM rendering/interaction, `localStorage`, a real WebSocket, or
+`crypto.subtle`. A scenario whose ONLY assertions re-check already
+unit-tested logic through a preview pane, with nothing applied or
+rendered beyond that, is a case for trimming it (see
+`test_csv_import_column_matching.py`'s history for a worked example: its
+"renamed headers, positional-fallback" scenario was removed once
+`tests/unit/test_csv.js` was confirmed to cover that exact logic, since
+the file's other two scenarios already proved the same preview-rendering
+pipeline works).
+
 ## Naming
 
 Every file is named for the feature or flow it covers, not for the order it

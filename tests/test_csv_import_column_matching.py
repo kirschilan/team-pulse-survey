@@ -41,19 +41,19 @@ with sync_playwright() as p:
     assert "Template" in header, "Template column missing from export!"
     print("errors:", errors)
 
-    # ---- Test 1: rename headers, keep column order -> should still import via positional fallback ----
-    lines = csv_lines_raw
-    renamed_header = "Team Name,Dim,Colour,Direction,Comment,SourceTemplate"
-    renamed_csv = renamed_header + "\r\n" + "\r\n".join(lines[1:])
-    p1 = test_output_path("test_renamed_headers.csv")
-    p1.write_text(renamed_csv)
-    page.set_input_files('#csvFileInput', str(p1))
-    page.wait_for_timeout(250)
-    print("=== renamed-headers import preview ===")
-    print(page.eval_on_selector('#importSummary', 'el=>el.innerText'))
-    page.click('#importCancel')
+    # Positional-fallback matching (unrecognized header names, original
+    # column order) is fully covered at the logic level by
+    # tests/unit/test_csv.js's "mapImportColumns() falls back to toCSV()'s
+    # fixed column order" -- there was a Playwright scenario here for it
+    # too, but it only inspected the preview text and never applied
+    # anything, so it added no coverage beyond what that unit test and the
+    # reordered-columns scenario below (which DOES apply and verify real
+    # data) already prove between them. Removed as part of the 2026-09-12
+    # test-suite perf pass -- see STATUS.md's session log.
 
-    # ---- Test 2: reorder columns 1+ (col 0 must stay the entity-name column) -> should still map correctly ----
+    lines = csv_lines_raw
+
+    # ---- Test: reorder columns 1+ (col 0 must stay the entity-name column) -> should still map correctly ----
     # original data columns: Squad, Dimension, Health, Trend, Note, Template
     reordered_rows = []
     reordered_rows.append("Squad,Template,Health,Dimension,Note,Trend")
@@ -73,7 +73,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(200)
     print("squad-1 release after reordered import (should be 'good'):", page.evaluate("window.__FAKE_STORE__['squads/squad-1'].dimensions.release"))
 
-    # ---- Test 3: template mismatch warning ----
+    # ---- Test: template mismatch warning ----
     mismatched_rows = [lines[0]]
     for line in lines[1:]:
         parts = line.split(",")
