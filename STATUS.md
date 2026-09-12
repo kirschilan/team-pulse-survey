@@ -16,7 +16,7 @@ docs in `docs/` are reference material this file points to, not duplicates of it
   dimension template, Tribe-view cross-squad rollup, and the facilitated live-retro flow (join by
   code/QR, blind statement survey or direct green/yellow/red pick depending on the dimension,
   live or held reveal, facilitator override, finish-and-apply into the squad's real ratings).
-- 18 files' worth of regression coverage under `tests/` (named for the feature/flow each one
+- 19 files' worth of regression coverage under `tests/` (named for the feature/flow each one
   covers — see `tests/README.md`), all passing with zero JS errors as of the last run
   (2026-09-12). Most drive the app through a fake in-memory store
   (`tests/fixtures/fake_store.html` + `tests/fixtures/build_page.py`) standing in for the real
@@ -116,6 +116,18 @@ locked decision below; only a session's own content does.
   deliberately computes the same public hash, since the code and the room id are the same value.
   Full rationale and the researched Excalidraw/Vercel architecture this is based on:
   `docs/standalone-plan.md`.
+- **The relay is a plain standalone Node process, deployed as a genuinely separate small service —
+  deliberately NOT a Vercel Function**, even though Vercel Functions gained native WebSocket support
+  in 2026. Verified against Vercel's own docs before deciding: a new connection there isn't
+  guaranteed to land on the same Function instance as an existing one, so Vercel's own guidance for
+  shared cross-connection state (rooms, presence, pub/sub — this relay's whole job) is to add Redis.
+  Rejected because this project has two audiences that both lose from that: embedding on a company
+  website, and forking the repo to self-host entirely offline on a LAN to route around a company's
+  own security constraints — the latter shouldn't need to provision a database just to run one
+  WebSocket relay. `render.yaml` at the repo root makes deploying the unmodified Node process to
+  Render close to one-click; the exact same process also runs via `npm start` on a LAN with no cloud
+  account at all. Full writeup and the doc-verified reasoning: `relay/README.md`'s "Why not a Vercel
+  Function" and `docs/standalone-plan.md`'s "Where this runs".
 - **Retro-session feature behavior** (consolidation rule, anonymity model, per-template scoring)
   is specified and versioned in `docs/facilitated-retro-spec.md` — that file has its own session
   log for that feature's history; don't duplicate it here.
@@ -124,20 +136,23 @@ locked decision below; only a session's own content does.
 
 | Not built | Why it's cut for now | What would trigger building it |
 |---|---|---|
-| Relay deployed anywhere public | Built and tested (see above), but this session had no Vercel/hosting account access to actually deploy it | Whenever cross-device retro sessions are wanted for real, not just tested locally |
+| Relay deployed anywhere public | Built, tested, and now deploy-ready (`render.yaml` + `SQUAD_PULSE_RELAY_URL`-driven build step — see `relay/README.md`), but this session has no hosting/Vercel account access to actually click "deploy" | Whoever has account access runs the Render blueprint (or any equivalent host) and sets the Vercel env var — see `relay/README.md`'s "Wiring the deployed static site to this relay" for the exact steps, including testing it on a Preview deployment before merging to `main` |
 | Co-facilitator "finish retro" ownership | A session doc is self-contained, so a co-facilitator's device can watch/reveal/override live over the relay with no extra work — but "Finish & apply" writes into the SQUAD's own rating, which lives in whichever browser's local board actually holds that squad. A co-facilitator on a genuinely different, independently-seeded browser doesn't have that squad locally, so their "Finish" would write nowhere useful. Open question, not yet resolved: should only the session's originating device be allowed to finish, or does finishing need to become a relay-carried action the owning board listens for? | Whenever a real second facilitator device needs to finish a retro, not just watch one |
 | Save-board / Load-board-to-file | `local-store.js` already persists the board via `localStorage`, which covers the same browser/device | Once someone needs a board to move between browsers/devices without a relay |
-| Vercel deployment (the static site itself) | Nothing has been deployed yet — the app is now Vercel-ready (`vercel.json` + `local-store.js`), just not connected to a Vercel project | Whenever a public URL is wanted |
+| Relay deployed on Vercel itself (one deployment, not two) | Deliberately rejected, not just deferred — see the locked decision above and `relay/README.md`'s "Why not a Vercel Function" | Only if Vercel's WebSocket support later guarantees same-instance routing without an external store, which would remove the reason this was rejected |
 | Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing | Once the marketing site (separate Claude Code project) is further along |
 
 ## Suggested next step
 
 Two independent tracks, either can go first:
 
-1. **Deploy the relay and the static site somewhere public.** No code changes needed for either —
-   `relay/README.md` covers any small Node host for the relay; `vercel.json` is ready for the
-   static site. This is the real unblock for testing cross-device retro sessions with a real team,
-   not just in this repo's own tests.
+1. **Deploy the relay.** No code changes needed — the static site is already live on Vercel; the
+   relay just needs someone with a Render (or equivalent) account to run the `render.yaml`
+   blueprint at the repo root, then set `SQUAD_PULSE_RELAY_URL` in Vercel's project settings (scope
+   it to Preview first to test on this branch before merging to `main`, then Production). Full
+   steps: `relay/README.md`'s "Deploying it" and "Wiring the deployed static site to this relay".
+   This is the real unblock for testing cross-device retro sessions with a real team, not just in
+   this repo's own tests.
 2. **Resolve the co-facilitator "finish retro" question** above, then build whatever it takes
    (likely a relay-carried "finish" action the session's owning device listens for and applies
    locally, rather than a raw squads-collection write from any device).
@@ -226,3 +241,30 @@ Two independent tracks, either can go first:
   report themselves unavailable (clear error dialog, no hang, no runaway reconnect spam) rather
   than working end to end — deploying the relay (see "Suggested next step") is what actually
   unblocks cross-device retro testing.
+- 2026-09-12 — Made the relay actually deployable, for two audiences stated explicitly this round:
+  embedding this on a company website (subdomain/iframe) and forking the repo so others can
+  self-host it entirely offline on their own LAN, to route around their own security constraints.
+  Considered deploying the relay as a Vercel Function using their newly-public-beta native
+  WebSocket support, so the whole app ships from one Vercel project — checked this directly against
+  Vercel's own current docs rather than assuming the earlier sketch in `docs/standalone-plan.md`
+  still held, and rejected it: a new connection there isn't guaranteed to land on the same Function
+  instance as an existing one, and Vercel's fix for that (external Redis) is a real ongoing
+  dependency neither audience wants — see the new locked decision above and `relay/README.md`'s "Why
+  not a Vercel Function" for the full reasoning. Instead: (1) added `render.yaml` at the repo root
+  so deploying the unmodified `relay/server.js` to Render is close to one-click (reads `PORT` from
+  the environment already, so nothing else to configure); (2) added
+  `scripts/generate-relay-config.js` as `vercel.json`'s new `buildCommand`, which writes
+  `public/relay-config.js` from a `SQUAD_PULSE_RELAY_URL` environment variable set in Vercel's
+  project settings — scopeable to Preview (to test a real relay on this branch before merging) or
+  Production independently, with the build step a safe no-op (checked-in placeholder stays) when
+  the variable isn't set, so a bare fork with zero config still deploys and degrades exactly as the
+  previous round's fixes intended. `relay/README.md` now also spells out the plain `npm start` +
+  hand-set `ws://<LAN-IP>:8787` path for the LAN self-host case, which needed no code changes at
+  all — the relay was already a dependency-free Node process. Verified end to end by the new
+  `tests/test_relay_config_injection.py`: the generator script's output for both the set and unset
+  cases, and — driven through `index.html`'s real script order — that an injected value actually
+  wins over the page's own protocol/hostname default rather than just asserting it should. Full
+  19-file suite re-verified passing with zero JS errors and zero regressions. Still true: nobody has
+  actually clicked "deploy" on the relay yet, since that needs a Render (or equivalent) account this
+  session doesn't have — the Render blueprint and the Vercel env var are the two concrete steps left
+  for whoever does.

@@ -74,21 +74,33 @@ scoped to one sitting instead of forever, and without needing a database to get 
 
 ## Where this runs
 
-- **Relay**: one small Vercel Function using their native WebSocket support (public beta, requires
-  Fluid compute, which is on by default for new projects) — plain Node with the `ws` library, room
-  state kept in an in-memory `Map` keyed by session code. Vercel's own guidance is to reach for
-  external state (Redis/KV) only when you need to coordinate connections *across multiple function
-  instances*; at the traffic a consultancy's website demo will see, one instance comfortably holds
-  every concurrently active room, so there's no database to run or pay for here at all. If usage ever
-  outgrows that, Vercel KV is the one thing to add later — not a redesign.
+- **Relay**: originally sketched here as one small Vercel Function using their native WebSocket
+  support, with room state kept in an in-memory `Map` keyed by session code.
   > **Update, 2026-09-11:** `relay/server.js` is built exactly this way (plain Node + `ws`, an
   > in-memory `Map` keyed by session code) and works, verified against real WebSocket connections
-  > and real encrypted traffic — see `relay/README.md`. It has NOT been deployed as a Vercel
-  > Function specifically; that would need Vercel account access this session didn't have to verify
-  > end-to-end, and Vercel's WebSocket support is a narrower, newer feature worth confirming against
-  > directly rather than assuming. As written it's a completely ordinary Node process, so it'll also
-  > run unmodified on any small host that keeps a process alive and reachable (Render, Fly.io,
-  > Railway, a small VPS, a container) — pick whichever is easiest to actually stand up first.
+  > and real encrypted traffic — see `relay/README.md`.
+  > **Update, 2026-09-12 — deliberately NOT deployed as a Vercel Function, decision locked in:**
+  > Vercel's WebSocket support reached public beta in mid-2026; checked directly against their docs
+  > before relying on it, rather than assuming the sketch above still held. It does **not** guarantee
+  > a new connection reaches the same Function instance as an existing one, and Vercel's own guidance
+  > for anything needing shared state across connections — rooms, presence, pub/sub, exactly this
+  > relay's job — is to add an external store (Redis from the Vercel Marketplace). That's a real,
+  > ongoing dependency this project doesn't want on either of its two audiences: someone embedding
+  > this on a company website, and someone forking it to self-host entirely offline on a LAN (the
+  > repo's second, equally real purpose — see `STATUS.md`). Requiring Redis turns "no persistent
+  > database, ever" into "small database, technically," and turns "fork this, run one Node process"
+  > into "fork this, run one Node process *and* provision Redis." Instead, `relay/server.js` stays a
+  > completely ordinary, dependency-free (beyond `ws`) Node process, deployed as a genuinely separate
+  > small service — a `render.yaml` blueprint at the repo root makes Render specifically about as
+  > close to one-click as this gets (see `relay/README.md`), and the exact same process runs
+  > unmodified on Fly.io, Railway, a VPS, a container, or literally `npm start` on a LAN machine with
+  > no cloud account at all. One process holding the in-memory `Map` sidesteps the
+  > multiple-instances-don't-share-state problem entirely, at the cost of being a second deployment
+  > target instead of one — the right trade for this project's actual audiences. The static site
+  > learns that relay's URL via a `SQUAD_PULSE_RELAY_URL` Vercel environment variable and a small
+  > build step (`scripts/generate-relay-config.js`) rather than a hand-edited `index.html`, so it can
+  > be set differently for a Preview deployment (to test before merging) than for Production — see
+  > `relay/README.md`'s "Wiring the deployed static site to this relay".
 - **Frontend**: the same single-page app, deployed as a static site. Zero-config on Vercel either
   way.
 

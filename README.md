@@ -51,6 +51,10 @@ tests/             Playwright + Python regression suite (see tests/README.md)
 docs/
   facilitated-retro-spec.md   Feature spec + history for the retro-session work
   standalone-plan.md          Architecture plan for the standalone/embedded version
+scripts/
+  generate-relay-config.js    Vercel build step -- wires a deployed relay's URL in via an
+                               env var (see relay/README.md)
+render.yaml        One-click-ish Render blueprint for deploying relay/ (see relay/README.md)
 vercel.json
 ```
 
@@ -74,6 +78,21 @@ cd relay && npm install && npm start
 of the above is enough to try a full retro across two browser windows. Tribe
 view and the rest of the board never touch the relay — only a live session
 does.
+
+## Deploying for real
+
+Two intended uses, both covered:
+
+- **Embedding this somewhere public** (e.g. a subdomain + iframe on a
+  website): the static site deploys to Vercel as-is; the relay deploys
+  separately as a plain Node process — `render.yaml` at the repo root makes
+  that close to one-click on [Render](https://render.com). Full steps,
+  including testing a real relay on a Preview deployment before merging to
+  `main`: `relay/README.md`.
+- **Forking this to self-host on a LAN**, e.g. to route around a company's
+  own security constraints: run the relay with `npm start` and the static
+  site with any file server, both on the same network, no cloud account or
+  external dependency needed at all. Also in `relay/README.md`.
 
 ## Testing
 

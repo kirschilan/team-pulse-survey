@@ -29,18 +29,94 @@ directly) is enough to test a real multi-device retro on one machine
 ## Deploying it
 
 This is a plain Node process using the `ws` library — nothing Vercel- or
-serverless-specific. It'll run on any small host that can keep a Node
-process alive and reachable over WebSocket (Render, Fly.io, Railway, a
-small VPS, a container, etc.). Deploy it, then set
-`window.SQUAD_PULSE_RELAY_URL = "wss://your-relay-host"` before
-`local-store.js` loads (e.g. a small inline `<script>` added at deploy
-time, same as the one already in `index.html`).
+serverless-specific, and deliberately so (see "Why not a Vercel Function"
+below). It'll run on any small host that can keep a Node process alive and
+reachable over WebSocket. This repo ships a `render.yaml` blueprint at the
+repo root for [Render](https://render.com) specifically, since Render's
+free web-service tier needs nothing beyond a GitHub account to try:
 
-`docs/standalone-plan.md` sketches deploying this as a Vercel Function
-using their native WebSocket support instead, so the whole app ships from
-one place — that's still a real option, just not one this session could
-verify end-to-end (no Vercel account access here). The protocol below
-doesn't care where it runs.
+1. Render dashboard → **New** → **Blueprint** → point it at this repo (or
+   your fork). It reads `render.yaml` and creates a `squad-pulse-relay`
+   web service rooted at `relay/`, running `npm install` then `npm start`.
+2. Render assigns a public URL like `https://squad-pulse-relay-xxxx.onrender.com`
+   — the relay's `PORT` env var is already read from `process.env.PORT`
+   (`server.js`), which Render sets automatically, so nothing else to
+   configure there. The WebSocket URL is the same host with `wss://`:
+   `wss://squad-pulse-relay-xxxx.onrender.com`.
+3. Point the static site at it — see "Wiring the deployed static site to
+   this relay" below. Don't have a Render account or would rather use
+   something else? Fly.io, Railway, a small VPS, or a container all work
+   identically; `render.yaml` is just the one this repo makes closest to
+   one-click.
+
+Free tiers on hosts like this typically spin the process down after a
+period of no traffic and take a few seconds to wake back up on the next
+connection — fine here, since a room is meant to be ephemeral anyway and
+`relay-client.js` already reconnects with backoff.
+
+### Wiring the deployed static site to this relay
+
+The static site (`public/`) needs to know the relay's URL at deploy time.
+Rather than hand-editing `index.html` per environment, `vercel.json` runs
+`scripts/generate-relay-config.js` as its build step, which writes
+`public/relay-config.js` from a `SQUAD_PULSE_RELAY_URL` environment
+variable — set it in your Vercel project's **Settings → Environment
+Variables**, scoped to whichever environment(s) you want:
+
+- **Preview** (or a specific branch) — point it at a relay you're testing
+  with, so you can verify a real cross-device retro session on a preview
+  URL *before* merging to `main`, without touching Production.
+- **Production** — point it at your real, durably-running relay once
+  you're happy.
+
+If the variable isn't set for a given environment/deploy, the build step
+is a safe no-op — `public/relay-config.js` stays the checked-in
+placeholder, and `index.html`'s own protocol/hostname default applies
+exactly as before (a local relay when the page itself is `file://` or
+`localhost`, otherwise `null`/"unavailable" rather than a doomed
+`localhost` guess). This means forking the repo and deploying straight to
+Vercel with zero configuration still works — it just runs with retro
+sessions correctly reporting themselves unavailable until you do set the
+variable. See `tests/test_relay_config_injection.py` for this wiring
+verified end to end (the generator script's output for both cases, and
+that an injected value actually wins over `index.html`'s own default).
+
+### Self-hosting on a LAN, with no cloud account at all
+
+None of the above is required to run this for real. The relay is a
+zero-dependency-beyond-`ws` Node process by design specifically so a fork
+can run entirely offline, e.g. inside a company network whose security
+policy won't allow a public cloud dependency:
+
+```
+cd relay && npm install && npm start      # relay, on this machine
+cd ../public && python3 -m http.server    # static site, on this machine
+```
+
+Then set `window.SQUAD_PULSE_RELAY_URL = "ws://<this-machine's-LAN-IP>:8787"`
+(a small inline `<script>` before `local-store.js` in `index.html`, same
+mechanism as the Vercel path above, just hand-edited instead of
+environment-variable-driven) so teammates on the same LAN can reach it by
+IP. Nothing here ever needs to leave the network.
+
+### Why not a Vercel Function
+
+Vercel Functions gained native WebSocket support (public beta, 2026) and
+`docs/standalone-plan.md` originally floated using it so the whole app —
+relay included — ships from one Vercel project. Verified against Vercel's
+own docs before committing to it: **a new WebSocket connection is not
+guaranteed to reach the same Function instance as an existing one**, and
+Vercel's own guidance for anything needing shared state across connections
+(rooms, presence, pub/sub — exactly this relay's job) is to add an
+external store like Redis. That's a real, ongoing dependency neither
+audience for this repo wants: it complicates "fork this and run it on a
+LAN with nothing else to set up" (now you need a Redis instance too, not
+just Node), and it turns "no persistent database, ever" (see `STATUS.md`'s
+locked decisions) into "small database, technically." A plain Node
+process deployed anywhere that keeps one process alive avoids the
+instance-pinning problem entirely — there's only ever one instance holding
+the in-memory `Map` this design already relies on — at the cost of being a
+second deployment target instead of one. That trade is the right one here.
 
 ## Wire protocol
 
