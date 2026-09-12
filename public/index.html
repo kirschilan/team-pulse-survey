@@ -21,6 +21,7 @@
     <div class="actions">
       <span class="sync-note" id="syncNote"><span class="sync-dot" id="syncDot"></span><span id="syncText">Connecting&hellip;</span></span>
       <button class="btn ghost" id="joinCodeBtn" type="button">Join a retro</button>
+      <button class="btn ghost" id="backToRetroBtn" type="button" hidden>&larr; Back to my retro</button>
       <div class="view-switch" role="tablist" aria-label="View">
         <button class="view-btn" data-view="tribe" type="button" role="tab">Tribe view</button>
         <button class="view-btn" data-view="squad" type="button" role="tab">Squad view</button>
@@ -174,12 +175,18 @@
     <div class="card" id="joinCard">
       <h2>Connecting&hellip;</h2>
     </div>
-    <!-- This screen has no nav back to Admin's own diagnostics panel (by
-         design -- a participant shouldn't see the facilitator's board), so
-         it needs its own way to show what's actually happening: a session
-         that never opens, or a relay that can't be reached, looks
-         identical ("Connecting..." forever, or "isn't open") without this
-         -- see helpers.js's diag(), which updates every ".diag-log". -->
+    <div class="actions" style="margin-top:12px;">
+      <button class="btn ghost" id="exitJoinBtn" type="button">&larr; Back to Squad Pulse</button>
+    </div>
+    <!-- "Back to Squad Pulse" above only TOGGLES this screen's visibility
+         (see retro-join.js's exitJoinScreen()/returnToJoinScreen()) --
+         the participant still can't see Admin's own diagnostics panel (by
+         design, a participant shouldn't see the facilitator's board), so
+         this join screen needs its own way to show what's actually
+         happening while it's the one showing: a session that never opens,
+         or a relay that can't be reached, looks identical ("Connecting..."
+         forever, or "isn't open") without this -- see helpers.js's diag(),
+         which updates every ".diag-log". -->
     <details class="legend" id="joinDiagPanel" style="margin-top:14px;">
       <summary>Trouble joining? Tap for diagnostics <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
       <div style="padding:0 18px 16px;">

@@ -20,7 +20,7 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 - Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-12) — see
   `tests/README.md`. **`tests/unit/`**: 3 plain-Node files (`node:test`, nothing to install) for
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
-  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 26 Playwright files
+  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 27 Playwright files
   (named for the feature/flow each one covers) for everything that needs a real browser, running in
   around 2 minutes total after two 2026-09-12 perf passes (see the session log below) — zero JS errors on
   the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
@@ -243,9 +243,23 @@ is set on a device:
 7. Promote from opt-in to default-on once proven; retire the "no persistent database" language in
    this file, `README.md`, and `docs/standalone-plan.md` for good.
 
-Also on deck, not yet scheduled into a specific step: a participant's way to leave the retro join
-screen and return to the main app and back to their own participation; a co-facilitator join path
-via code/link (payoff of steps 5–6 plus a facilitator-role join flow).
+Story 9 (**DONE, 2026-09-12**): a participant's way to leave the retro join screen and return to
+the main app and back to their own participation. `retro-join.js` gained `exitJoinScreen()`/
+`returnToJoinScreen()` — a header "← Back to my retro" button and an on-screen "← Back to Squad
+Pulse" button that ONLY toggle which section is visible; `state.joinSessionId` and
+`listenJoinSession()`'s listener are never torn down, so the session keeps updating in the
+background and returning always shows current state. `joinCodeBtn` stays hidden the whole time
+(exited or not) so a participant can't accidentally start joining a second session while one's
+still open. Written test-first: `tests/test_retro_join_exit_and_return.py` covers the happy path
+(submit → exit → return shows the same personal results, not a re-shown survey) and two rainy-day
+cases (exiting mid-survey, before submitting anything, preserves the in-progress draft rather than
+resetting it; a device that never joined anything never shows the "back to my retro" button at
+all). Passed on the very first real run once the buttons existed — no surprises this time, unlike
+step 6's hydrate-freezing bug.
+
+Story 10, still not built: a co-facilitator join path via code/link (payoff of steps 5–6 plus a
+facilitator-role join flow — a second device getting the FACILITATOR's view of an open session,
+not just the participant join screen).
 
 ### Security fix (2026-09-12): typed team codes replaced with a high-entropy link/QR secret
 
