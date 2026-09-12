@@ -306,6 +306,21 @@ Two independent tracks, either can go first:
   explicitly forgets its code from this device's local "known codes" bookkeeping the moment it's
   marked closed (previously only a hard delete did this), so a status-only update can't leave this
   device silently reconnecting to every session it's ever started, forever.
+  A fourth round, from a follow-up report with the same symptom ("stuck in Starting...") but a diag
+  log this time showing the write had actually succeeded (`Started retro session ... Sessions
+  snapshot #4: 1 doc(s)`), found the real remaining bug: every db snapshot listener gates its own
+  re-render on `state.ui.view==="..."` (see `db.js`) — a snapshot that arrives while a view is
+  hidden updates `state` correctly but never touches that view's DOM, since nothing was watching.
+  `setView()` (`app.js`) only ever toggled `hidden` attributes, so switching back to a view just
+  un-hid whatever HTML was already there from before — stale. This is exactly what happened: click
+  "Start retro", switch to Admin to check Diagnostics while the relay connects (a real few-second
+  wait watching a cold relay wake up), the session starts successfully while Admin is showing, then
+  switching back to Squad shows the disabled button from before, forever, since nothing re-rendered
+  it. Fixed by having `setView()` call `renderAll()` on every switch — cheap (in-memory state to
+  DOM, no network), the same function already used elsewhere for "state changed broadly, refresh
+  everything." Verified with a dedicated test that reproduces the exact sequence (start a session,
+  switch away before its snapshot lands, seed the doc while hidden, switch back, confirm the real
+  session card shows) — `test_view_switch_refreshes_stale_state.py`.
   Verified end to end, not just by inspection: a synthetic sync throw and a synthetic unhandled
   rejection both confirmed reaching `#diagLog`
   (`test_uncaught_error_diagnostics.py`); the join screen's own diagnostics panel confirmed reachable

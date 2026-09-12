@@ -26,6 +26,19 @@ function setView(view){
   state.ui.view = view;
   try{ localStorage.setItem("squadpulse:view", view); }catch(e){ /* per-viewer convenience only */ }
   applyViewVisibility();
+  // Every db snapshot listener gates its own re-render on
+  // `state.ui.view==="..."` (see db.js) -- an update that arrives while a
+  // view is hidden updates `state` correctly but never touches that view's
+  // DOM, since nothing was watching. Switching back to it before now just
+  // un-hid whatever was there from before, stale. A real report: a
+  // facilitator clicked "Start retro session", switched to Admin to check
+  // Diagnostics while the relay connected, and the button was still
+  // showing "Starting..." on Squad view even though the session had
+  // already started successfully -- switching views never re-rendered it.
+  // Always rendering everything fresh on every switch is the fix: cheap
+  // (in-memory state -> DOM, no network), and the same function already
+  // used elsewhere for "state changed broadly, refresh everything".
+  renderAll();
 }
 document.querySelectorAll(".view-btn").forEach(function(b){
   b.addEventListener("click", function(){ setView(b.getAttribute("data-view")); });
