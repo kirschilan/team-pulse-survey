@@ -12,12 +12,22 @@ live retro sessions) without a cleanup pass in between.
 of it safely. Treat this as a backlog, not a fire. The "Suggested order"
 section at the end ranks by risk/reward, not by section order above it.
 
-**Status, 2026-09-12**: items 1-5 of the suggested order below are done —
-see `STATUS.md`'s session log for that date. Left in this document
+**Status, 2026-09-12**: all items are done except naming/abbreviation
+consistency — see `STATUS.md`'s session log for both rounds (items 1-5
+that day, then `state.editing`'s split, the `dimensions-templates.js`
+split, and the `esc()` audit in a follow-up round). Left in this document
 unmarked below (rather than edited out) so the reasoning stays visible;
-the items themselves are complete. Still open: `state.editing`'s hidden
-dual shape, splitting `dimensions-templates.js`, naming/abbreviation
-consistency, and the `esc()` safety audit.
+the items themselves are complete. The `esc()` audit found one real, if
+low-severity-today, gap: `unitLower()`/`unitPluralLower()` output went
+into `innerHTML` unescaped in 7 places, inconsistent with
+`templates.js`'s own `esc(t.unitPlural||t.unit)` — fixed, though nothing
+in the current UI actually lets a user set that value to anything
+attacker-controlled yet (see the session log for the honest reasoning).
+Still open, deliberately deferred: naming/abbreviation consistency
+(`sq`/`squad`, `sess`/`session`, `dim`/`d`) — broad, stylistic, real
+regression risk for renaming across ~3400 lines for cosmetic benefit
+alone; better done incrementally, file by file, whenever that file is
+next touched for a real reason.
 
 ## Executive summary
 

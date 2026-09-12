@@ -7,7 +7,7 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 ## What's real right now
 
 - `public/` is a working static site — `index.html` + `styles.css` + `vendor/qrcode.js` +
-  `local-store.js` + `app.js` + ten feature modules under `public/js/` (see "The app's file
+  `local-store.js` + `app.js` + twelve feature modules under `public/js/` (see "The app's file
   layout" below). Originally ported verbatim from the Claude Artifact prototype
   (`squad-pulse.html`) as one 2396-line `app.js`, then split by feature on 2026-09-11 (and
   `retro.js` split again, into its facilitator/participant halves, on 2026-09-12) with zero
@@ -58,7 +58,8 @@ along the seams the original file already had (`// ---------- section ----------
 | `squads.js` | Squad CRUD, Admin's squad list, Squad view, and the `persistDimensionRating(s)` writer. |
 | `retro-facilitator.js` | The FACILITATOR half of retro sessions: start/close, the session card, reveal-mode/override + sprint note, finish-and-apply, the live response tally, QR rendering. Split out from a single `retro.js` on 2026-09-12 — see the session log below. |
 | `retro-join.js` | The PARTICIPANT half: the join screen, the blind interleaved statement survey, direct-rating swatches, submission, and the personal-result view. Shares almost no code with `retro-facilitator.js` (different device, different role) — that's what made the split clean. |
-| `dimensions-templates.js` | The dimension manager and template save/load/delete. |
+| `dimensions.js` | The dimension manager (add/rename/reorder/remove). Split out of a combined `dimensions-templates.js` on 2026-09-12. |
+| `templates.js` | Template save/load/delete. Split out of the same combined file, same day. |
 | `csv.js` | CSV export and import (parsing, column matching, preview, apply). |
 | `db.js` | `initDb()` — the Firestore-shaped snapshot listeners that wire `db` writes into `state` and back into a render. |
 | `crypto.js` | AES-256-GCM encrypt/decrypt for retro-session documents, key derived from the session code. |
@@ -71,7 +72,7 @@ suite (every test navigates via `file://`) and the README's "open `index.html` d
 handful of top-level `document.getElementById(...)` lookups each file does for elements that are
 already in the DOM by the time these scripts run (they sit at the end of `<body>`) — every actual
 cross-file *call* happens inside a function body triggered later (an event handler, or `start()`),
-by which point every file has finished loading, so the specific order between the ten files
+by which point every file has finished loading, so the specific order between the twelve files
 doesn't otherwise matter.
 
 ## The one thing to know before touching the app
@@ -381,3 +382,20 @@ Two independent tracks, either can go first:
   than discovered later; all 5 runs were clean. Deliberately not touched this round (still on the
   report's backlog, lower priority): `state.editing`'s hidden dual shape, splitting
   `dimensions-templates.js`, naming/abbreviation consistency, and the `esc()` safety audit.
+- 2026-09-12 — Finished the refactoring report's remaining items (except naming consistency, kept
+  deferred — see the report's updated "Status" note for why): split `state.editing` into
+  `state.editingCell`/`state.editingOverride` (two plainly-named slots instead of one object with a
+  hidden `mode:"session"` flag — see `modals.js`'s new `activeEditor()`); split
+  `dimensions-templates.js` into `dimensions.js` (the dimension manager) and `templates.js` (template
+  save/load/delete), the same device-role-style seam as the earlier `retro.js` split; and ran the
+  `esc()` safety audit the report flagged as unaudited. That audit found one real inconsistency:
+  `unitLower()`/`unitPluralLower()` output went into `innerHTML` unescaped in 7 places (`render.js`
+  ×2, `squads.js` ×3, `csv.js` ×2), while `templates.js`'s own `templateRowHtml` already wrapped the
+  same underlying value (`t.unitPlural||t.unit`) in `esc()` — fixed all 7 for consistency. Honest
+  caveat, not glossed over: nothing in the current UI actually lets a user set `state.config.unit`/
+  `unitPlural` to anything attacker-controlled (no exposed input writes to it directly; every path —
+  `DEFAULT_CONFIG`, the three starter templates, `saveCurrentAsTemplate` — only ever copies a value
+  already known to be a plain English word), so this closes a latent inconsistency rather than a
+  live exploit — worth having fixed regardless, since the next thing that touches this code shouldn't
+  have to rediscover the gap. Full 21-file Playwright suite plus the 34-test unit suite re-verified
+  passing with zero regressions after each of the three changes.

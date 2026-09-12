@@ -391,8 +391,9 @@ function openSessionOverrideEditor(sess, dimKey){
   var responses = state.sessionResponses || [];
   var computed = effectiveDimResult(d, { overrides:{} }, responses);
   var existingOverride = sess.overrides && sess.overrides[dimKey];
-  state.editing = {
-    mode: "session", sessionId: sess.id, dimKey: dimKey,
+  state.editingCell = null;
+  state.editingOverride = {
+    sessionId: sess.id, dimKey: dimKey,
     color: (existingOverride && existingOverride.color) || (computed && computed.color) || "unscored",
     trend: (existingOverride && existingOverride.trend) || "flat",
     note: (existingOverride && existingOverride.note) || ""
@@ -402,7 +403,7 @@ function openSessionOverrideEditor(sess, dimKey){
   document.getElementById("modalGreen").textContent = d.green||"";
   document.getElementById("modalRed").textContent = d.red||"";
   var noteBox = document.getElementById("modalNote");
-  noteBox.value = state.editing.note;
+  noteBox.value = state.editingOverride.note;
   noteBox.placeholder = "Why override this? (optional)";
   updateSwatchSelection();
   updateTrendSelection();

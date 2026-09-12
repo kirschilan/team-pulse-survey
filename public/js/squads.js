@@ -50,7 +50,7 @@ function renderAdminSquadList(){
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
     '</div>';
   }).join("");
-  document.getElementById("adminSquadList").innerHTML = html || '<p class="hint" style="margin:0;">No '+unitPluralLower()+' yet — add one below.</p>';
+  document.getElementById("adminSquadList").innerHTML = html || '<p class="hint" style="margin:0;">No '+esc(unitPluralLower())+' yet — add one below.</p>';
   document.querySelectorAll(".admin-squad-name").forEach(function(input){
     input.addEventListener("change", function(){
       renameSquad(input.getAttribute("data-id"), input.value.trim() || "Untitled " + unitLower());
@@ -85,7 +85,7 @@ function renderSquadPicker(){
   var html = squads.map(function(sq){
     return '<button class="btn squad-pick-btn'+(sq.id===state.ui.selectedSquadId?" active":"")+'" data-id="'+esc(sq.id)+'" type="button" dir="auto">'+esc(sq.name)+'</button>';
   }).join("");
-  document.getElementById("squadPicker").innerHTML = html || '<p class="hint" style="margin:0;">No '+unitPluralLower()+' yet — ask an admin to add one.</p>';
+  document.getElementById("squadPicker").innerHTML = html || '<p class="hint" style="margin:0;">No '+esc(unitPluralLower())+' yet — ask an admin to add one.</p>';
   document.querySelectorAll(".squad-pick-btn").forEach(function(btn){
     btn.addEventListener("click", function(){ selectSquad(btn.getAttribute("data-id")); });
   });
@@ -151,7 +151,7 @@ function renderSquadView(){
   var container = document.getElementById("squadDetail");
   var sq = state.ui.selectedSquadId ? findSquad(state.ui.selectedSquadId) : null;
   if(!sq){
-    container.innerHTML = '<p class="squad-empty">Select your '+unitLower()+' above to enter or review its ratings.</p>';
+    container.innerHTML = '<p class="squad-empty">Select your '+esc(unitLower())+' above to enter or review its ratings.</p>';
     return;
   }
   container.innerHTML = renderSessionCardHtml(sq) + renderSquadDetailHtml(sq);
