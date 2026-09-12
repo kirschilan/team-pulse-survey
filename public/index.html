@@ -265,10 +265,23 @@
 <script>
   // Where retro sessions actually live-sync (relay-client.js + crypto.js
   // below) -- ws:// for a plain local relay, wss:// once it's deployed
-  // somewhere real. Defaults to a locally-run relay (see relay/README.md);
-  // override by setting this before local-store.js loads, e.g. from a
-  // small inline script added at deploy time.
-  window.SQUAD_PULSE_RELAY_URL = window.SQUAD_PULSE_RELAY_URL || "ws://localhost:8787";
+  // somewhere real. Only defaults to a locally-run relay when this PAGE
+  // ITSELF is local (file:// or localhost) -- a real deployment (Vercel
+  // preview, production, anywhere else) must NOT silently fall back to
+  // "ws://localhost:8787", since that means the VISITOR'S OWN machine, not
+  // a real relay: Chrome flags that as a cross-context private-network
+  // request (a scary permission prompt for a connection that can never
+  // succeed), and relay-client.js would then retry forever. Leave it
+  // explicitly null instead so relay-client.js can recognize "no relay
+  // configured" and fail fast with one clear message, not silently forever.
+  // Set this to a real "wss://your-relay-host" BEFORE this script (or via
+  // a build-time env substitution) once a relay is actually deployed --
+  // see relay/README.md.
+  window.SQUAD_PULSE_RELAY_URL = window.SQUAD_PULSE_RELAY_URL || (
+    (location.protocol === "file:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")
+      ? "ws://localhost:8787"
+      : null
+  );
 </script>
 <script src="js/crypto.js"></script>
 <script src="js/relay-client.js"></script>

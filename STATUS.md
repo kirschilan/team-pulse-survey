@@ -16,16 +16,21 @@ docs in `docs/` are reference material this file points to, not duplicates of it
   dimension template, Tribe-view cross-squad rollup, and the facilitated live-retro flow (join by
   code/QR, blind statement survey or direct green/yellow/red pick depending on the dimension,
   live or held reveal, facilitator override, finish-and-apply into the squad's real ratings).
-- 15 files' worth of regression coverage under `tests/` (named for the feature/flow each one
+- 18 files' worth of regression coverage under `tests/` (named for the feature/flow each one
   covers — see `tests/README.md`), all passing with zero JS errors as of the last run
-  (2026-09-11), driven by Playwright against a fake in-memory store (`tests/fixtures/fake_store.html`
-  + `tests/fixtures/build_page.py`) standing in for the real backend described below, plus one file
-  (`tests/test_local_store.py`) that deliberately loads the real `public/index.html` to cover
-  `local-store.js` itself. Runs automatically on every push/PR via
-  `.github/workflows/tests.yml`. See `tests/README.md` for how to run them locally.
-- `vercel.json` is in place for zero-config static hosting (`outputDirectory: "public"`), but
-  **nothing has been deployed to Vercel yet** — this repo has never been connected to a Vercel
-  project.
+  (2026-09-12). Most drive the app through a fake in-memory store
+  (`tests/fixtures/fake_store.html` + `tests/fixtures/build_page.py`) standing in for the real
+  backend, for speed and determinism; a handful deliberately bypass it because they exist
+  specifically to test what it stands in for — `test_local_store.py` (the real `localStorage`
+  board), `test_relay_cross_device_sync.py` (the real relay, WebSocket, and encryption, together),
+  and `test_relay_error_handling.py` (the relay's failure modes). Runs automatically on every
+  push/PR via `.github/workflows/tests.yml`. See `tests/README.md` for how to run them locally.
+- `vercel.json` is in place for zero-config static hosting (`outputDirectory: "public"`), and the
+  repo **is now connected to Vercel** — feature branches deploy to preview URLs (confirmed
+  2026-09-12 via real testing on one). The relay is not part of that deployment and isn't deployed
+  anywhere yet (see the relay bullet below and `relay/README.md`) — a preview/production Vercel
+  deployment with no relay configured is expected to run the board fully, with live retro sessions
+  correctly reporting themselves unavailable rather than hanging (see "Deliberately not built yet").
 - **Retro sessions now sync across real devices.** `relay/` is a small standalone Node/`ws`
   WebSocket server; `public/js/relay-client.js` + `public/js/crypto.js` route every
   `sessions`-rooted `db` call to it (encrypted, per the decision below) instead of `localStorage`,
@@ -188,3 +193,36 @@ Two independent tracks, either can go first:
   zero JS errors. Full existing 16-file suite re-verified passing with zero regressions. Not yet
   deployed anywhere public (see `relay/README.md` for how). Left open: co-facilitator "finish
   retro" ownership (see the not-built table above) — explicitly out of scope for this step.
+- 2026-09-12 — Fixed five real bugs found by testing the deployed Vercel preview, none of them
+  visible from local `file://` testing alone. Root cause of the big one: `index.html` defaulted
+  `SQUAD_PULSE_RELAY_URL` to `ws://localhost:8787` unconditionally, so on a real deployment the
+  page tried to reach a WebSocket on the *visitor's own machine* — Chrome's Private Network Access
+  policy pops a permission prompt for that (an https:// page opening a loopback socket), nothing
+  was ever listening there, and the old unbounded-retry loop then reconnected every 5s forever.
+  Clicking "Start retro session" repeatedly (since nothing appeared to happen) spawned one orphaned
+  room per click, which is why the diagnostic log showed nine different codes all reconnecting at
+  once. Fixes: (1) `index.html` now only defaults to a local relay when the page itself is local
+  (`file://`/`localhost`/`127.0.0.1`) — a real deployment with no override gets `null`; (2)
+  `relay-client.js` fails fast with zero WebSocket attempts when no relay is configured, and gives
+  up after 8 reconnect attempts (bounded backoff) instead of retrying forever when one is
+  configured but unreachable, surfacing a real error via a new `unavailable` rejection on writes;
+  (3) `retro.js`'s "Start retro session" button is now guarded by a module-level flag (not just its
+  own `disabled` attribute, which a re-render can hand back fresh mid-request) so rapid/duplicate
+  clicks can't spawn more than one session, and a failed start now opens a real error dialog
+  instead of silently doing nothing; (4) `helpers.js`'s `diag()` no longer overwrites the log's
+  `textContent` while the user has an in-progress selection inside it, so the diagnostic log can
+  actually be selected and copied; (5) added the board's own default dimension set as a proper,
+  reloadable starter template (`state.js`'s `SPOTIFY_TEMPLATE`, "Spotify Squad Health Check") —
+  previously it only existed as seed data for a fresh board with no way to load it back after
+  switching to Five Dysfunctions or Tuckman. All five verified directly (not just by inspection):
+  the relay-URL defaulting logic as a pure function across all four input cases, the fail-fast and
+  bounded-retry behavior via an isolated harness loading only `crypto.js`+`relay-client.js`
+  (`test_relay_error_handling.py`), the click-guard via 5 rapid clicks producing exactly one
+  session doc, the selection-preservation via a real `Selection`/`Range`, and the Spotify template
+  via load/switch/reload round-tripping all 12 dimensions (`test_starter_template_spotify.py`).
+  Full 18-file suite (16 previous + these 2 new files) re-verified passing with zero JS errors and
+  zero regressions. Still true, and now more clearly *surfaced* rather than silently broken: the
+  relay isn't deployed anywhere public yet, so live retro sessions on the Vercel preview correctly
+  report themselves unavailable (clear error dialog, no hang, no runaway reconnect spam) rather
+  than working end to end — deploying the relay (see "Suggested next step") is what actually
+  unblocks cross-device retro testing.

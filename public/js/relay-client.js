@@ -16,7 +16,10 @@
 // in one flat localStorage blob.
 var SquadPulseRelay = (function(){
 
-  var RELAY_URL = window.SQUAD_PULSE_RELAY_URL || "ws://localhost:8787";
+  // index.html owns the "default to a local relay only when this page
+  // itself is local" logic -- by the time this runs, it's already either a
+  // real URL or explicitly null/falsy ("no relay available here").
+  var RELAY_URL = window.SQUAD_PULSE_RELAY_URL;
   var KNOWN_CODES_KEY = "squadpulse:relay:knownCodes";
 
   // Callbacks for every currently-active db.collection("sessions").onSnapshot
@@ -66,6 +69,14 @@ var SquadPulseRelay = (function(){
   var rooms = {};
 
   var MAX_RECONNECT_DELAY_MS = 5000;
+  var MAX_RECONNECT_ATTEMPTS = 8; // ~a few minutes of backoff, then give up loudly once, not silently forever
+
+  function giveUp(room, reason){
+    room.unavailable = true;
+    if(typeof diag === "function") diag("Relay unavailable for room " + room.code + ": " + reason + " -- giving up (start a new session to try again).");
+    room.resolveReady(); // unblocks anything awaiting room.ready; room.docs stays empty, which reads as "not found" everywhere that matters
+    notifyEverything(room);
+  }
 
   function connectRoom(room, keyPromise){
     var sep = RELAY_URL.indexOf("?") === -1 ? "?" : "&";
@@ -76,6 +87,7 @@ var SquadPulseRelay = (function(){
     ws.addEventListener("open", function(){
       room.wsOpen = true;
       room.reconnectDelayMs = 250; // reset backoff on a real, successful connection
+      room.reconnectAttempts = 0;
       room.sendQueue.forEach(function(msg){ ws.send(JSON.stringify(msg)); });
       room.sendQueue = [];
       if(typeof diag === "function") diag("Relay connected: room " + room.code);
@@ -110,18 +122,27 @@ var SquadPulseRelay = (function(){
 
     // The relay is expected to be occasionally unreachable (dev forgot to
     // start it, a network blip mid-retro) -- reconnect with backoff rather
-    // than give up. room.ready resolves exactly once, on the first
-    // successful snapshot ever received, and simply stays pending (not
-    // rejected) across any number of retries before that -- callers awaiting
-    // it just wait longer, which degrades better than a permanent rejection
-    // would once connectivity actually returns.
+    // than give up immediately. room.ready resolves exactly once, on the
+    // first successful snapshot ever received, and simply stays pending
+    // (not rejected) across any number of retries before that -- callers
+    // awaiting it just wait longer, which degrades better than a permanent
+    // rejection would once connectivity actually returns. But "forever" has
+    // to end somewhere, or a relay that's genuinely gone (wrong URL, never
+    // deployed) spams the diagnostic log once every few seconds without
+    // limit -- after MAX_RECONNECT_ATTEMPTS, stop and say so once.
     ws.addEventListener("close", function(){
       room.wsOpen = false;
-      if(typeof diag === "function") diag("Relay disconnected: room " + room.code + " -- reconnecting in " + room.reconnectDelayMs + "ms");
-      setTimeout(function(){ connectRoom(room, keyPromise); }, room.reconnectDelayMs);
+      if(room.unavailable) return;
+      room.reconnectAttempts++;
+      if(room.reconnectAttempts > MAX_RECONNECT_ATTEMPTS){
+        giveUp(room, "could not reach " + RELAY_URL + " after " + room.reconnectAttempts + " attempts");
+        return;
+      }
+      if(typeof diag === "function") diag("Relay disconnected: room " + room.code + " -- reconnecting in " + room.reconnectDelayMs + "ms (attempt " + room.reconnectAttempts + "/" + MAX_RECONNECT_ATTEMPTS + ")");
+      setTimeout(function(){ if(!room.unavailable) connectRoom(room, keyPromise); }, room.reconnectDelayMs);
       room.reconnectDelayMs = Math.min(room.reconnectDelayMs * 2, MAX_RECONNECT_DELAY_MS);
     });
-    ws.addEventListener("error", function(){ /* the close handler above still fires and retries */ });
+    ws.addEventListener("error", function(){ /* the close handler above still fires and retries/gives up */ });
   }
 
   function getRoom(code){
@@ -132,12 +153,24 @@ var SquadPulseRelay = (function(){
       code: code, docs: {},
       ws: null, wsOpen: false, sendQueue: [],
       collListeners: [], docListeners: [],
-      ready: null, reconnectDelayMs: 250
+      ready: null, reconnectDelayMs: 250, reconnectAttempts: 0,
+      unavailable: false
     };
     rooms[code] = room;
+    room.ready = new Promise(function(res){ room.resolveReady = res; });
+
+    if(!RELAY_URL){
+      // Nothing to connect to at all -- e.g. deployed with no relay
+      // configured. Don't attempt a WebSocket (on a real deployment,
+      // "ws://localhost:8787" means the VISITOR'S OWN machine -- Chrome
+      // flags that cross-context request with a private-network permission
+      // prompt for a connection that could never succeed anyway). Fail
+      // fast and clearly instead of spamming reconnect attempts.
+      giveUp(room, "no relay configured (SQUAD_PULSE_RELAY_URL unset)");
+      return room;
+    }
 
     var keyPromise = SquadPulseCrypto.deriveKey(code);
-    room.ready = new Promise(function(res){ room.resolveReady = res; });
     connectRoom(room, keyPromise);
 
     return room;
@@ -196,6 +229,10 @@ var SquadPulseRelay = (function(){
     notifyBroadListeners();
   }
 
+  function unavailableError(room){
+    return { code:"unavailable", message:"Relay unavailable for room " + room.code + " -- this write was never sent." };
+  }
+
   function docRef(path){
     var room = getRoom(codeFromPath(path));
     return {
@@ -206,15 +243,26 @@ var SquadPulseRelay = (function(){
           return { id: path.split("/").pop(), exists: !!d, data: function(){ return d; } };
         });
       },
-      set: function(data){ return room.ready.then(function(){ putDoc(room, path, data); }); },
+      set: function(data){
+        return room.ready.then(function(){
+          if(room.unavailable) return Promise.reject(unavailableError(room));
+          putDoc(room, path, data);
+        });
+      },
       update: function(patch){
         return room.ready.then(function(){
+          if(room.unavailable) return Promise.reject(unavailableError(room));
           if(!room.docs[path]) return Promise.reject({ code:"invalid_argument", message:"doc missing" });
           deepMerge(room.docs[path], patch);
           putDoc(room, path, room.docs[path]);
         });
       },
-      delete: function(){ return room.ready.then(function(){ deleteDoc(room, path); }); },
+      delete: function(){
+        return room.ready.then(function(){
+          if(room.unavailable) return Promise.reject(unavailableError(room));
+          deleteDoc(room, path);
+        });
+      },
       collection: function(sub){ return collRef(path + "/" + sub); },
       onSnapshot: function(next, err){
         var l = { path: path, cb: next };
@@ -236,7 +284,10 @@ var SquadPulseRelay = (function(){
       add: function(data){
         var id = "auto"+Math.random().toString(36).slice(2);
         var room = getRoom(codeHere);
-        return room.ready.then(function(){ putDoc(room, path+"/"+id, data); return docRef(path+"/"+id); });
+        return room.ready.then(function(){
+          if(room.unavailable) return Promise.reject(unavailableError(room));
+          putDoc(room, path+"/"+id, data); return docRef(path+"/"+id);
+        });
       },
       orderBy: function(){ return this; }, where: function(){ return this; }, limit: function(){ return this; },
       get: function(){

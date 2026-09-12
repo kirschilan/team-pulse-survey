@@ -200,7 +200,24 @@ var TUCKMAN_TEMPLATE = {
   ]
 };
 
-var STARTER_TEMPLATES = [ FIVE_DYSFUNCTIONS_TEMPLATE, TUCKMAN_TEMPLATE ];
+// The board's own default dimension set (PLACEHOLDER_DIMENSIONS above) was
+// never itself registered as a loadable starter template -- only the seed
+// data for a fresh board. That meant switching to Five Dysfunctions or
+// Tuckman and back left no way to reload the original Spotify Squad Health
+// Check set from the Templates modal. Fixed by wrapping the same dimension
+// data in a proper starter template entry, same shape as the other two.
+var SPOTIFY_TEMPLATE = {
+  id: "starter-spotify",
+  starter: true,
+  name: "Spotify Squad Health Check",
+  unit: "Squad", unitPlural: "Squads",
+  attribution: SPOTIFY_ATTRIBUTION,
+  dimensions: PLACEHOLDER_DIMENSIONS.map(function(d){
+    return { key:d.key, label:d.label, green:d.green, red:d.red, order:d.order };
+  })
+};
+
+var STARTER_TEMPLATES = [ SPOTIFY_TEMPLATE, FIVE_DYSFUNCTIONS_TEMPLATE, TUCKMAN_TEMPLATE ];
 function findAnyTemplateById(id){
   var starter = STARTER_TEMPLATES.find(function(t){ return t.id===id; });
   if(starter) return starter;

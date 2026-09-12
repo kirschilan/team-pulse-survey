@@ -7,7 +7,17 @@ function diag(msg){
   DIAG_LINES.push("[" + t + "] " + msg);
   if (DIAG_LINES.length > 40) DIAG_LINES.shift();
   var el = document.getElementById("diagLog");
-  if (el) el.textContent = DIAG_LINES.join("\n");
+  if (!el) return;
+  // Replacing textContent wholesale (the obvious way to do this) also wipes
+  // out any text selection inside it -- meaning a fast-moving log (e.g. the
+  // relay reconnecting every few seconds) makes the panel impossible to
+  // select-and-copy, since each new line deselects whatever was highlighted
+  // a moment before. Skip the DOM update while the user has an active
+  // selection inside this element; the next call after they let go catches
+  // it back up to date.
+  var sel = window.getSelection && window.getSelection();
+  if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el.contains(sel.anchorNode)) return;
+  el.textContent = DIAG_LINES.join("\n");
 }
 
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }

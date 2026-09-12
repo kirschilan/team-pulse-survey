@@ -40,12 +40,16 @@ function startSession(sq){
   };
   var code = uniqueSessionCode();
   if(state.live && state.db){
-    state.db.collection("sessions").doc(code).set(payload).then(function(){
+    return state.db.collection("sessions").doc(code).set(payload).then(function(){
       diag("Started retro session " + code + " for squad " + sq.id);
-    }).catch(function(err){ diag("Start session failed: " + (err && err.code ? err.code : String(err))); });
+    }).catch(function(err){
+      diag("Start session failed: " + (err && err.code ? err.code : String(err)));
+      throw err;
+    });
   } else {
     state.sessions.push(Object.assign({ id:code }, payload));
     renderSquadView();
+    return Promise.resolve();
   }
 }
 
@@ -201,9 +205,40 @@ function renderSessionCardHtml(sq){
   '</div>';
 }
 
+// Tracks which squads have a start-session request in flight, independent
+// of any one button element's own `disabled` attribute -- state.sessions
+// changing at all (even a totally unrelated room's failed reconnect
+// attempt) re-renders Squad view, which rebuilds this button from scratch
+// via renderSessionCardHtml/bindSessionCardEvents. A plain `btn.disabled =
+// true` on the OLD element survives none of that; this object does, so a
+// re-render mid-request still shows the right "Starting…" state instead of
+// quietly handing back a fresh, clickable button and inviting a second
+// (third, ninth...) concurrent attempt.
+var startingSessionFor = {};
+
 function bindSessionCardEvents(sq){
   var startBtn = document.getElementById("startSessionBtn");
-  if(startBtn) startBtn.addEventListener("click", function(){ startSession(sq); });
+  if(startBtn){
+    if(startingSessionFor[sq.id]){ startBtn.disabled = true; startBtn.textContent = "Starting…"; }
+    startBtn.addEventListener("click", function(){
+      if(startingSessionFor[sq.id]) return;
+      startingSessionFor[sq.id] = true;
+      startBtn.disabled = true;
+      startBtn.textContent = "Starting…";
+      startSession(sq).then(function(){
+        delete startingSessionFor[sq.id];
+      }).catch(function(err){
+        delete startingSessionFor[sq.id];
+        startBtn.disabled = false;
+        startBtn.textContent = "Start retro session";
+        openConfirm(
+          "Couldn’t start the retro session",
+          (err && err.message) ? err.message : "Something went wrong reaching the relay. Check the diagnostic log below for details.",
+          function(){}, "OK"
+        );
+      });
+    });
+  }
 
   var closeBtn = document.getElementById("closeSessionBtn");
   if(closeBtn) closeBtn.addEventListener("click", function(){
