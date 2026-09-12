@@ -20,7 +20,7 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 - Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-12) — see
   `tests/README.md`. **`tests/unit/`**: 2 plain-Node files (`node:test`, nothing to install) for
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
-  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 23 Playwright files
+  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 24 Playwright files
   (named for the feature/flow each one covers) for everything that needs a real browser, running in
   under 2 minutes total after a 2026-09-12 speedup (see the session log below) — zero JS errors on
   the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
@@ -198,8 +198,18 @@ is set on a device:
    never touches the relay, connecting + adding a squad produces a real decryptable snapshot a
    second device can read directly off the relay, and disconnecting genuinely stops further pushes.
    `tests/unit/test_board_sync.js` covers `normalizeTeamCode()`'s input handling.
-4. Hydrate-on-load: if a team code is set, fetch and merge the latest board snapshot before
-   rendering (last-write-wins by timestamp).
+4. **DONE (2026-09-12).** Hydrate-on-load: `board-sync.js`'s `hydrateFromTeamCodeIfConnected()`
+   runs once at boot (`db.js`'s `initDb()`), before the squads/dimensions/config listeners
+   register, and again right after a fresh "Connect" — if the relay's copy of `boards/<teamCode>`
+   is newer (by the payload's own `updatedAt`, tracked per-code via `getSyncedAt`/`setSyncedAt`)
+   than what this device already knows about, it rewrites local squads/dimensions/`meta/config` to
+   match, add-or-update plus remove-what's-gone. A `hydrating` flag suppresses
+   `pushBoardSnapshotIfConnected()` while that rewrite is in flight, so the relay only ever sees the
+   pre- or fully-post-hydrate board, never an intermediate one. New
+   `tests/test_board_sync_hydrate_on_boot.py` proves the full round trip over the real relay in
+   BOTH directions: a device booting with a team code already set pulls another device's
+   already-pushed board with zero clicks, then after that second device makes its own change, the
+   first device's next reload pulls the newer state back too.
 5. Live subscribe: board updates propagate to other currently-open devices in real time, not just
    on load.
 6. Wire "finish retro" through the shared board doc — the actual fix for the Mac/iOS divergence
@@ -516,3 +526,23 @@ Two independent tracks, either can go first:
   connect-then-add-a-squad produces a real decryptable snapshot a second device can read straight
   off the relay, and disconnecting genuinely stops further pushes. Full 23-file Playwright +
   35-test unit suite re-verified passing. Safe to ship to `main` as-is.
+- 2026-09-12 — **Board sync step 4:** hydrate-on-load. `board-sync.js` gained
+  `hydrateFromTeamCodeIfConnected()`, run once at boot in `db.js`'s `initDb()` (before the
+  squads/dimensions/config listeners register, so their first fire already reflects hydrated data)
+  and again right after connecting a team code (so connecting to an existing team's board doesn't
+  blindly clobber it with whatever this device had locally). Conflict rule: last-write-wins by the
+  push payload's own `updatedAt` ISO timestamp, tracked per team code via
+  `getSyncedAt`/`setSyncedAt` so a device can tell "the relay has something genuinely newer" apart
+  from "the relay has exactly what I just pushed." `applyRemoteBoardSnapshot()` reads the CURRENT
+  local squad/dimension doc ids via a fresh `get()` (not `state.squads`/`state.dimensions`, which
+  at boot are still whatever `state.js` seeded them to — the real board hasn't loaded at that
+  point) to correctly add, update, and remove docs to match the remote. A `hydrating` flag
+  suppresses `pushBoardSnapshotIfConnected()` mid-rewrite so the relay never sees a
+  half-applied intermediate board. New `tests/test_board_sync_hydrate_on_boot.py` proves the full
+  round trip over the real relay in both directions: device B, booting with a team code already
+  configured, pulls device A's already-pushed board with zero clicks; then after B makes its own
+  change, device A's next reload pulls B's newer state back too — genuine bidirectional
+  last-write-wins, not just a one-time catch-up. Full 24-file Playwright + 35-test unit suite
+  re-verified passing. Safe to ship to `main` as-is: with no team code set, hydrate is a no-op, and
+  the "Connect" flow only changes for someone opting into a code that already has a newer remote
+  board.

@@ -10,11 +10,22 @@
 // use (see crypto.js), via the boards/* routing board-sync's earlier step
 // (relay-client.js's isBoardPath) added.
 //
-// Deliberately one-way for now: this only covers WRITES going out. Nothing
-// here reads a team code's board back in -- that's hydrate-on-load, the
-// next step in the plan -- so connecting a second device to the same team
-// code today does not yet make it see the first device's board; it only
-// proves this device's own changes really do reach the relay.
+// Step 4 adds the read side: hydrateFromTeamCodeIfConnected(), called once
+// at boot (db.js's initDb()) before the squads/dimensions/config listeners
+// register. Conflict rule is last-write-wins by the payload's own
+// `updatedAt` timestamp (ISO 8601 strings compare correctly with plain `<`/
+// `>`) -- simple, and good enough for now; a real merge is future work if
+// this ever needs it. `getSyncedAt(code)`/`setSyncedAt(code, iso)` track,
+// per team code, the newest `updatedAt` this device knows to already be on
+// the relay (whether because IT pushed that version, or because it just
+// hydrated it) -- that's what lets a device tell "the relay has something
+// genuinely newer than what I already have" apart from "the relay has
+// exactly what I just pushed a moment ago" (which would otherwise look
+// identical from a bare existence check).
+//
+// Still no live/real-time sync -- hydration is a one-shot fetch on boot,
+// not a subscription (that's step 5). Two devices open at once won't see
+// each other's mid-session edits yet.
 
 var TEAM_CODE_KEY = "squadpulse:teamCode";
 
@@ -34,15 +45,97 @@ function normalizeTeamCode(raw){
   return String(raw||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,40);
 }
 
+function syncedAtKeyFor(code){ return "squadpulse:teamCode:syncedAt:" + code; }
+function getSyncedAt(code){
+  try{ return localStorage.getItem(syncedAtKeyFor(code)) || ""; }catch(e){ return ""; }
+}
+function setSyncedAt(code, iso){
+  try{ localStorage.setItem(syncedAtKeyFor(code), iso); }catch(e){ /* ditto -- worst case, a later hydrate re-checks against nothing and just re-applies */ }
+}
+
 function boardSnapshotPayload(){
   return { squads: state.squads, dimensions: state.dimensions, config: state.config, updatedAt: nowIso() };
 }
 
+// While a hydrate-triggered rewrite of local squad/dimension/config docs is
+// in flight, the very same db.js listeners that normally trigger a push
+// would otherwise fire once per doc touched, each pushing back an
+// only-partially-applied intermediate board. Suppressing pushes for that
+// one window means the relay only ever sees either the pre-hydrate or the
+// fully post-hydrate board, never something in between.
+var hydrating = false;
+
 function pushBoardSnapshotIfConnected(){
+  if(hydrating) return;
   var code = getTeamCode();
   if(!code || !state.db) return;
-  state.db.doc("boards/" + code).set(boardSnapshotPayload()).catch(function(err){
+  var payload = boardSnapshotPayload();
+  state.db.doc("boards/" + code).set(payload).then(function(){
+    setSyncedAt(code, payload.updatedAt);
+  }).catch(function(err){
     diag("Team sync push failed: " + (err && err.code ? err.code : String(err)));
+  });
+}
+
+// Rewrites the local squads/dimensions/meta-config docs to match a remote
+// board snapshot -- add/update what the remote has, remove what it no
+// longer does. Reads the CURRENT local doc ids via a fresh get() rather
+// than trusting `state.squads`/`state.dimensions` (which, at boot, are
+// still whatever state.js seeded them to -- the real local board hasn't
+// loaded yet at the point this runs; see initDb()'s ordering).
+function applyRemoteBoardSnapshot(remote){
+  var db = state.db;
+  var remoteSquads = remote.squads || [];
+  var remoteDims = remote.dimensions || [];
+  var remoteSquadIds = remoteSquads.map(function(s){ return s.id; });
+  var remoteDimKeys = remoteDims.map(function(d){ return d.key; });
+
+  return Promise.all([db.collection("squads").get(), db.collection("dimensions").get()]).then(function(snaps){
+    var localSquadIds = snaps[0].docs.map(function(d){ return d.id; });
+    var localDimKeys = snaps[1].docs.map(function(d){ return d.id; });
+    var ops = [];
+    localSquadIds.forEach(function(id){
+      if(remoteSquadIds.indexOf(id) === -1) ops.push(db.collection("squads").doc(id).delete());
+    });
+    remoteSquads.forEach(function(s){
+      ops.push(db.collection("squads").doc(s.id).set({
+        name: s.name || "Untitled squad", order: s.order || 0, dimensions: s.dimensions || {}, updatedAt: remote.updatedAt
+      }));
+    });
+    localDimKeys.forEach(function(key){
+      if(remoteDimKeys.indexOf(key) === -1) ops.push(db.collection("dimensions").doc(key).delete());
+    });
+    remoteDims.forEach(function(d){
+      var payload = { label: d.label || "", green: d.green || "", red: d.red || "", order: d.order || 0 };
+      if(d.statements) payload.statements = d.statements;
+      if(d.scoreBands) payload.scoreBands = d.scoreBands;
+      if(d.strategies) payload.strategies = d.strategies;
+      ops.push(db.collection("dimensions").doc(d.key).set(payload));
+    });
+    if(remote.config) ops.push(db.doc("meta/config").set(Object.assign({}, remote.config, { updatedAt: remote.updatedAt })));
+    diag("Team sync: hydrating local board from boards/" + getTeamCode() + " (" + remoteSquads.length + " squad(s), " + remoteDims.length + " dimension(s))");
+    return Promise.all(ops);
+  });
+}
+
+function hydrateFromTeamCodeIfConnected(){
+  var code = getTeamCode();
+  if(!code || !state.db) return Promise.resolve();
+  return state.db.doc("boards/" + code).get().then(function(snap){
+    if(!snap.exists) return; // no device has pushed this team code's board yet
+    var remote = snap.data();
+    var known = getSyncedAt(code);
+    if(!remote.updatedAt || (known && remote.updatedAt <= known)) return; // nothing newer than what we already know
+    hydrating = true;
+    return applyRemoteBoardSnapshot(remote).then(function(){
+      setSyncedAt(code, remote.updatedAt);
+      hydrating = false;
+    }, function(err){
+      hydrating = false;
+      throw err;
+    });
+  }).catch(function(err){
+    diag("Team sync hydrate failed: " + (err && err.code ? err.code : String(err)));
   });
 }
 
@@ -73,7 +166,10 @@ document.getElementById("teamCodeConnectBtn").addEventListener("click", function
   setTeamCode(code);
   renderTeamSyncStatus();
   diag("Team sync: connected to team code " + code);
-  pushBoardSnapshotIfConnected();
+  // Hydrate first (in case another device already has a newer board under
+  // this code), THEN push -- so connecting doesn't blindly clobber an
+  // existing team board with whatever this device happened to have locally.
+  hydrateFromTeamCodeIfConnected().then(function(){ pushBoardSnapshotIfConnected(); });
 });
 document.getElementById("teamCodeDisconnectBtn").addEventListener("click", function(){
   diag("Team sync: disconnected from team code " + getTeamCode());
