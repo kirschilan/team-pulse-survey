@@ -659,3 +659,12 @@ Two independent tracks, either can go first:
   a unit test structurally can't reach. New sequential total: 118.9s (down from 133.65s). Documented
   the pattern and a "run this if it gets slow again" note in `tests/README.md` so this doesn't
   quietly regress a third time. Full 25-file Playwright + 38-test unit suite re-verified passing.
+- 2026-09-12 — **New policy: test-first, from here on.** The product owner asked for TDD going
+  forward rather than tests-after-code. No general-purpose TDD skill existed to install (checked
+  the skill/plugin marketplace — nothing generic fit), so added a repo-scoped one instead:
+  `.claude/skills/tdd/SKILL.md`. It encodes this repo's actual two-tier decision (pure logic →
+  `tests/unit/`, real DOM/relay/crypto → `tests/test_*.py`), the "check for existing unit coverage
+  before adding a Playwright test" rule from the perf pass above, and the write-test-first →
+  watch-it-fail-for-the-right-reason → minimal-code → refactor → full-suite loop this file's own
+  session log has been documenting in practice all along. Applies to any change under
+  `public/js/*.js`, `public/local-store.js`, or `relay/*.js`.
