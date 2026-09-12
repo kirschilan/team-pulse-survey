@@ -37,7 +37,12 @@ free web-service tier needs nothing beyond a GitHub account to try:
 
 1. Render dashboard → **New** → **Blueprint** → point it at this repo (or
    your fork). It reads `render.yaml` and creates a `squad-pulse-relay`
-   web service rooted at `relay/`, running `npm install` then `npm start`.
+   web service rooted at `relay/`, running `npm install` then `npm start`,
+   tracking `main` (pinned in `render.yaml` itself so a WIP feature branch
+   never auto-redeploys the production relay — see `autoDeploy: true`).
+   Deploying from a fork or wanting a different branch for now? Change it
+   in Render's dashboard (Settings → Build & Deploy → Branch) or edit
+   `render.yaml`'s `branch:` field before connecting.
 2. Render assigns a public URL like `https://squad-pulse-relay-xxxx.onrender.com`
    — the relay's `PORT` env var is already read from `process.env.PORT`
    (`server.js`), which Render sets automatically, so nothing else to

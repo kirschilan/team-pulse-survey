@@ -3,6 +3,7 @@ services:
     name: squad-pulse-relay
     runtime: node
     plan: free
+    branch: main
     rootDir: relay
     buildCommand: npm install
     startCommand: npm start
