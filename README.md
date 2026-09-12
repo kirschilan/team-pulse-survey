@@ -52,6 +52,7 @@ tests/             Playwright + Python regression suite (see tests/README.md)
 docs/
   facilitated-retro-spec.md   Feature spec + history for the retro-session work
   standalone-plan.md          Architecture plan for the standalone/embedded version
+  refactoring-report.md       Prioritized code-quality backlog (SOLID gaps, complexity, naming)
 scripts/
   generate-relay-config.js    Vercel build step -- wires a deployed relay's URL in via an
                                env var (see relay/README.md)

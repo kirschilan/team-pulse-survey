@@ -8,7 +8,7 @@ growing feature-by-feature (Claude Artifact prototype → standalone site →
 live retro sessions) without a cleanup pass in between.
 
 **How to use this**: nothing here is urgent — the app works, and the
-19-file Playwright suite + `tests/unit/` give real cover for changing any
+21-file Playwright suite + `tests/unit/` give real cover for changing any
 of it safely. Treat this as a backlog, not a fire. The "Suggested order"
 section at the end ranks by risk/reward, not by section order above it.
 
@@ -271,7 +271,7 @@ them.
 ## Suggested order
 
 Ranked by risk/reward, not by section order above — all of these are
-covered by the existing 19-file Playwright suite plus `tests/unit/`, so
+covered by the existing 21-file Playwright suite plus `tests/unit/`, so
 each can be done and verified independently:
 
 1. **Extract the shared `persistOrLocal()` helper** and apply it to the
