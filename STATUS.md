@@ -20,7 +20,7 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 - Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-12) — see
   `tests/README.md`. **`tests/unit/`**: 2 plain-Node files (`node:test`, nothing to install) for
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
-  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 21 Playwright files
+  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 22 Playwright files
   (named for the feature/flow each one covers) for everything that needs a real browser, running in
   under 2 minutes total after a 2026-09-12 speedup (see the session log below) — zero JS errors on
   the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
@@ -63,7 +63,7 @@ along the seams the original file already had (`// ---------- section ----------
 | `csv.js` | CSV export and import (parsing, column matching, preview, apply). |
 | `db.js` | `initDb()` — the Firestore-shaped snapshot listeners that wire `db` writes into `state` and back into a render. |
 | `crypto.js` | AES-256-GCM encrypt/decrypt for retro-session documents, key derived from the session code. |
-| `relay-client.js` | The other half of `local-store.js`'s router: a `collection()`/`doc()` implementation for `sessions`-rooted paths, backed by a real WebSocket to `relay/server.js` instead of `localStorage`. |
+| `relay-client.js` | The other half of `local-store.js`'s router: a `collection()`/`doc()` implementation for `sessions`- and `boards`-rooted paths, backed by a real WebSocket to `relay/server.js` instead of `localStorage`. |
 
 **These are plain classic `<script>` files sharing the global scope, not ES modules** — Chromium
 blocks cross-file `import` over `file://` with a CORS error, which would break both the Playwright
@@ -177,9 +177,14 @@ is set on a device:
    does survive while the default doesn't. The adapter shape itself is what answers requirement (0)
    from the user's brief: swapping Render for another host, or forking this repo onto infra with
    its own storage of choice, means writing one small adapter file, not touching `server.js`.
-2. **Next.** Extend `relay-client.js`'s `docRef`/`collRef` router (and the relay's own path
-   handling) to accept a `boards/<teamCode>` namespace alongside `sessions/<code>`, purely
-   additive — no caller uses it yet.
+2. **DONE (2026-09-12).** `relay-client.js` now recognizes `boards/<teamCode>` paths alongside
+   `sessions/<code>` (`isBoardPath`), and `local-store.js`'s router sends either to the relay —
+   purely additive, since the relay itself never inspected path meaning to begin with (it
+   multiplexes by whatever room code opened the WebSocket connection, so no server.js change was
+   needed at all). No UI caller exists yet. New `tests/test_relay_board_path_sync.py` proves the
+   plumbing end to end at the level below any UI: two independent browser contexts exchange a real
+   encrypted document under a `boards/...` path over the real relay, an unwritten board path reads
+   back as not-found rather than crashing, and `sessions/*` behavior is completely unaffected.
 3. Opt-in "connect to a team code" setting; saving squads/dimensions/config also pushes an
    encrypted snapshot to `boards/<teamCode>/config` (one-way write only). Default (no team code
    set) is unaffected.
@@ -472,3 +477,17 @@ Two independent tracks, either can go first:
   survive a restart with `FileAdapter` and really don't with the default. Full 21-file Playwright +
   34-test unit suite re-verified passing. Safe to ship to `main` as-is: this step only adds an
   opt-in capability nothing currently calls.
+- 2026-09-12 — **Board sync step 2:** widened `relay-client.js`'s router to recognize
+  `boards/<teamCode>` paths (`isBoardPath`, alongside the existing `isSessionPath`), and
+  `local-store.js` now sends either namespace to the relay instead of `localStorage`. Turned out to
+  need no change to `relay/server.js` at all: the wire protocol already treats a room's `code` and
+  every doc `path` within it as opaque strings, never inspecting their meaning — so a
+  `boards/TEAM01/config` path just opens a differently-keyed room from `sessions/ABC123`, using the
+  exact same put/delete/snapshot mechanism and the same code-derived AES-256-GCM encryption. Nothing
+  in the app's UI calls a `boards/*` path yet. New `tests/test_relay_board_path_sync.py` proves the
+  plumbing end to end below any UI, using the same real-relay-subprocess-plus-two-browser-contexts
+  harness as `test_relay_cross_device_sync.py`: a board doc written on one device is read back,
+  decrypted, on an independent second device; an unwritten board path reads back as not-found
+  rather than throwing; and `sessions/*` paths are unaffected by the new routing. Full 22-file
+  Playwright + 34-test unit suite (plus `relay/`'s own `npm test`) re-verified passing. Safe to ship
+  to `main` as-is: purely additive, no existing call site changes behavior.
