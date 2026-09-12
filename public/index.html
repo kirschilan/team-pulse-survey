@@ -121,15 +121,36 @@
 
     <div class="card" style="margin-top:14px;">
       <h2>Team sync (beta)</h2>
-      <p class="hint">Optional: connect this device to a team code so this board's squads, dimensions and
-        setup start pushing to that code over the same encrypted relay retro sessions already use. One-way for
-        now &mdash; this device's changes go out, but this device won't yet pull in changes made elsewhere.</p>
-      <div class="actions" id="teamSyncActions">
-        <input type="text" id="teamCodeInput" placeholder="Team code, e.g. MYSQUAD" maxlength="40" dir="auto">
-        <button class="btn primary" id="teamCodeConnectBtn" type="button">Connect</button>
-        <button class="btn ghost" id="teamCodeDisconnectBtn" type="button" hidden>Disconnect</button>
+      <p class="hint">Optional: link this device to a team so this board's squads, dimensions and setup
+        stay in sync, live, with every other device using the same link &mdash; over the same encrypted
+        relay retro sessions already use. Nobody without the link can read or change it.</p>
+
+      <div id="teamSyncNotConnected">
+        <div class="actions">
+          <button class="btn primary" id="teamCreateBtn" type="button">Create a team link</button>
+        </div>
+        <p class="hint" style="margin:10px 0 6px;">Already have a team link from a teammate? Opening it
+          connects automatically &mdash; or paste it here:</p>
+        <div class="actions">
+          <input type="text" id="teamJoinInput" placeholder="Paste a team link" dir="auto">
+          <button class="btn" id="teamJoinBtn" type="button">Join</button>
+        </div>
       </div>
-      <p class="hint" id="teamSyncStatus" style="margin:8px 0 0;"></p>
+
+      <div id="teamSyncConnected" hidden>
+        <p class="hint" id="teamSyncStatus" style="margin:0 0 10px;"></p>
+        <div class="join-row">
+          <div class="qr-box" id="teamQr"></div>
+          <div class="join-link-col">
+            <div class="field-label" style="margin-top:0;">Team link</div>
+            <div class="join-link-row">
+              <input class="join-link-input" id="teamLinkInput" type="text" readonly aria-label="Team link">
+              <button class="btn" id="teamCopyLinkBtn" type="button">Copy</button>
+            </div>
+          </div>
+        </div>
+        <button class="btn ghost" id="teamDisconnectBtn" type="button" style="margin-top:10px;">Disconnect</button>
+      </div>
     </div>
 
     <div class="card" style="margin-top:14px;">

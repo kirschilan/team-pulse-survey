@@ -120,6 +120,46 @@ try:
         }""")
         assert session_untouched["exists"] is False
 
+        print("=== a doc() call can pass a SEPARATE secret, decoupling the routing id from the encryption key ===")
+        a.evaluate("""async () => {
+          const db = await window.claude.use("db");
+          await db.doc("boards/ROUTINGONLY", "the-real-secret").set({ hello: "with a secret" });
+        }""")
+
+        # Fresh contexts for each read below -- relay-client.js caches an
+        # opened room (and the key it was opened with) per page for as long
+        # as the page lives, so reusing device A or B here (both of which
+        # already opened "boards/ROUTINGONLY" with the correct secret while
+        # writing/priming it above) would silently reuse that cached room
+        # instead of actually exercising a fresh connection with the secret
+        # this check passes.
+        right_ctx = browser.new_context()
+        right_ctx.add_init_script(point_at_test_relay)
+        right_page = right_ctx.new_page()
+        right_page.goto(INDEX_URL, wait_until="domcontentloaded")
+        right_page.wait_for_timeout(200)
+        read_with_right_secret = right_page.evaluate("""async () => {
+          const db = await window.claude.use("db");
+          const snap = await db.doc("boards/ROUTINGONLY", "the-real-secret").get();
+          return { exists: snap.exists, data: snap.data() };
+        }""")
+        print("read with the matching secret, from a fresh connection:", read_with_right_secret)
+        assert read_with_right_secret["exists"] is True
+        assert read_with_right_secret["data"]["hello"] == "with a secret"
+
+        wrong_ctx = browser.new_context()
+        wrong_ctx.add_init_script(point_at_test_relay)
+        wrong_page = wrong_ctx.new_page()
+        wrong_page.goto(INDEX_URL, wait_until="domcontentloaded")
+        wrong_page.wait_for_timeout(200)
+        read_with_wrong_secret = wrong_page.evaluate("""async () => {
+          const db = await window.claude.use("db");
+          const snap = await db.doc("boards/ROUTINGONLY", "a-different-guess").get();
+          return { exists: snap.exists };
+        }""")
+        print("read with the SAME routing id but a wrong secret, from a fresh connection:", read_with_wrong_secret)
+        assert read_with_wrong_secret["exists"] is False, "same room, wrong key -- decryption must fail, not fall back to plaintext or the path-derived key"
+
         print("=== ALL ERRORS: a=", a_errors, "b=", b_errors)
         assert a_errors == [] and b_errors == []
         browser.close()

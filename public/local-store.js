@@ -175,12 +175,16 @@
   function isRelayPath(path){
     return !!(window.SquadPulseRelay && (window.SquadPulseRelay.isSessionPath(path) || window.SquadPulseRelay.isBoardPath(path)));
   }
-  function routedDocRef(path){
-    if(isRelayPath(path)) return window.SquadPulseRelay.doc(path);
+  // `secret`, when given, is forwarded straight to SquadPulseRelay -- see
+  // relay-client.js's getRoom() for what it's for (board-sync.js's
+  // link/QR-based key, decoupled from the routing id in the path). Local
+  // paths ignore it; it's meaningless there.
+  function routedDocRef(path, secret){
+    if(isRelayPath(path)) return window.SquadPulseRelay.doc(path, secret);
     return localDocRef(path);
   }
-  function routedCollRef(path){
-    if(isRelayPath(path)) return window.SquadPulseRelay.collection(path);
+  function routedCollRef(path, secret){
+    if(isRelayPath(path)) return window.SquadPulseRelay.collection(path, secret);
     return localCollRef(path);
   }
 

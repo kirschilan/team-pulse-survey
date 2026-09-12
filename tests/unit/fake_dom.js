@@ -40,6 +40,9 @@ function installFakeDom(){
   global.window = global.window || {};
   global.window.addEventListener = function(){};
   global.window.getSelection = function(){ return null; };
+  global.window.location = global.window.location || {
+    href: "http://localhost/", origin: "http://localhost", pathname: "/", search: "", hash: ""
+  };
   global.localStorage = global.localStorage || {
     getItem: function(){ return null; }, setItem: function(){}, removeItem: function(){}
   };

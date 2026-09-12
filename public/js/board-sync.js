@@ -1,61 +1,82 @@
 "use strict";
 
-// Step 3 of STATUS.md's "Board sync" plan: an opt-in, per-device "team
-// code" setting. With none set, this whole file is inert and nothing about
-// the app changes -- squads/dimensions/config stay purely local, exactly
-// as before this file existed. Once a device connects with a team code,
-// every board save (squad/dimension/config change, from any file) also
-// pushes the CURRENT full board to boards/<teamCode> on the relay --
-// encrypted with the same code-derived AES-256-GCM key sessions already
-// use (see crypto.js), via the boards/* routing board-sync's earlier step
-// (relay-client.js's isBoardPath) added.
+// Steps 3-5 of STATUS.md's "Board sync" plan, opt-in per-device team sync,
+// PLUS a security fix that replaced the original typed "team code" (see
+// STATUS.md's session log): a human-chosen, human-typed code was both this
+// device's room-routing id AND its encryption key material. Fine for a
+// retro session (app-generated random code, forgotten within minutes of
+// the session ending) but wrong for a persistent team board -- a
+// user-chosen code like "MYSQUAD" is a dictionary word, not random, and
+// once board sync adds real durability that low-entropy code is
+// guessable, forever, by anyone who can open a WebSocket to the relay
+// (which can't itself distinguish a guess from a legitimate join -- it's
+// deliberately content-blind).
 //
-// Step 4 adds the read side: hydrateFromTeamCodeIfConnected(), called once
-// at boot (db.js's initDb()) before the squads/dimensions/config listeners
-// register. Conflict rule is last-write-wins by the payload's own
-// `updatedAt` timestamp (ISO 8601 strings compare correctly with plain `<`/
-// `>`) -- simple, and good enough for now; a real merge is future work if
-// this ever needs it. `getSyncedAt(code)`/`setSyncedAt(code, iso)` track,
-// per team code, the newest `updatedAt` this device knows to already be on
-// the relay (whether because IT pushed that version, or because it just
-// hydrated it) -- that's what lets a device tell "the relay has something
-// genuinely newer than what I already have" apart from "the relay has
-// exactly what I just pushed a moment ago" (which would otherwise look
-// identical from a bare existence check).
-//
-// Still no live/real-time sync -- hydration is a one-shot fetch on boot,
-// not a subscription (that's step 5). Two devices open at once won't see
-// each other's mid-session edits yet.
+// The fix mirrors Excalidraw's real architecture (verified before this was
+// built -- see STATUS.md): a high-entropy secret (128 bits,
+// crypto.js's generateSecret()) is what the encryption key derives from,
+// and it's never typed or spoken -- only ever shared as a link or QR code
+// (teamLinkFor()/renderQrInto(), the same UI pattern retro sessions
+// already use for joining). The relay only ever sees a SEPARATE, one-way
+// hash of that secret (crypto.js's roomIdFor()) for routing -- knowing the
+// room id buys an attacker nothing, since it doesn't run backward to the
+// secret. With no secret set (the default), this whole file stays inert.
 
-var TEAM_CODE_KEY = "squadpulse:teamCode";
+var TEAM_SECRET_KEY = "squadpulse:teamSecret";
 
-function getTeamCode(){
-  try{ return localStorage.getItem(TEAM_CODE_KEY) || ""; }catch(e){ return ""; }
+function getTeamSecret(){
+  try{ return localStorage.getItem(TEAM_SECRET_KEY) || ""; }catch(e){ return ""; }
 }
-function setTeamCode(code){
+function setTeamSecret(secret){
   try{
-    if(code) localStorage.setItem(TEAM_CODE_KEY, code);
-    else localStorage.removeItem(TEAM_CODE_KEY);
+    if(secret) localStorage.setItem(TEAM_SECRET_KEY, secret);
+    else localStorage.removeItem(TEAM_SECRET_KEY);
   }catch(e){ /* storage unavailable -- team sync just won't persist across reloads on this device */ }
 }
-// Mirrors how a session code already reads (short, uppercase, alnum) --
-// not slugify()'s hyphenated-lowercase shape, which is meant for filenames
-// and template ids, not a code someone types on a second device.
-function normalizeTeamCode(raw){
-  return String(raw||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,40);
+function teamLinkFor(secret){
+  return window.location.origin + window.location.pathname + "?team=" + encodeURIComponent(secret);
+}
+// Accepts either a bare secret or a full team link someone pasted (the
+// input takes both, so "paste the link you were sent" and "the link
+// worked and you're just re-entering it" both just work).
+function parseTeamSecretInput(raw){
+  raw = String(raw||"").trim();
+  if(!raw) return "";
+  try{
+    var url = new URL(raw, window.location.href);
+    var fromLink = url.searchParams.get("team");
+    if(fromLink) return fromLink;
+  }catch(e){ /* not a URL -- fall through and treat it as a bare secret */ }
+  return raw;
 }
 
-function syncedAtKeyFor(code){ return "squadpulse:teamCode:syncedAt:" + code; }
-function getSyncedAt(code){
-  try{ return localStorage.getItem(syncedAtKeyFor(code)) || ""; }catch(e){ return ""; }
+// Opening a real team link (?team=<secret>) persists it to this device
+// immediately, then strips it from the visible URL/history -- the same
+// hygiene a magic-link auth flow uses, so the secret doesn't linger in
+// browser history or get echoed in a Referer header on the next click.
+(function autoConnectFromLink(){
+  var fromUrl = getQueryParam("team");
+  if(!fromUrl || fromUrl === getTeamSecret()) return;
+  setTeamSecret(fromUrl);
+  try{
+    var url = new URL(window.location.href);
+    url.searchParams.delete("team");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  }catch(e){ /* history API unavailable -- the param just stays visible, harmless */ }
+})();
+
+function syncedAtKeyFor(roomId){ return "squadpulse:teamRoom:syncedAt:" + roomId; }
+function getSyncedAt(roomId){
+  try{ return localStorage.getItem(syncedAtKeyFor(roomId)) || ""; }catch(e){ return ""; }
 }
-function setSyncedAt(code, iso){
-  try{ localStorage.setItem(syncedAtKeyFor(code), iso); }catch(e){ /* ditto -- worst case, a later hydrate re-checks against nothing and just re-applies */ }
+function setSyncedAt(roomId, iso){
+  try{ localStorage.setItem(syncedAtKeyFor(roomId), iso); }catch(e){ /* ditto -- worst case, a later hydrate re-checks against nothing and just re-applies */ }
 }
 
 function boardSnapshotPayload(){
   return { squads: state.squads, dimensions: state.dimensions, config: state.config, updatedAt: nowIso() };
 }
+function teamBoardPath(roomId){ return "boards/" + roomId; }
 
 // While a hydrate-triggered rewrite of local squad/dimension/config docs is
 // in flight, the very same db.js listeners that normally trigger a push
@@ -67,11 +88,13 @@ var hydrating = false;
 
 function pushBoardSnapshotIfConnected(){
   if(hydrating) return;
-  var code = getTeamCode();
-  if(!code || !state.db) return;
-  var payload = boardSnapshotPayload();
-  state.db.doc("boards/" + code).set(payload).then(function(){
-    setSyncedAt(code, payload.updatedAt);
+  var secret = getTeamSecret();
+  if(!secret || !state.db) return;
+  SquadPulseCrypto.roomIdFor(secret).then(function(roomId){
+    var payload = boardSnapshotPayload();
+    return state.db.doc(teamBoardPath(roomId), secret).set(payload).then(function(){
+      setSyncedAt(roomId, payload.updatedAt);
+    });
   }).catch(function(err){
     diag("Team sync push failed: " + (err && err.code ? err.code : String(err)));
   });
@@ -113,25 +136,24 @@ function applyRemoteBoardSnapshot(remote){
       ops.push(db.collection("dimensions").doc(d.key).set(payload));
     });
     if(remote.config) ops.push(db.doc("meta/config").set(Object.assign({}, remote.config, { updatedAt: remote.updatedAt })));
-    diag("Team sync: hydrating local board from boards/" + getTeamCode() + " (" + remoteSquads.length + " squad(s), " + remoteDims.length + " dimension(s))");
+    diag("Team sync: hydrating local board (" + remoteSquads.length + " squad(s), " + remoteDims.length + " dimension(s))");
     return Promise.all(ops);
   });
 }
 
 // Shared by both the one-shot boot-time hydrate below and the live
-// subscription (step 5) -- applies a remote board only if it's genuinely
-// newer than what this device already knows about, so the live
-// subscription's very first callback (which always fires immediately with
-// whatever's already there, same as any onSnapshot) safely no-ops when
-// it's just echoing what hydrate already applied a moment earlier.
-function maybeApplyRemote(remote){
+// subscription -- applies a remote board only if it's genuinely newer than
+// what this device already knows about, so the live subscription's very
+// first callback (which always fires immediately with current state, same
+// as any onSnapshot) safely no-ops when it's just echoing what hydrate
+// already applied a moment earlier.
+function maybeApplyRemote(roomId, remote){
   if(!remote || !remote.updatedAt) return Promise.resolve();
-  var code = getTeamCode();
-  var known = getSyncedAt(code);
+  var known = getSyncedAt(roomId);
   if(known && remote.updatedAt <= known) return Promise.resolve();
   hydrating = true;
   return applyRemoteBoardSnapshot(remote).then(function(){
-    setSyncedAt(code, remote.updatedAt);
+    setSyncedAt(roomId, remote.updatedAt);
     hydrating = false;
   }, function(err){
     hydrating = false;
@@ -139,90 +161,107 @@ function maybeApplyRemote(remote){
   });
 }
 
-function hydrateFromTeamCodeIfConnected(){
-  var code = getTeamCode();
-  if(!code || !state.db) return Promise.resolve();
-  return state.db.doc("boards/" + code).get().then(function(snap){
-    if(!snap.exists) return; // no device has pushed this team code's board yet
-    return maybeApplyRemote(snap.data());
+function hydrateFromTeamIfConnected(){
+  var secret = getTeamSecret();
+  if(!secret || !state.db) return Promise.resolve();
+  return SquadPulseCrypto.roomIdFor(secret).then(function(roomId){
+    return state.db.doc(teamBoardPath(roomId), secret).get().then(function(snap){
+      if(!snap.exists) return; // no device has pushed this team's board yet
+      return maybeApplyRemote(roomId, snap.data());
+    });
   }).catch(function(err){
     diag("Team sync hydrate failed: " + (err && err.code ? err.code : String(err)));
   });
 }
 
-// Step 5 of STATUS.md's "Board sync" plan: unlike hydrateFromTeamCodeIfConnected()
-// (a one-shot fetch, only ever checked again on the next boot or reconnect),
-// this keeps the relay connection for boards/<teamCode> open and reacts to
+// Keeps the relay connection for this team's board open and reacts to
 // every future update another currently-open device pushes, live -- no
 // reload needed. Reuses the exact same relay-client.js machinery retro
 // sessions already rely on for this (one persistent WebSocket per room
-// code); subscribing is what keeps that connection open for as long as
-// this tab stays on this team code.
+// id); subscribing is what keeps that connection open for as long as this
+// tab stays connected to this team.
 var teamBoardUnsubscribe = null;
 
 function subscribeToTeamBoardIfConnected(){
   stopTeamBoardSubscription();
-  var code = getTeamCode();
-  if(!code || !state.db) return;
-  teamBoardUnsubscribe = state.db.doc("boards/" + code).onSnapshot(function(snap){
-    if(!snap.exists) return;
-    maybeApplyRemote(snap.data()).catch(function(err){
-      diag("Team sync live update failed: " + (err && err.code ? err.code : String(err)));
+  var secret = getTeamSecret();
+  if(!secret || !state.db) return;
+  SquadPulseCrypto.roomIdFor(secret).then(function(roomId){
+    if(getTeamSecret() !== secret) return; // disconnected/switched while this was resolving
+    teamBoardUnsubscribe = state.db.doc(teamBoardPath(roomId), secret).onSnapshot(function(snap){
+      if(!snap.exists) return;
+      maybeApplyRemote(roomId, snap.data()).catch(function(err){
+        diag("Team sync live update failed: " + (err && err.code ? err.code : String(err)));
+      });
+    }, function(err){
+      diag("Team sync subscription error: " + (err && err.code ? err.code : String(err)));
     });
-  }, function(err){
-    diag("Team sync subscription error: " + (err && err.code ? err.code : String(err)));
   });
 }
 function stopTeamBoardSubscription(){
   if(teamBoardUnsubscribe){ teamBoardUnsubscribe(); teamBoardUnsubscribe = null; }
 }
 
-function renderTeamSyncStatus(){
-  var code = getTeamCode();
-  var input = document.getElementById("teamCodeInput");
-  var connectBtn = document.getElementById("teamCodeConnectBtn");
-  var disconnectBtn = document.getElementById("teamCodeDisconnectBtn");
-  var status = document.getElementById("teamSyncStatus");
-  if(code){
-    input.value = code;
-    input.disabled = true;
-    connectBtn.hidden = true;
-    disconnectBtn.hidden = false;
-    status.textContent = "Connected — this device's board changes push to team code " + code + ".";
-  } else {
-    input.value = "";
-    input.disabled = false;
-    connectBtn.hidden = false;
-    disconnectBtn.hidden = true;
-    status.textContent = "Not connected — this board stays local to this device only.";
-  }
-}
-
-document.getElementById("teamCodeConnectBtn").addEventListener("click", function(){
-  var code = normalizeTeamCode(document.getElementById("teamCodeInput").value);
-  if(!code){ diag("Team sync: enter a team code first"); return; }
-  setTeamCode(code);
+function connectWithSecret(secret){
+  setTeamSecret(secret);
   renderTeamSyncStatus();
-  diag("Team sync: connected to team code " + code);
+  diag("Team sync: connected");
   // Hydrate first (in case another device already has a newer board under
-  // this code), THEN push -- so connecting doesn't blindly clobber an
+  // this link), THEN push -- so connecting doesn't blindly clobber an
   // existing team board with whatever this device happened to have locally.
-  hydrateFromTeamCodeIfConnected().then(function(){
+  hydrateFromTeamIfConnected().then(function(){
     pushBoardSnapshotIfConnected();
     subscribeToTeamBoardIfConnected();
   });
+}
+
+function renderTeamSyncStatus(){
+  var secret = getTeamSecret();
+  var notConnected = document.getElementById("teamSyncNotConnected");
+  var connected = document.getElementById("teamSyncConnected");
+  var status = document.getElementById("teamSyncStatus");
+  if(secret){
+    notConnected.hidden = true;
+    connected.hidden = false;
+    status.textContent = "Connected — this device stays in sync, live, with every other device using this link.";
+    var link = teamLinkFor(secret);
+    var linkInput = document.getElementById("teamLinkInput");
+    if(linkInput) linkInput.value = link;
+    var qrBox = document.getElementById("teamQr");
+    if(qrBox) renderQrInto(qrBox, link);
+  } else {
+    notConnected.hidden = false;
+    connected.hidden = true;
+  }
+}
+
+document.getElementById("teamCreateBtn").addEventListener("click", function(){
+  connectWithSecret(SquadPulseCrypto.generateSecret());
 });
-document.getElementById("teamCodeDisconnectBtn").addEventListener("click", function(){
-  diag("Team sync: disconnected from team code " + getTeamCode());
+document.getElementById("teamJoinBtn").addEventListener("click", function(){
+  var input = document.getElementById("teamJoinInput");
+  var secret = parseTeamSecretInput(input ? input.value : "");
+  if(!secret){ diag("Team sync: paste a team link first"); return; }
+  connectWithSecret(secret);
+  if(input) input.value = "";
+});
+document.getElementById("teamCopyLinkBtn").addEventListener("click", function(){
+  var input = document.getElementById("teamLinkInput");
+  if(!input) return;
+  input.focus(); input.select();
+  try{ navigator.clipboard && navigator.clipboard.writeText(input.value); }catch(e){ /* select() above still lets the user copy manually */ }
+});
+document.getElementById("teamDisconnectBtn").addEventListener("click", function(){
+  diag("Team sync: disconnected");
   stopTeamBoardSubscription();
-  setTeamCode("");
+  setTeamSecret("");
   renderTeamSyncStatus();
 });
 
 renderTeamSyncStatus();
 
-// Lets tests/unit/*.js exercise the pure normalizeTeamCode() logic directly
-// -- see tests/unit/README.md for why this pattern exists.
+// Lets tests/unit/*.js exercise the pure parseTeamSecretInput() logic
+// directly -- see tests/unit/README.md for why this pattern exists.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { normalizeTeamCode: normalizeTeamCode };
+  module.exports = { parseTeamSecretInput: parseTeamSecretInput, teamLinkFor: teamLinkFor };
 }

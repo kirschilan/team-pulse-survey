@@ -24,7 +24,7 @@ async function initDb(){
     // hydrated data instead of the stale local one, then a second fire
     // moments later once hydration writes land. A no-op with no team code
     // set (the default).
-    await hydrateFromTeamCodeIfConnected();
+    await hydrateFromTeamIfConnected();
     subscribeToTeamBoardIfConnected();
 
     if(isJoinMode()){

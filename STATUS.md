@@ -18,7 +18,7 @@ docs in `docs/` are reference material this file points to, not duplicates of it
   code/QR, blind statement survey or direct green/yellow/red pick depending on the dimension,
   live or held reveal, facilitator override, finish-and-apply into the squad's real ratings).
 - Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-12) — see
-  `tests/README.md`. **`tests/unit/`**: 2 plain-Node files (`node:test`, nothing to install) for
+  `tests/README.md`. **`tests/unit/`**: 3 plain-Node files (`node:test`, nothing to install) for
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
   running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 25 Playwright files
   (named for the feature/flow each one covers) for everything that needs a real browser, running in
@@ -62,9 +62,9 @@ along the seams the original file already had (`// ---------- section ----------
 | `templates.js` | Template save/load/delete. Split out of the same combined file, same day. |
 | `csv.js` | CSV export and import (parsing, column matching, preview, apply). |
 | `db.js` | `initDb()` — the Firestore-shaped snapshot listeners that wire `db` writes into `state` and back into a render. |
-| `crypto.js` | AES-256-GCM encrypt/decrypt for retro-session documents, key derived from the session code. |
-| `relay-client.js` | The other half of `local-store.js`'s router: a `collection()`/`doc()` implementation for `sessions`- and `boards`-rooted paths, backed by a real WebSocket to `relay/server.js` instead of `localStorage`. |
-| `board-sync.js` | The opt-in "team code" setting (Admin view) and the one-way push that sends the current board to `boards/<teamCode>` on the relay after every squad/dimension/config save, once a team code is set. See "Board sync (major change, in progress)" below. |
+| `crypto.js` | AES-256-GCM encrypt/decrypt. For a retro session, the key derives from the session code itself; for a team board, `generateSecret()`/`roomIdFor()` split a high-entropy secret (the key) from a separate one-way-derived room id (routing only) — see "Board sync" below. |
+| `relay-client.js` | The other half of `local-store.js`'s router: a `collection()`/`doc()` implementation for `sessions`- and `boards`-rooted paths, backed by a real WebSocket to `relay/server.js` instead of `localStorage`. `doc(path, secret)`/`collection(path, secret)` take an optional second argument so a caller (board-sync.js) can supply the encryption key separately from the path's own routing id; omitted, behavior is unchanged (the path's own code IS the key, as sessions have always used). |
+| `board-sync.js` | The opt-in team-sync setting (Admin view): a device either creates a high-entropy team link or joins one via a link/QR, then stays in sync live with every other device on the same link. See "Board sync (major change, in progress)" below. |
 
 **These are plain classic `<script>` files sharing the global scope, not ES modules** — Chromium
 blocks cross-file `import` over `file://` with a CORS error, which would break both the Playwright
@@ -128,7 +128,10 @@ locked decision below; only a session's own content does.
   plaintext in relay logs/memory/backups — but NOT protection against a relay operator who
   deliberately computes the same public hash, since the code and the room id are the same value.
   Full rationale and the researched Excalidraw/Vercel architecture this is based on:
-  `docs/standalone-plan.md`.
+  `docs/standalone-plan.md`. **This code-is-the-key tradeoff is scoped to retro sessions
+  specifically** (app-generated random code, forgotten within minutes) — a team board's link-based
+  secret is deliberately NOT this model; see "Board sync"'s "Security fix" for why a persistent,
+  user-chosen team code would have been the wrong tradeoff there.
 - **The relay is a plain standalone Node process, deployed as a genuinely separate small service —
   deliberately NOT a Vercel Function**, even though Vercel Functions gained native WebSocket support
   in 2026. Verified against Vercel's own docs before deciding: a new connection there isn't
@@ -186,7 +189,7 @@ is set on a device:
    plumbing end to end at the level below any UI: two independent browser contexts exchange a real
    encrypted document under a `boards/...` path over the real relay, an unwritten board path reads
    back as not-found rather than crashing, and `sessions/*` behavior is completely unaffected.
-3. **DONE (2026-09-12).** Opt-in "team code" setting (Admin view → new "Team sync (beta)" card,
+3. **DONE (2026-09-12), mechanism since replaced — see "Security fix" below.** Opt-in "team code" setting (Admin view → new "Team sync (beta)" card,
    `public/js/board-sync.js`): connecting pushes an encrypted full-board snapshot (squads,
    dimensions, config) to `boards/<teamCode>` on the relay, and every subsequent squad/dimension/
    config save pushes again — hooked into `db.js`'s three existing `onSnapshot` listeners
@@ -198,7 +201,7 @@ is set on a device:
    never touches the relay, connecting + adding a squad produces a real decryptable snapshot a
    second device can read directly off the relay, and disconnecting genuinely stops further pushes.
    `tests/unit/test_board_sync.js` covers `normalizeTeamCode()`'s input handling.
-4. **DONE (2026-09-12).** Hydrate-on-load: `board-sync.js`'s `hydrateFromTeamCodeIfConnected()`
+4. **DONE (2026-09-12), updated for the link-based secret — see "Security fix" below.** Hydrate-on-load: `board-sync.js`'s `hydrateFromTeamIfConnected()`
    runs once at boot (`db.js`'s `initDb()`), before the squads/dimensions/config listeners
    register, and again right after a fresh "Connect" — if the relay's copy of `boards/<teamCode>`
    is newer (by the payload's own `updatedAt`, tracked per-code via `getSyncedAt`/`setSyncedAt`)
@@ -210,8 +213,8 @@ is set on a device:
    BOTH directions: a device booting with a team code already set pulls another device's
    already-pushed board with zero clicks, then after that second device makes its own change, the
    first device's next reload pulls the newer state back too.
-5. **DONE (2026-09-12).** Live subscribe: `board-sync.js`'s `subscribeToTeamBoardIfConnected()`
-   keeps `boards/<teamCode>`'s relay connection open (same one-persistent-WebSocket-per-room-code
+5. **DONE (2026-09-12), updated for the link-based secret — see "Security fix" below.** Live subscribe: `board-sync.js`'s `subscribeToTeamBoardIfConnected()`
+   keeps a team's relay connection open (same one-persistent-WebSocket-per-room-id
    machinery retro sessions already use) and reacts to every future update via the shared
    `maybeApplyRemote()` guard, rather than only checking once at boot. Started right after the
    boot-time hydrate and right after a fresh "Connect"; stopped on "Disconnect"
@@ -227,6 +230,57 @@ is set on a device:
 Also on deck, not yet scheduled into a specific step: a participant's way to leave the retro join
 screen and return to the main app and back to their own participation; a co-facilitator join path
 via code/link (payoff of steps 5–6 plus a facilitator-role join flow).
+
+### Security fix (2026-09-12): typed team codes replaced with a high-entropy link/QR secret
+
+Steps 3–5 above originally let a device type a human-chosen "team code" (e.g. "MYSQUAD"), reusing
+retro sessions' "the code IS the encryption key" model. Caught in review before this went anywhere
+near real use: that tradeoff was made deliberately for retro sessions because the code there is
+**app-generated, random, and forgotten within minutes** of the session ending. A team code is the
+opposite on every axis — **user-chosen** (a dictionary word, not random), **long-lived by design**,
+and — once step 1's durable storage is opted into — **actually persisted**. A short, guessable,
+low-entropy code protecting a durable, ongoing, sensitive board is a real vulnerability: the relay
+can't distinguish a legitimate join from a guess (it's deliberately content-blind), so entropy in
+the code/key itself is the only real defense, and a typed team code had nowhere near enough of it.
+
+Fixed by splitting the two roles Excalidraw's real architecture keeps separate (the same
+verified-before-building research the whole "Board sync" direction is based on): a **high-entropy
+secret** (128 random bits, `crypto.js`'s `generateSecret()`) is what the encryption key derives
+from, and it's never typed or spoken — only ever shared as a link (`?team=<secret>`) or a QR code,
+reusing the exact link/QR pattern retro sessions already use to join. The relay only ever sees a
+**separate, one-way hash** of that secret (`roomIdFor()`, SHA-256 truncated to 64 bits) for
+routing — knowing the room id buys an attacker nothing, since it can't run backward to the secret.
+`relay-client.js`'s `doc()`/`collection()` gained an optional second `secret` argument so a caller
+can supply the key separately from the path's own routing id; omitted (every session caller),
+behavior is byte-for-byte unchanged — the path's own code is still the key, exactly as before.
+
+`board-sync.js`'s UI changed to match: "Create a team link" (first device) generates the secret and
+shows it as a link + QR + copy button; joining means opening that link (an inline
+`autoConnectFromLink()` reads `?team=`, persists it, then strips it from the visible URL/history —
+the same hygiene a magic-link auth flow uses) or pasting it into a "paste a team link" box. No code
+is ever typed.
+
+**A real second bug surfaced while testing this**, predating the security fix and latent the whole
+time: `relay-client.js`'s `putDoc()` re-derived its encryption key from `room.code` on every write,
+rather than reusing the key the room actually connected with. Harmless for sessions (where `code`
+and the key material were always the same value), but for a board using a separate secret this
+meant every board write was silently encrypted with the WRONG key — decryption on any receiving
+client (including the sender's own live subscription) failed and was silently dropped (the existing
+`.catch(){}` around decrypt treats a bad key indistinguishably from a corrupt envelope). Fixed by
+storing the room's actual `keyPromise` on the room object at connect time and having `putDoc()`
+reuse it instead of re-deriving. `tests/test_board_sync_opt_in_push.py` is what caught it (a
+cross-device read came back `exists:false` for data that had definitely been pushed).
+
+All three Playwright board-sync tests (`test_board_sync_opt_in_push.py`,
+`test_board_sync_hydrate_on_boot.py`, `test_board_sync_live_subscribe.py`) were rewritten against
+the new link-based UI, driving a real "second device opens the link" join for hydrate/live-subscribe
+coverage rather than pre-seeding localStorage. `test_relay_board_path_sync.py` gained direct
+coverage of the secret/routing-id split itself (same routing id, wrong secret → decryption fails,
+not a fallback to the path-derived key — verified from a **fresh** browser context specifically,
+since `relay-client.js` caches an opened room per page and a page that already opened a room with
+the right secret would otherwise mask the check). `tests/unit/test_board_sync.js` now covers
+`parseTeamSecretInput()`/`teamLinkFor()` instead of the retired `normalizeTeamCode()`. Full 25-file
+Playwright + 38-test unit suite passing.
 
 ## Deliberately not built yet (and why)
 
@@ -568,3 +622,20 @@ Two independent tracks, either can go first:
   pushes. Full 25-file Playwright + 35-test unit suite re-verified passing. Safe to ship to `main`
   as-is: identical no-team-code-set behavior; the only change for a connected device is seeing
   updates sooner (live vs. next reload), never a different final state than step 4 already produced.
+- 2026-09-12 — **Board sync security fix**, from user review of steps 3–5: a typed, user-chosen
+  "team code" doubling as the encryption key (retro sessions' deliberate tradeoff, wrong here — see
+  "Board sync"'s new "Security fix" section for the full reasoning) replaced with a high-entropy
+  secret shared only via link/QR, mirroring Excalidraw's real architecture and reusing retro
+  sessions' own join-by-link/QR UI. `crypto.js` gained `generateSecret()`/`roomIdFor()`;
+  `relay-client.js`'s `doc()`/`collection()` gained an optional `secret` argument (omitted, sessions
+  are byte-for-byte unchanged); `board-sync.js`'s UI became "Create a team link" / paste-a-link /
+  auto-connect-from-`?team=`. Testing this also caught a real, previously-latent bug in
+  `relay-client.js`'s `putDoc()` (re-derived its key from the room's routing id instead of reusing
+  the room's actual key — invisible for sessions, silently broke every board write) — fixed by
+  storing the room's `keyPromise` at connect time. All three board-sync Playwright tests rewritten
+  against the new UI; `test_relay_board_path_sync.py` gained direct secret/routing-id-separation
+  coverage; `tests/unit/test_board_sync.js` now covers `parseTeamSecretInput()`/`teamLinkFor()`.
+  Full 25-file Playwright + 38-test unit suite passing. **Not yet merged to `main`** — the user
+  clarified mid-session that "safe to push to main" is a standing capability they want, not a
+  standing instruction to auto-merge every finished increment: from here on, increments land on the
+  feature branch and stay there, tested and ready, until the user explicitly says to merge.
