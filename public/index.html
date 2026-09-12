@@ -120,6 +120,19 @@
     </div>
 
     <div class="card" style="margin-top:14px;">
+      <h2>Team sync (beta)</h2>
+      <p class="hint">Optional: connect this device to a team code so this board's squads, dimensions and
+        setup start pushing to that code over the same encrypted relay retro sessions already use. One-way for
+        now &mdash; this device's changes go out, but this device won't yet pull in changes made elsewhere.</p>
+      <div class="actions" id="teamSyncActions">
+        <input type="text" id="teamCodeInput" placeholder="Team code, e.g. MYSQUAD" maxlength="40" dir="auto">
+        <button class="btn primary" id="teamCodeConnectBtn" type="button">Connect</button>
+        <button class="btn ghost" id="teamCodeDisconnectBtn" type="button" hidden>Disconnect</button>
+      </div>
+      <p class="hint" id="teamSyncStatus" style="margin:8px 0 0;"></p>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
       <h2>Squads</h2>
       <p class="hint">Add, rename or remove squads. Ratings live with the squad, not the name &mdash; renaming is safe.</p>
       <div class="tpl-list" id="adminSquadList"></div>
@@ -310,6 +323,7 @@
 <script src="js/dimensions.js"></script>
 <script src="js/templates.js"></script>
 <script src="js/csv.js"></script>
+<script src="js/board-sync.js"></script>
 <script src="js/db.js"></script>
 <script src="app.js"></script>
 </body>

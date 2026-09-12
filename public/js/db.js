@@ -48,6 +48,7 @@ async function initDb(){
       diag("Squad snapshot #" + squadSnapCount + ": " + docs.length + " doc(s) [" + docs.map(function(d){return d.id;}).join(",") + "]" + (snap.metadata && snap.metadata.fromCache ? " (from cache)" : ""));
       state.squads = docs;
       renderAll();
+      pushBoardSnapshotIfConnected();
     }, function(err){ diag("Squad snapshot listener error: " + (err && err.code ? err.code : String(err))); setSyncStatus(false); });
 
     var dimSnapCount = 0;
@@ -71,6 +72,7 @@ async function initDb(){
       state.dimensions = docs;
       renderAll();
       if(!dimBackdrop.hidden) renderDimList();
+      pushBoardSnapshotIfConnected();
     }, function(err){ diag("Dimension snapshot listener error: " + (err && err.code ? err.code : String(err))); });
 
     var tplSnapCount = 0;
@@ -98,6 +100,7 @@ async function initDb(){
       };
       diag("Config snapshot: unit=" + state.config.unit + " template=" + state.config.activeTemplateName);
       renderAll();
+      pushBoardSnapshotIfConnected();
     }, function(err){ diag("Config snapshot listener error: " + (err && err.code ? err.code : String(err))); });
 
   }catch(e){ diag("initDb threw: " + (e && e.message ? e.message : String(e))); setSyncStatus(false); }
