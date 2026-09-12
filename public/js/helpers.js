@@ -29,6 +29,25 @@ function diag(msg){
   }
 }
 
+// A synchronous throw or a rejected promise with nothing to .catch() it
+// (e.g. an unexpected exception inside a click handler, before any
+// explicit diag() call) previously vanished with zero trace in this log --
+// exactly the situation a real bug report hit: "the button is disabled and
+// the page does not respond," with nothing in Diagnostics to say why.
+// Surfacing every uncaught error/rejection here, unconditionally, means
+// the log always shows SOMETHING rather than silently stopping, even for
+// failures nobody anticipated well enough to wrap in a try/catch.
+window.addEventListener("error", function(evt){
+  var msg = (evt && evt.message) || String(evt);
+  var where = (evt && evt.filename) ? " (" + evt.filename + ":" + evt.lineno + ")" : "";
+  diag("Uncaught error: " + msg + where);
+});
+window.addEventListener("unhandledrejection", function(evt){
+  var reason = evt && evt.reason;
+  var msg = (reason && reason.message) || (reason && reason.code) || String(reason);
+  diag("Unhandled promise rejection: " + msg);
+});
+
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function nowIso(){ return new Date().toISOString(); }
 function isJoinMode(){ return !!state.joinSessionId; }
