@@ -20,7 +20,7 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 - Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-12) — see
   `tests/README.md`. **`tests/unit/`**: 3 plain-Node files (`node:test`, nothing to install) for
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
-  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 25 Playwright files
+  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 26 Playwright files
   (named for the feature/flow each one covers) for everything that needs a real browser, running in
   around 2 minutes total after two 2026-09-12 perf passes (see the session log below) — zero JS errors on
   the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
@@ -222,8 +222,24 @@ is set on a device:
    devices connected to the same team code AT THE SAME TIME converge on a squad add in BOTH
    directions with zero reloads (unlike step 4, which needed one), and that disconnecting stops
    live updates too, not just outgoing pushes.
-6. Wire "finish retro" through the shared board doc — the actual fix for the Mac/iOS divergence
-   bug and the co-facilitator question above.
+6. **DONE (2026-09-12).** Wire "finish retro" through the shared board doc. Turned out to need very
+   little NEW plumbing — "Finish & apply" already writes into the local `squads/<id>` doc
+   (`squads.js`'s `persistDimensionRatings`), and that path was already covered by steps 3/5's
+   push/subscribe machinery, since `db.js`'s squads listener doesn't care WHY a squad doc changed.
+   Written test-first (this repo's new `tdd` skill, test-flighted for the first time on this story):
+   the very first end-to-end run of the real cross-device scenario surfaced a genuine, separate bug
+   — `board-sync.js`'s `applyRemoteBoardSnapshot()` wrote a remote squad's `dimensions` object
+   (frozen, per `deepFreezeClone()`) straight into a local doc; the next `persistDimensionRatings()`
+   call on that squad threw ("object is not extensible") trying to add a new dimension key to it.
+   Fixed with a `plainClone()` helper (JSON round-trip) applied to every frozen nested value a
+   remote snapshot hands over before it's written locally — `dimensions`, `statements`,
+   `scoreBands`, `strategies`. `tests/test_board_sync_finish_retro_convergence.py` proves the
+   original bug report's exact repro shape now converges: two devices, each facilitating a
+   different squad's retro, both end up seeing BOTH squads' real results, live; a third,
+   never-team-synced device (the rainy-day case) is confirmed unaffected. Also surfaced, directly
+   while writing this test, exactly why story 9 (participant exit/return) is real and not
+   cosmetic: a joined participant has no in-app way back to the main board, so the test itself had
+   to simulate what a real user does today (navigate back to the plain URL) to even get there.
 7. Promote from opt-in to default-on once proven; retire the "no persistent database" language in
    this file, `README.md`, and `docs/standalone-plan.md` for good.
 
@@ -287,7 +303,7 @@ Playwright + 38-test unit suite passing.
 | Not built | Why it's cut for now | What would trigger building it |
 |---|---|---|
 | Relay deployed anywhere public | Built, tested, and now deploy-ready (`render.yaml` + `SQUAD_PULSE_RELAY_URL`-driven build step — see `relay/README.md`), but this session has no hosting/Vercel account access to actually click "deploy" | Whoever has account access runs the Render blueprint (or any equivalent host) and sets the Vercel env var — see `relay/README.md`'s "Wiring the deployed static site to this relay" for the exact steps, including testing it on a Preview deployment before merging to `main` |
-| Co-facilitator "finish retro" ownership | A session doc is self-contained, so a co-facilitator's device can watch/reveal/override live over the relay with no extra work — but "Finish & apply" writes into the SQUAD's own rating, which lives in whichever browser's local board actually holds that squad. A co-facilitator on a genuinely different, independently-seeded browser doesn't have that squad locally, so their "Finish" would write nowhere useful. Open question, not yet resolved: should only the session's originating device be allowed to finish, or does finishing need to become a relay-carried action the owning board listens for? | Whenever a real second facilitator device needs to finish a retro, not just watch one |
+| Co-facilitator ACCESS (not ownership anymore) | The data-layer half of this is resolved (see "Board sync" step 6): once two devices are connected to the same team link, "Finish & apply" on either one reaches the other live, since both share the same synced `squads`/`dimensions`. What's left is the UI/access layer — a genuinely different device actually getting a facilitator-shaped view (live tally, override, finish button) for a session it didn't start, rather than the participant-only join screen. That's story 10 (co-facilitator join via barcode/link), not yet built. | Story 10 |
 | Save-board / Load-board-to-file | `local-store.js` already persists the board via `localStorage`, which covers the same browser/device | Once someone needs a board to move between browsers/devices without a relay |
 | Relay deployed on Vercel itself (one deployment, not two) | Deliberately rejected, not just deferred — see the locked decision above and `relay/README.md`'s "Why not a Vercel Function" | Only if Vercel's WebSocket support later guarantees same-instance routing without an external store, which would remove the reason this was rejected |
 | Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing | Once the marketing site (separate Claude Code project) is further along |
@@ -668,3 +684,23 @@ Two independent tracks, either can go first:
   watch-it-fail-for-the-right-reason → minimal-code → refactor → full-suite loop this file's own
   session log has been documenting in practice all along. Applies to any change under
   `public/js/*.js`, `public/local-store.js`, or `relay/*.js`.
+- 2026-09-12 — **Board sync step 6, and the `tdd` skill's first real test-flight.** Followed the new
+  skill exactly: picked the tier (Playwright — real relay, real cross-device), wrote
+  `tests/test_board_sync_finish_retro_convergence.py` FIRST reproducing the original bug report's
+  exact shape (two team-synced devices, each facilitating a different squad's retro), then ran it
+  before writing any new production code. It failed for a real reason on the first run — not the
+  one expected. `board-sync.js`'s `applyRemoteBoardSnapshot()` was writing a remote squad's
+  `dimensions` object (frozen, per `deepFreezeClone()`) straight into a local doc; the next
+  `persistDimensionRatings()` call on that squad threw trying to add a new key to it ("object is
+  not extensible"). This is precisely the kind of bug a test-after approach tends to miss — a
+  weaker test (does `applyRemoteBoardSnapshot()` return without throwing?) would have stayed green
+  right through it, since the throw only happens on the NEXT write to that squad, not the hydrate
+  itself. Fixed with a `plainClone()` helper (JSON round-trip) applied everywhere a remote
+  snapshot's nested value gets written into a local doc. Full scenario now passes: two devices,
+  each finishing a different squad's retro, both converge on seeing BOTH squads' real results,
+  live; a rainy-day third device that never connected to the team link is confirmed unaffected.
+  Skill verdict: worked as intended, no changes needed to the skill itself this round — the
+  "pick the tier" and "write it first" steps did their job. One incidental discovery while writing
+  the test, not a skill gap: a joined participant has no in-app way back to the main board (the
+  test had to `page.goto()` the plain URL to simulate what a real user does today), independent
+  confirmation that story 9 is real. Full 26-file Playwright + 38-test unit suite passing.

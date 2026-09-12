@@ -100,6 +100,21 @@ function pushBoardSnapshotIfConnected(){
   });
 }
 
+// A remote snapshot's nested objects/arrays (a squad's `dimensions`, a
+// dimension's `statements`/`scoreBands`/`strategies`) come back frozen --
+// deepFreezeClone() in both relay-client.js and local-store.js recursively
+// Object.freeze()s everything a doc.data() call hands out, matching the
+// real platform's own snapshot semantics. Writing one of those frozen
+// values straight into a LOCAL doc means that doc's own future in-place
+// edits (e.g. persistDimensionRatings()'s deepMerge(), which ADDS keys to
+// sq.dimensions) throw ("object is not extensible") the moment they touch
+// it. db.js's own squads listener already clones for exactly this reason
+// when frozen data flows FROM the db INTO `state`; this does the same
+// thing in the other direction, for remote data flowing INTO a local doc.
+function plainClone(value){
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
 // Rewrites the local squads/dimensions/meta-config docs to match a remote
 // board snapshot -- add/update what the remote has, remove what it no
 // longer does. Reads the CURRENT local doc ids via a fresh get() rather
@@ -122,7 +137,7 @@ function applyRemoteBoardSnapshot(remote){
     });
     remoteSquads.forEach(function(s){
       ops.push(db.collection("squads").doc(s.id).set({
-        name: s.name || "Untitled squad", order: s.order || 0, dimensions: s.dimensions || {}, updatedAt: remote.updatedAt
+        name: s.name || "Untitled squad", order: s.order || 0, dimensions: plainClone(s.dimensions) || {}, updatedAt: remote.updatedAt
       }));
     });
     localDimKeys.forEach(function(key){
@@ -130,9 +145,9 @@ function applyRemoteBoardSnapshot(remote){
     });
     remoteDims.forEach(function(d){
       var payload = { label: d.label || "", green: d.green || "", red: d.red || "", order: d.order || 0 };
-      if(d.statements) payload.statements = d.statements;
-      if(d.scoreBands) payload.scoreBands = d.scoreBands;
-      if(d.strategies) payload.strategies = d.strategies;
+      if(d.statements) payload.statements = plainClone(d.statements);
+      if(d.scoreBands) payload.scoreBands = plainClone(d.scoreBands);
+      if(d.strategies) payload.strategies = plainClone(d.strategies);
       ops.push(db.collection("dimensions").doc(d.key).set(payload));
     });
     if(remote.config) ops.push(db.doc("meta/config").set(Object.assign({}, remote.config, { updatedAt: remote.updatedAt })));
