@@ -164,16 +164,23 @@
     };
   }
 
-  // Routes any "sessions"-rooted path to the encrypted relay client instead
-  // of localStorage (see the file header comment); everything else keeps
-  // going to the local board store, unchanged. Falls back to the local
-  // store if relay-client.js somehow isn't loaded, rather than throwing.
+  // Routes any "sessions"- or "boards"-rooted path to the encrypted relay
+  // client instead of localStorage (see the file header comment);
+  // everything else keeps going to the local board store, unchanged. Falls
+  // back to the local store if relay-client.js somehow isn't loaded, rather
+  // than throwing. "boards" is currently unused by anything upstream (see
+  // STATUS.md's "Board sync" plan, step 2) -- it's wired here so the router
+  // already handles it correctly once something starts calling it, rather
+  // than needing a second change alongside whatever does.
+  function isRelayPath(path){
+    return !!(window.SquadPulseRelay && (window.SquadPulseRelay.isSessionPath(path) || window.SquadPulseRelay.isBoardPath(path)));
+  }
   function routedDocRef(path){
-    if(window.SquadPulseRelay && window.SquadPulseRelay.isSessionPath(path)) return window.SquadPulseRelay.doc(path);
+    if(isRelayPath(path)) return window.SquadPulseRelay.doc(path);
     return localDocRef(path);
   }
   function routedCollRef(path){
-    if(window.SquadPulseRelay && window.SquadPulseRelay.isSessionPath(path)) return window.SquadPulseRelay.collection(path);
+    if(isRelayPath(path)) return window.SquadPulseRelay.collection(path);
     return localCollRef(path);
   }
 

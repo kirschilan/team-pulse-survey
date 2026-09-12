@@ -47,6 +47,16 @@ var SquadPulseRelay = (function(){
   }
 
   function isSessionPath(path){ return path.split("/")[0] === "sessions"; }
+  // "boards/<teamCode>[/...]" is the same wire mechanism as a retro
+  // session, aimed at a different room namespace: an opt-in, durable,
+  // whole-board sync a device joins with a persistent team code instead of
+  // a one-off session code. Nothing calls doc()/collection() with a
+  // "boards"-rooted path yet -- see STATUS.md's "Board sync" plan, step 2 --
+  // this only makes the plumbing accept one alongside "sessions" paths, so
+  // the relay (which never inspects a path's meaning, just routes by
+  // whatever room code opened the connection -- see relay/server.js) and
+  // this router both already work the moment something calls it.
+  function isBoardPath(path){ return path.split("/")[0] === "boards"; }
   function codeFromPath(path){ return path.split("/")[1]; }
 
   function deepFreezeClone(obj){
@@ -364,5 +374,5 @@ var SquadPulseRelay = (function(){
     return function(){ broadListeners = broadListeners.filter(function(x){ return x!==cb; }); };
   }
 
-  return { isSessionPath: isSessionPath, doc: docRef, collection: collRef };
+  return { isSessionPath: isSessionPath, isBoardPath: isBoardPath, doc: docRef, collection: collRef };
 })();
