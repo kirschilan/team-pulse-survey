@@ -82,7 +82,7 @@ references.)
 | `test_view_navigation_and_squad_admin.py` | Tribe view's read-only grid; Squad view rating and its "hotspots" panel; Admin squad CRUD; view/squad selection persisting across reload |
 | `test_scored_template_five_dysfunctions.py` | Loading the Five Dysfunctions starter template (statements/scoreBands/strategies) and reloading it idempotently |
 | `test_scored_template_tuckman.py` | The Tuckman starter template end to end: 20 interleaved statements, source-assessment scoring bands (not a health judgment) |
-| `test_retro_join_flow.py` | Starting/closing a retro session; sharing by code, link, or QR; joining by each path; bad/expired code or link |
+| `test_retro_join_flow.py` | Starting/closing a retro session; sharing by code, link, or QR; joining by each path; bad/expired code or link; the join screen's own diagnostics disclosure (its only way to show what happened, since it has no nav back to Admin's) |
 | `test_retro_statement_survey_submission.py` | A teammate's full statement-based survey submission across every dimension, personal results, facilitator live view |
 | `test_retro_direct_rating_flow.py` | The same submission flow for a direct-rating (non-statement) template |
 | `test_retro_reveal_mode_and_consolidation.py` | The hold/live reveal toggle, majority consolidation, and calmer-bucket tie-breaking |

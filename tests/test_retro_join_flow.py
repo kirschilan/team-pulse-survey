@@ -247,6 +247,21 @@ with sync_playwright() as p:
     print("=== bad/nonexistent session link ===")
     print("heading:", heading5)
     assert "isn" in heading5.lower() and "open" in heading5.lower()
+
+    # The join screen has no nav back to Admin's own diagnostics panel (a
+    # real bug report: stuck on a phone with a session that won't open, and
+    # no way to see why), so it needs its own diagnostics disclosure --
+    # helpers.js's diag() now updates every ".diag-log" element, not just
+    # Admin's. Confirm it's actually reachable and populated here, not just
+    # present in the DOM.
+    join_diag_panel_open = page5.eval_on_selector('#joinDiagPanel', 'el => el.open')
+    print("join diagnostics panel collapsed by default:", not join_diag_panel_open)
+    assert not join_diag_panel_open
+    page5.click('#joinDiagPanel summary')
+    page5.wait_for_timeout(100)
+    join_diag_text = page5.eval_on_selector('#joinDiagLog', 'el => el.textContent')
+    print("join diagnostics content:", join_diag_text)
+    assert "not found" in join_diag_text.lower() or "does-not-exist" in join_diag_text.lower()
     print("errors (bad link device):", errors5)
 
     print("=== ALL ERRORS: SM=", errors, "joinA(url)=", errors2, "joinB(code)=", errors3, "badcode=", errors4, "badlink=", errors5)

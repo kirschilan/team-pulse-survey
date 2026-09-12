@@ -6,18 +6,27 @@ function diag(msg){
   var t = new Date().toISOString().slice(11,19);
   DIAG_LINES.push("[" + t + "] " + msg);
   if (DIAG_LINES.length > 40) DIAG_LINES.shift();
-  var el = document.getElementById("diagLog");
-  if (!el) return;
-  // Replacing textContent wholesale (the obvious way to do this) also wipes
-  // out any text selection inside it -- meaning a fast-moving log (e.g. the
-  // relay reconnecting every few seconds) makes the panel impossible to
-  // select-and-copy, since each new line deselects whatever was highlighted
-  // a moment before. Skip the DOM update while the user has an active
-  // selection inside this element; the next call after they let go catches
-  // it back up to date.
-  var sel = window.getSelection && window.getSelection();
-  if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el.contains(sel.anchorNode)) return;
-  el.textContent = DIAG_LINES.join("\n");
+  var text = DIAG_LINES.join("\n");
+  // Two places show this log: the Admin view's panel, and a participant's
+  // own Join screen (which has no nav back to Admin at all -- someone
+  // stuck on "this session isn't open" on their phone has no other way to
+  // see what actually happened). Both share class="diag-log" so one call
+  // updates whichever is currently in the DOM (only one is ever visible at
+  // a time, but updating both costs nothing).
+  var els = document.querySelectorAll(".diag-log");
+  for (var i = 0; i < els.length; i++) {
+    var el = els[i];
+    // Replacing textContent wholesale (the obvious way to do this) also
+    // wipes out any text selection inside it -- meaning a fast-moving log
+    // (e.g. the relay reconnecting every few seconds) makes the panel
+    // impossible to select-and-copy, since each new line deselects
+    // whatever was highlighted a moment before. Skip the DOM update for
+    // this element while the user has an active selection inside it; the
+    // next call after they let go catches it back up to date.
+    var sel = window.getSelection && window.getSelection();
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el.contains(sel.anchorNode)) continue;
+    el.textContent = text;
+  }
 }
 
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
