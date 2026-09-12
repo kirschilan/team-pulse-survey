@@ -78,7 +78,7 @@ function renderRanking(){
       '</div>' +
     '</div>';
   }).join("");
-  document.getElementById("rankList").innerHTML = html || '<p class="hint" style="margin:0;">Add a '+unitLower()+' to get started.</p>';
+  document.getElementById("rankList").innerHTML = html || '<p class="hint" style="margin:0;">Add a '+esc(unitLower())+' to get started.</p>';
 }
 
 function renderHotspots(){
@@ -109,7 +109,7 @@ function renderHotspots(){
       '<div class="stackbar">'+segs.join("")+'</div>' +
     '</div>';
   }).join("");
-  document.getElementById("hotspotList").innerHTML = html || '<p class="hint" style="margin:0;">Score a few '+unitPluralLower()+' to see patterns emerge.</p>';
+  document.getElementById("hotspotList").innerHTML = html || '<p class="hint" style="margin:0;">Score a few '+esc(unitPluralLower())+' to see patterns emerge.</p>';
 }
 
 // Tribe view's grid is READ-ONLY: renaming/removing squads is now an Admin

@@ -7,7 +7,7 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 ## What's real right now
 
 - `public/` is a working static site — `index.html` + `styles.css` + `vendor/qrcode.js` +
-  `local-store.js` + `app.js` + ten feature modules under `public/js/` (see "The app's file
+  `local-store.js` + `app.js` + twelve feature modules under `public/js/` (see "The app's file
   layout" below). Originally ported verbatim from the Claude Artifact prototype
   (`squad-pulse.html`) as one 2396-line `app.js`, then split by feature on 2026-09-11 (and
   `retro.js` split again, into its facilitator/participant halves, on 2026-09-12) with zero
@@ -58,7 +58,8 @@ along the seams the original file already had (`// ---------- section ----------
 | `squads.js` | Squad CRUD, Admin's squad list, Squad view, and the `persistDimensionRating(s)` writer. |
 | `retro-facilitator.js` | The FACILITATOR half of retro sessions: start/close, the session card, reveal-mode/override + sprint note, finish-and-apply, the live response tally, QR rendering. Split out from a single `retro.js` on 2026-09-12 — see the session log below. |
 | `retro-join.js` | The PARTICIPANT half: the join screen, the blind interleaved statement survey, direct-rating swatches, submission, and the personal-result view. Shares almost no code with `retro-facilitator.js` (different device, different role) — that's what made the split clean. |
-| `dimensions-templates.js` | The dimension manager and template save/load/delete. |
+| `dimensions.js` | The dimension manager (add/rename/reorder/remove). Split out of a combined `dimensions-templates.js` on 2026-09-12. |
+| `templates.js` | Template save/load/delete. Split out of the same combined file, same day. |
 | `csv.js` | CSV export and import (parsing, column matching, preview, apply). |
 | `db.js` | `initDb()` — the Firestore-shaped snapshot listeners that wire `db` writes into `state` and back into a render. |
 | `crypto.js` | AES-256-GCM encrypt/decrypt for retro-session documents, key derived from the session code. |
@@ -71,7 +72,7 @@ suite (every test navigates via `file://`) and the README's "open `index.html` d
 handful of top-level `document.getElementById(...)` lookups each file does for elements that are
 already in the DOM by the time these scripts run (they sit at the end of `<body>`) — every actual
 cross-file *call* happens inside a function body triggered later (an event handler, or `start()`),
-by which point every file has finished loading, so the specific order between the ten files
+by which point every file has finished loading, so the specific order between the twelve files
 doesn't otherwise matter.
 
 ## The one thing to know before touching the app
@@ -102,10 +103,16 @@ locked decision below; only a session's own content does.
 
 ## Decisions locked in (don't re-litigate these)
 
-- **No persistent, multi-tenant database, ever.** A facilitator's own browser is the board's
-  source of truth — squads, templates, ratings. Durability beyond one browser session is an
-  explicit **Save board → file** / **Load board ← file** action, not always-on persistence. (Not
-  implemented yet — see below.)
+- **No persistent, multi-tenant database, ever — being deliberately reversed, incrementally, as of
+  2026-09-12.** This was the original decision (a facilitator's own browser as the board's sole
+  source of truth), but it's the direct cause of a real bug: two devices independently seed
+  identical squad IDs, so per-device `localStorage` boards never actually agree once more than one
+  device is involved in a retro. The replacement direction — **see "Board sync (major change, in
+  progress)" below** — keeps the relay content-blind (server never sees plaintext, unchanged) but
+  makes it a durable, pluggable, encrypted key-value store for the whole board, not just live
+  session traffic. Being rolled out as a sequence of small, independently-tested,
+  independently-shippable increments; nothing here breaks until a later increment explicitly wires
+  board reads/writes through it.
 - **Only a live retro session touches a server**, and only for that session's lifetime — an
   ephemeral, in-memory, per-session-code relay (dimensions snapshot + responses + status/
   revealMode/overrides/experimentNote), forgotten once the room empties. No database.
@@ -144,6 +151,50 @@ locked decision below; only a session's own content does.
   and a code that never existed are the same thing again — there is no way to keep that distinction
   forever without adding real persistence, which is exactly the trade-off already rejected for the
   relay itself (see the Vercel Function decision above). This is the deliberate stopping point.
+
+## Board sync (major change, in progress)
+
+Replacing the "no persistent database, ever" decision above with a model the user specified
+directly, after independently verifying Excalidraw's real architecture (a content-blind relay for
+live propagation + Firebase for durable storage): the relay becomes a **durable, encrypted
+key-value store for the whole board** — still unable to read any of it (same AES-256-GCM,
+code-derived-key encryption as retro sessions, just extended past `sessions/*`) — instead of only
+ever holding transient session traffic. This also folds in the "co-facilitator finish retro"
+open question above: once a board is synced, "finish retro" becomes a write into the shared board
+doc, so it doesn't matter which device facilitated.
+
+Rolled out as increments, each independently tested and safe to ship to `main` even before the
+whole thing is done — no increment changes default behavior until an explicit opt-in (a team code)
+is set on a device:
+
+1. **DONE (2026-09-12).** Relay-side durable storage, behind a documented adapter interface
+   (`relay/storage/`: `load`/`save`/`remove`). Default adapter (`none-adapter.js`) reproduces the
+   relay's exact original behavior — nothing persists; `file-adapter.js` is the reference "real"
+   adapter (one JSON file per room, keyed by a hash of the room code, so a restart or redeploy
+   doesn't lose an in-progress session). Opt-in via `RELAY_STORAGE=file`. Zero app-facing change —
+   wire protocol, `relay-client.js`, and every existing test are untouched; new coverage in
+   `relay/test/storage.test.js` proves both adapters and that a restart with `FileAdapter` really
+   does survive while the default doesn't. The adapter shape itself is what answers requirement (0)
+   from the user's brief: swapping Render for another host, or forking this repo onto infra with
+   its own storage of choice, means writing one small adapter file, not touching `server.js`.
+2. **Next.** Extend `relay-client.js`'s `docRef`/`collRef` router (and the relay's own path
+   handling) to accept a `boards/<teamCode>` namespace alongside `sessions/<code>`, purely
+   additive — no caller uses it yet.
+3. Opt-in "connect to a team code" setting; saving squads/dimensions/config also pushes an
+   encrypted snapshot to `boards/<teamCode>/config` (one-way write only). Default (no team code
+   set) is unaffected.
+4. Hydrate-on-load: if a team code is set, fetch and merge the latest board snapshot before
+   rendering (last-write-wins by timestamp).
+5. Live subscribe: board updates propagate to other currently-open devices in real time, not just
+   on load.
+6. Wire "finish retro" through the shared board doc — the actual fix for the Mac/iOS divergence
+   bug and the co-facilitator question above.
+7. Promote from opt-in to default-on once proven; retire the "no persistent database" language in
+   this file, `README.md`, and `docs/standalone-plan.md` for good.
+
+Also on deck, not yet scheduled into a specific step: a participant's way to leave the retro join
+screen and return to the main app and back to their own participation; a co-facilitator join path
+via code/link (payoff of steps 5–6 plus a facilitator-role join flow).
 
 ## Deliberately not built yet (and why)
 
@@ -381,3 +432,43 @@ Two independent tracks, either can go first:
   than discovered later; all 5 runs were clean. Deliberately not touched this round (still on the
   report's backlog, lower priority): `state.editing`'s hidden dual shape, splitting
   `dimensions-templates.js`, naming/abbreviation consistency, and the `esc()` safety audit.
+- 2026-09-12 — Finished the refactoring report's remaining items (except naming consistency, kept
+  deferred — see the report's updated "Status" note for why): split `state.editing` into
+  `state.editingCell`/`state.editingOverride` (two plainly-named slots instead of one object with a
+  hidden `mode:"session"` flag — see `modals.js`'s new `activeEditor()`); split
+  `dimensions-templates.js` into `dimensions.js` (the dimension manager) and `templates.js` (template
+  save/load/delete), the same device-role-style seam as the earlier `retro.js` split; and ran the
+  `esc()` safety audit the report flagged as unaudited. That audit found one real inconsistency:
+  `unitLower()`/`unitPluralLower()` output went into `innerHTML` unescaped in 7 places (`render.js`
+  ×2, `squads.js` ×3, `csv.js` ×2), while `templates.js`'s own `templateRowHtml` already wrapped the
+  same underlying value (`t.unitPlural||t.unit`) in `esc()` — fixed all 7 for consistency. Honest
+  caveat, not glossed over: nothing in the current UI actually lets a user set `state.config.unit`/
+  `unitPlural` to anything attacker-controlled (no exposed input writes to it directly; every path —
+  `DEFAULT_CONFIG`, the three starter templates, `saveCurrentAsTemplate` — only ever copies a value
+  already known to be a plain English word), so this closes a latent inconsistency rather than a
+  live exploit — worth having fixed regardless, since the next thing that touches this code shouldn't
+  have to rediscover the gap. Full 21-file Playwright suite plus the 34-test unit suite re-verified
+  passing with zero regressions after each of the three changes.
+- 2026-09-12 — Diagnosed a real cross-device bug (Mac facilitator + iOS participant end up with
+  divergent Tribe-view data) to its root cause: per-device `localStorage` seeds identical squad IDs
+  independently, so two devices' boards were never actually the same board. User specified the
+  replacement architecture directly (verified against Excalidraw's real design: a content-blind
+  relay for live propagation, a durable store for persistence) — see "Board sync (major change, in
+  progress)" above for the full plan and its 7 increments. **Step 1 done this session:** relay-side
+  durable storage behind a documented three-method adapter interface (`relay/storage/`:
+  `load`/`save`/`remove`). `none-adapter.js` is the default and reproduces the relay's exact
+  original behavior (nothing persists across a restart); `file-adapter.js` is a real one (one JSON
+  file per room on disk, filename derived from a hash of the room code so an arbitrary code can
+  never touch an unexpected path), opted into via `RELAY_STORAGE=file`. `server.js` now awaits
+  `storage.load()` when a room is first created (deduped across concurrent connections for the same
+  brand-new code via `roomCreationPromises`) and fire-and-forgets `storage.save()`/`storage.remove()`
+  on every write/room-cleanup; `startServer({ storage })` accepts an override for tests. Zero
+  app-facing or wire-protocol change — `relay-client.js` untouched, the original
+  `relay/test/relay.test.js` passes unmodified, and the real end-to-end
+  `tests/test_relay_cross_device_sync.py` (real relay process, two browser contexts, real
+  encryption) still passes. New `relay/test/storage.test.js` proves both adapters' contracts and,
+  by forcing a genuine module reload between two `startServer()` calls (not just reusing the same
+  in-process `rooms` Map, which would make the test meaningless), that a room's docs really do
+  survive a restart with `FileAdapter` and really don't with the default. Full 21-file Playwright +
+  34-test unit suite re-verified passing. Safe to ship to `main` as-is: this step only adds an
+  opt-in capability nothing currently calls.

@@ -236,7 +236,12 @@ var state = {
   templates: [],
   sessions: [],
   config: Object.assign({}, DEFAULT_CONFIG),
-  live:false, db:null, editing:null,
+  live:false, db:null,
+  // Exactly one of these is ever set at a time -- see modals.js's
+  // activeEditor(). Two separate, plainly-named slots instead of one
+  // `editing` object with a hidden `mode:"session"` flag, so which kind of
+  // edit is in progress is visible from the field itself.
+  editingCell:null, editingOverride:null,
   confirmAction:null,
   // per-viewer UI state -- which of the three views is showing, and (for
   // Squad view) which squad this browser is currently acting as. This is

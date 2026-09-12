@@ -191,8 +191,8 @@ function renderImportPreview(plan){
   var updatedExisting = plan.patches.filter(function(p){ return p.existing; }).length;
   var chips = '<div class="import-stats">' +
     '<span class="chip ok">'+plan.ratingCount+' rating'+(plan.ratingCount===1?"":"s")+' to import</span>' +
-    '<span class="chip">'+updatedExisting+' existing '+(updatedExisting===1?unitLower():unitPluralLower())+' updated</span>' +
-    (plan.newSquadNames.length ? '<span class="chip">'+plan.newSquadNames.length+' new '+(plan.newSquadNames.length===1?unitLower():unitPluralLower())+': '+plan.newSquadNames.map(esc).join(", ")+'</span>' : '') +
+    '<span class="chip">'+updatedExisting+' existing '+esc(updatedExisting===1?unitLower():unitPluralLower())+' updated</span>' +
+    (plan.newSquadNames.length ? '<span class="chip">'+plan.newSquadNames.length+' new '+esc(plan.newSquadNames.length===1?unitLower():unitPluralLower())+': '+plan.newSquadNames.map(esc).join(", ")+'</span>' : '') +
     (plan.skipped.length ? '<span class="chip warn">'+plan.skipped.length+' row'+(plan.skipped.length===1?"":"s")+' skipped</span>' : '') +
   '</div>';
 

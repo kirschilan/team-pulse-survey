@@ -41,7 +41,7 @@ public/            The app itself -- static site, deploys as-is
   js/              Feature modules app.js boots (plain scripts, not ES modules -- see STATUS.md
                    for why and for the file-by-file map)
     state.js, helpers.js, render.js, modals.js, squads.js,
-    retro-facilitator.js, retro-join.js, dimensions-templates.js,
+    retro-facilitator.js, retro-join.js, dimensions.js, templates.js,
     csv.js, db.js, crypto.js, relay-client.js
   styles.css
   vendor/
