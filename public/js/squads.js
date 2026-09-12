@@ -7,32 +7,32 @@ function renameSquad(id, name){
   if(!sq) return;
   sq.name = name;
   renderAll();
-  if(state.live && state.db){
-    state.db.collection("squads").doc(id).update({ name:name, updatedAt: nowIso() }).catch(function(){});
-  }
+  syncLiveIfConnected(function(){
+    return state.db.collection("squads").doc(id).update({ name:name, updatedAt: nowIso() });
+  }, "Rename squad " + id);
 }
 
 function removeSquad(id){
   state.squads = state.squads.filter(function(s){ return s.id!==id; });
   renderAll();
-  if(state.live && state.db){
-    state.db.collection("squads").doc(id).delete().catch(function(){});
-  }
+  syncLiveIfConnected(function(){
+    return state.db.collection("squads").doc(id).delete();
+  }, "Remove squad " + id);
 }
 
 function addSquad(){
   var maxOrder = state.squads.reduce(function(m,s){ return Math.max(m, s.order||0); }, 0);
   var name = "New " + unitLower();
-  if(state.live && state.db){
+  liveOr(function(){
     // don't also push a local copy here -- the live squads listener below
     // delivers this same write back immediately (latency-compensated) and
     // fully replaces state.squads, so pushing too would show a duplicate row
-    state.db.collection("squads").add({ name:name, order:maxOrder+1, dimensions:{}, updatedAt: nowIso() })
+    return state.db.collection("squads").add({ name:name, order:maxOrder+1, dimensions:{}, updatedAt: nowIso() })
       .catch(function(err){ diag("Add squad failed: " + (err && err.code ? err.code : String(err))); });
-  } else {
+  }, function(){
     state.squads.push({ id:"local-"+Date.now(), name:name, order:maxOrder+1, dimensions:{} });
     renderAll();
-  }
+  });
 }
 document.getElementById("addSquadBtn").addEventListener("click", addSquad);
 
@@ -114,9 +114,7 @@ function renderSquadDetailHtml(sq){
     var color = cell.color || "unscored";
     var trend = cell.trend;
     var hasNote = cell.note && cell.note.trim().length>0;
-    var colorWord = color==="good"?"Green":color==="warn"?"Yellow":color==="crit"?"Red":"Not yet scored";
     var showTrend = trend==="up" || trend==="down";
-    var trendWord = trend==="up" ? ", improving" : trend==="down" ? ", declining" : "";
     return '<div class="entry-row">' +
       '<div class="entry-info">' +
         '<div class="entry-label" dir="auto">'+esc(d.label)+'</div>' +
@@ -124,9 +122,9 @@ function renderSquadDetailHtml(sq){
         '<div class="entry-desc" dir="auto"><span class="tip-dot crit"></span><span>'+esc(d.red||"")+'</span></div>' +
       '</div>' +
       '<button class="cell-btn '+color+'" data-squad="'+esc(sq.id)+'" data-dim="'+esc(d.key)+'" type="button" ' +
-        'aria-label="'+esc(d.label)+': '+colorWord+trendWord+'">' +
+        'aria-label="'+esc(d.label)+': '+colorWord(color)+trendWord(trend, true)+'">' +
         markIcon(color) +
-        (showTrend ? '<span class="trend-badge '+trend+'" title="'+(trend==="up"?"Improving":"Declining")+'">'+trendIcon(trend)+'</span>' : '') +
+        (showTrend ? '<span class="trend-badge '+trend+'" title="'+trendWord(trend)+'">'+trendIcon(trend)+'</span>' : '') +
         (hasNote ? '<span class="note-dot" title="Has a note"></span>' : '') +
       '</button>' +
     '</div>';
@@ -165,12 +163,19 @@ function renderSquadView(){
   bindSessionCardEvents(sq);
 }
 
-function persistDimensionRating(sq, dimKey){
+// Writes one or more of a squad's dimension ratings to the live board in a
+// single update -- persistDimensionRating(sq, key) is the common single
+// -dimension case; persistDimensionRatings(sq, keys) is used when finishing
+// a retro (Story 9) writes several consolidated results at once, so they
+// land together rather than as separate round-trips.
+function persistDimensionRating(sq, dimKey){ persistDimensionRatings(sq, [dimKey]); }
+
+function persistDimensionRatings(sq, dimKeys){
   if(!(state.live && state.db)) { diag("Persist skipped: not connected to live storage (state.live=" + state.live + ")"); return; }
   try{
     var patch = { dimensions:{}, updatedAt: nowIso() };
-    patch.dimensions[dimKey] = sq.dimensions[dimKey];
-    diag("Writing squads/" + sq.id + " ...");
+    dimKeys.forEach(function(k){ patch.dimensions[k] = sq.dimensions[k]; });
+    diag("Writing squads/" + sq.id + " (" + dimKeys.length + " dim(s))...");
     state.db.collection("squads").doc(sq.id).update(patch).then(function(){
       diag("Write CONFIRMED for squads/" + sq.id);
     }).catch(function(err){
@@ -184,29 +189,5 @@ function persistDimensionRating(sq, dimKey){
     });
   } catch(err){
     diag("Persist threw synchronously: " + (err && err.message ? err.message : String(err)));
-  }
-}
-
-// Same as persistDimensionRating, but writes several dimensions of one
-// squad in a single update -- used when finishing a retro (Story 9), so
-// all 5 (or however many) consolidated results land together.
-function persistDimensionRatings(sq, dimKeys){
-  if(!(state.live && state.db)) { diag("Persist skipped (batch): not connected to live storage (state.live=" + state.live + ")"); return; }
-  try{
-    var patch = { dimensions:{}, updatedAt: nowIso() };
-    dimKeys.forEach(function(k){ patch.dimensions[k] = sq.dimensions[k]; });
-    diag("Writing squads/" + sq.id + " (batch, " + dimKeys.length + " dim(s))...");
-    state.db.collection("squads").doc(sq.id).update(patch).then(function(){
-      diag("Batch write CONFIRMED for squads/" + sq.id);
-    }).catch(function(err){
-      diag("Batch write REJECTED for squads/" + sq.id + ": " + (err && err.code ? err.code : String(err)) + (err && err.message ? " - " + err.message : ""));
-      if(err && err.code==="invalid_argument"){
-        state.db.collection("squads").doc(sq.id).set(Object.assign({name:sq.name, order:sq.order||0}, {dimensions:sq.dimensions}))
-          .then(function(){ diag("Fallback set() succeeded for squads/" + sq.id); })
-          .catch(function(err2){ diag("Fallback set() ALSO failed for squads/" + sq.id + ": " + (err2 && err2.code ? err2.code : String(err2))); });
-      }
-    });
-  } catch(err){
-    diag("Persist (batch) threw synchronously: " + (err && err.message ? err.message : String(err)));
   }
 }

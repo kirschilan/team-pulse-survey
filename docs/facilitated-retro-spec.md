@@ -93,9 +93,14 @@ Each story is independently demoable before the next starts.
    running) into a new `sessions/{id}` doc (squadId, squadName, templateName, dimensions, status:
    "open", revealMode: "hold", createdAt) and the card switches to "Retro session in progress" with a
    Close button. Sessions are independent per squad — starting one for Squad 1 doesn't affect Squad
-   2's picker. Closing deletes the session doc outright (no archiving — consistent with "current
-   snapshot only," nothing to consolidate yet since submission doesn't exist). Doesn't touch
-   `squad.dimensions` at all yet.
+   2's picker. Doesn't touch `squad.dimensions` at all yet.
+   - **Changed (2026-09-12):** closing a session no longer deletes the doc outright — it updates
+     `status` to `"closed"` instead (see `STATUS.md`'s locked decisions for why: it lets a
+     participant already on the join screen see a real "this retro has ended" instead of the same
+     generic message a bad code gets). The doc still goes away once the relay's own room-empty grace
+     period elapses; this only widened the window in which "closed" is distinguishable, on top of a
+     database-free relay that was built after this story originally shipped. Nothing about the
+     session shell itself (start/close UX, per-squad independence) changed.
 3. **Join link + QR, with a typed session code as the primary path — DONE.** Each open session now
    gets a short, human-typeable 6-character code (e.g. `W6G2F3`, drawn from an alphabet that excludes
    ambiguous characters like 0/O/1/I/L) that doubles as the session doc's id. The session card leads
@@ -345,3 +350,11 @@ to assert they're now answerable direct-rating rows instead. Published as Versio
   answerable. Every dimension is answerable now — direct-rating dimensions get an openly-labeled
   green/yellow/red swatch pick instead of the blind statement survey. See "Bug fix" section above.
   Published as Version 22.
+- 2026-09-12 — Migrated off the Claude Artifact sandbox to a standalone deployment with a real
+  cross-device relay (see `STATUS.md`, whose session log now carries this feature's ongoing history
+  going forward — not duplicated here). One change to this doc's own record: closing a session
+  updates `status` to `"closed"` rather than deleting the doc, so a participant's join screen can
+  say "this retro has ended" — see Story 2's note above. The retro pipeline itself (consolidation,
+  overrides, sprint note, finish-and-apply) is unchanged; `retro.js` was later split into
+  `retro-facilitator.js`/`retro-join.js` along the device-role boundary this spec already implies
+  throughout, with zero intended behavior change.

@@ -1,5 +1,8 @@
 from playwright.sync_api import sync_playwright
 import pathlib
+import sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from fixtures.build_page import write_plain_index
 
 # Coverage for public/local-store.js -- the localStorage-backed replacement
 # for the Claude-Artifact-only `db`/`downloads` capabilities that makes the
@@ -7,11 +10,14 @@ import pathlib
 # through tests/fixtures/build_page.py, which splices in fake_store.html and
 # so *always* has a real window.claude before local-store.js gets a chance to
 # install itself -- meaning local-store.js itself had zero coverage. This
-# file loads public/index.html directly (unmodified, no fake store spliced
-# in) so local-store.js is the thing actually driving the app, the same way
-# it runs for a real visitor.
+# file loads a plain copy of index.html (unmodified but for stripping the
+# Google Fonts <link> -- see write_plain_index -- no fake store spliced in)
+# so local-store.js is the thing actually driving the app, the same way it
+# runs for a real visitor. All three loads below use this SAME file so
+# localStorage persistence across reloads behaves exactly as it would
+# navigating the real index.html repeatedly.
 
-INDEX = pathlib.Path(__file__).resolve().parents[1] / "public" / "index.html"
+INDEX = write_plain_index(out_name="_test_local_store_index.html")
 INDEX_URL = "file://" + str(INDEX.resolve())
 
 with sync_playwright() as p:

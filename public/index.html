@@ -130,7 +130,7 @@
       <summary>Diagnostics (temporary — for troubleshooting save issues) <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
       <div style="padding:0 18px 16px;">
         <p class="hint" style="margin:0 0 8px;">If saving isn't working, open this, try rating a cell, then screenshot what appears below.</p>
-        <pre id="diagLog" class="mono" style="margin:0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:11px;line-height:1.6;max-height:160px;overflow:auto;white-space:pre-wrap;">(no activity yet)</pre>
+        <pre id="diagLog" class="mono diag-log" style="margin:0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:11px;line-height:1.6;max-height:160px;overflow:auto;white-space:pre-wrap;">(no activity yet)</pre>
       </div>
     </details>
   </section>
@@ -140,6 +140,19 @@
     <div class="card" id="joinCard">
       <h2>Connecting&hellip;</h2>
     </div>
+    <!-- This screen has no nav back to Admin's own diagnostics panel (by
+         design -- a participant shouldn't see the facilitator's board), so
+         it needs its own way to show what's actually happening: a session
+         that never opens, or a relay that can't be reached, looks
+         identical ("Connecting..." forever, or "isn't open") without this
+         -- see helpers.js's diag(), which updates every ".diag-log". -->
+    <details class="legend" id="joinDiagPanel" style="margin-top:14px;">
+      <summary>Trouble joining? Tap for diagnostics <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <div style="padding:0 18px 16px;">
+        <p class="hint" style="margin:0 0 8px;">If this isn't connecting, screenshot what appears below and send it to whoever's running the retro.</p>
+        <pre id="joinDiagLog" class="mono diag-log" style="margin:0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:11px;line-height:1.6;max-height:160px;overflow:auto;white-space:pre-wrap;">(no activity yet)</pre>
+      </div>
+    </details>
   </section>
 
 </div>
@@ -262,13 +275,38 @@
   </div>
 </div>
 <script src="vendor/qrcode.js"></script>
+<script src="relay-config.js"></script>
+<script>
+  // Where retro sessions actually live-sync (relay-client.js + crypto.js
+  // below) -- ws:// for a plain local relay, wss:// once it's deployed
+  // somewhere real. relay-config.js (above) sets window.SQUAD_PULSE_RELAY_URL
+  // directly when a Vercel deployment has the SQUAD_PULSE_RELAY_URL
+  // environment variable set (see scripts/generate-relay-config.js and
+  // relay/README.md) -- the `||` below only kicks in when that didn't
+  // happen. Only defaults to a locally-run relay when this PAGE ITSELF is
+  // local (file:// or localhost) -- a real deployment with no relay
+  // configured must NOT silently fall back to "ws://localhost:8787", since
+  // that means the VISITOR'S OWN machine: Chrome flags that as a
+  // cross-context private-network request (a scary permission prompt for a
+  // connection that can never succeed), and relay-client.js would then
+  // retry forever. Leave it explicitly null instead so relay-client.js can
+  // recognize "no relay configured" and fail fast with one clear message.
+  window.SQUAD_PULSE_RELAY_URL = window.SQUAD_PULSE_RELAY_URL || (
+    (location.protocol === "file:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")
+      ? "ws://localhost:8787"
+      : null
+  );
+</script>
+<script src="js/crypto.js"></script>
+<script src="js/relay-client.js"></script>
 <script src="local-store.js"></script>
 <script src="js/state.js"></script>
 <script src="js/helpers.js"></script>
 <script src="js/render.js"></script>
 <script src="js/modals.js"></script>
 <script src="js/squads.js"></script>
-<script src="js/retro.js"></script>
+<script src="js/retro-facilitator.js"></script>
+<script src="js/retro-join.js"></script>
 <script src="js/dimensions-templates.js"></script>
 <script src="js/csv.js"></script>
 <script src="js/db.js"></script>

@@ -1,10 +1,27 @@
 # Regression suite
 
-Playwright + Python end-to-end tests against `public/index.html` running over
-`file://`. There's no real backend yet, so every test drives the app through
-`tests/fixtures/fake_store.html` — an in-memory stand-in for the Firestore-shaped
-`db` API the app is written against (see `docs/standalone-plan.md` for what
-replaces it). Each test file is a standalone script, not a pytest suite.
+Two tiers:
+
+- **`tests/unit/`** — plain Node (`node:test`, nothing to install) tests of
+  pure logic with no DOM dependency: consolidation/scoring math, CSV
+  parsing/column-matching. Milliseconds, not seconds. See
+  `tests/unit/README.md`.
+- **`tests/test_*.py`** (this directory) — Playwright + Python end-to-end
+  tests against `public/index.html` running over `file://`, for everything
+  that needs a real browser: UI interaction, real DOM state, real
+  WebSocket/`crypto.subtle`. Most drive the app through
+  `tests/fixtures/fake_store.html` — an in-memory stand-in for the
+  Firestore-shaped `db` API the app is written against — rather than the
+  real board/relay backends, so they stay fast and deterministic. A few
+  files deliberately don't use it, because they exist specifically to test
+  what it stands in for: `test_local_store.py` (the real
+  `localStorage`-backed board) and `test_relay_cross_device_sync.py` (the
+  real relay, over a real WebSocket, with real encryption — see
+  `relay/README.md`). Each file is a standalone script, not a pytest suite.
+
+Together, these are the full regression suite — a change to consolidation
+math or CSV matching should get a unit test; a change to what the user sees
+or clicks needs a Playwright test.
 
 ## Setup
 
@@ -13,9 +30,11 @@ pip install playwright
 playwright install chromium
 ```
 
+(`tests/unit/` needs nothing beyond Node itself.)
+
 ## Running
 
-Each file is self-contained:
+Each Playwright file is self-contained:
 
 ```
 python3 tests/test_retro_direct_rating_flow.py
@@ -24,6 +43,7 @@ python3 tests/test_retro_direct_rating_flow.py
 Run the whole suite:
 
 ```
+node --test tests/unit/test_*.js
 for f in tests/test_*.py; do python3 "$f" || echo "FAILED: $f"; done
 ```
 
@@ -78,7 +98,7 @@ references.)
 | `test_view_navigation_and_squad_admin.py` | Tribe view's read-only grid; Squad view rating and its "hotspots" panel; Admin squad CRUD; view/squad selection persisting across reload |
 | `test_scored_template_five_dysfunctions.py` | Loading the Five Dysfunctions starter template (statements/scoreBands/strategies) and reloading it idempotently |
 | `test_scored_template_tuckman.py` | The Tuckman starter template end to end: 20 interleaved statements, source-assessment scoring bands (not a health judgment) |
-| `test_retro_join_flow.py` | Starting/closing a retro session; sharing by code, link, or QR; joining by each path; bad/expired code or link |
+| `test_retro_join_flow.py` | Starting/closing a retro session; sharing by code, link, or QR; joining by each path; bad/expired code or link; the join screen's own diagnostics disclosure (its only way to show what happened, since it has no nav back to Admin's) |
 | `test_retro_statement_survey_submission.py` | A teammate's full statement-based survey submission across every dimension, personal results, facilitator live view |
 | `test_retro_direct_rating_flow.py` | The same submission flow for a direct-rating (non-statement) template |
 | `test_retro_reveal_mode_and_consolidation.py` | The hold/live reveal toggle, majority consolidation, and calmer-bucket tie-breaking |
@@ -86,3 +106,8 @@ references.)
 | `test_retro_experiment_note_and_finish.py` | The shared sprint-experiment note; finishing a retro writes results into the squad, or no-ops with nothing submitted |
 | `test_tribe_hotspots.py` | Tribe view's cross-squad hotspot rollup and ranking (`renderHotspots`/`renderStats`) |
 | `test_local_store.py` | `public/local-store.js` itself — seeding, reload persistence, cross-tab sync, real CSV download, non-interference with a real `window.claude` |
+| `test_relay_cross_device_sync.py` | The real relay end to end: starts `relay/server.js` as a subprocess and drives two independent browser contexts (facilitator + participant) through a full retro over a real encrypted WebSocket connection, plus a third late-joiner confirming a just-closed session reads as "ended" (not the generic "isn't open"), and a fourth joining a code that never existed at all confirming that one still gets the generic message |
+| `test_starter_template_spotify.py` | The Spotify Squad Health Check starter template — listed, loadable, and reloadable after switching away, same as the other two starters |
+| `test_view_switch_refreshes_stale_state.py` | A db snapshot that arrives while a view (Tribe/Squad/Admin) is hidden updates `state` but not that view's DOM, since every listener gates its own render on the currently-visible view (see `db.js`) -- switching back must show current state, not whatever was last rendered before you left |
+| `test_relay_error_handling.py` | What happens when the relay is unavailable: no relay configured fails fast with no network attempt at all (not a doomed `ws://localhost` guess triggering a private-network permission prompt), a malformed URL scheme (e.g. a `wss://` typo) fails the same clean way instead of an uncaught `SyntaxError`, a configured-but-unreachable relay retries with bounded backoff instead of forever, a rapid multi-click on "Start retro session" only ever creates one session, the diagnostic log survives an in-progress text selection, and the join screen's "can't connect" message is distinct from "isn't open" |
+| `test_relay_config_injection.py` | `scripts/generate-relay-config.js` (the Vercel build step that wires a deployed relay's URL in via the `SQUAD_PULSE_RELAY_URL` environment variable): writes a real assignment when the variable is set, leaves a no-op placeholder when it isn't, and — driven through `index.html`'s actual script order — an injected value really does win over the page's own protocol/hostname default |

@@ -137,14 +137,12 @@ function renderGrid(){
       var color = cell.color || "unscored";
       var trend = cell.trend;
       var hasNote = cell.note && cell.note.trim().length>0;
-      var colorWord = color==="good"?"Green":color==="warn"?"Yellow":color==="crit"?"Red":"Not yet scored";
       var showTrend = trend==="up" || trend==="down";
-      var trendWord = trend==="up" ? ", improving" : trend==="down" ? ", declining" : "";
       return '<td>' +
         '<div class="cell-btn '+color+'" role="img" data-squad="'+esc(sq.id)+'" data-dim="'+esc(d.key)+'" ' +
-        'aria-label="'+esc(sq.name)+' &middot; '+esc(d.label)+': '+colorWord+trendWord+'">' +
+        'aria-label="'+esc(sq.name)+' &middot; '+esc(d.label)+': '+colorWord(color)+trendWord(trend, true)+'">' +
           markIcon(color) +
-          (showTrend ? '<span class="trend-badge '+trend+'" title="'+(trend==="up"?"Improving":"Declining")+'">'+trendIcon(trend)+'</span>' : '') +
+          (showTrend ? '<span class="trend-badge '+trend+'" title="'+trendWord(trend)+'">'+trendIcon(trend)+'</span>' : '') +
           (hasNote ? '<span class="note-dot" title="Has a note"></span>' : '') +
         '</div>' +
       '</td>';

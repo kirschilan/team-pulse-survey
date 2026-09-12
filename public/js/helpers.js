@@ -6,9 +6,47 @@ function diag(msg){
   var t = new Date().toISOString().slice(11,19);
   DIAG_LINES.push("[" + t + "] " + msg);
   if (DIAG_LINES.length > 40) DIAG_LINES.shift();
-  var el = document.getElementById("diagLog");
-  if (el) el.textContent = DIAG_LINES.join("\n");
+  var text = DIAG_LINES.join("\n");
+  // Two places show this log: the Admin view's panel, and a participant's
+  // own Join screen (which has no nav back to Admin at all -- someone
+  // stuck on "this session isn't open" on their phone has no other way to
+  // see what actually happened). Both share class="diag-log" so one call
+  // updates whichever is currently in the DOM (only one is ever visible at
+  // a time, but updating both costs nothing).
+  var els = document.querySelectorAll(".diag-log");
+  for (var i = 0; i < els.length; i++) {
+    var el = els[i];
+    // Replacing textContent wholesale (the obvious way to do this) also
+    // wipes out any text selection inside it -- meaning a fast-moving log
+    // (e.g. the relay reconnecting every few seconds) makes the panel
+    // impossible to select-and-copy, since each new line deselects
+    // whatever was highlighted a moment before. Skip the DOM update for
+    // this element while the user has an active selection inside it; the
+    // next call after they let go catches it back up to date.
+    var sel = window.getSelection && window.getSelection();
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed && el.contains(sel.anchorNode)) continue;
+    el.textContent = text;
+  }
 }
+
+// A synchronous throw or a rejected promise with nothing to .catch() it
+// (e.g. an unexpected exception inside a click handler, before any
+// explicit diag() call) previously vanished with zero trace in this log --
+// exactly the situation a real bug report hit: "the button is disabled and
+// the page does not respond," with nothing in Diagnostics to say why.
+// Surfacing every uncaught error/rejection here, unconditionally, means
+// the log always shows SOMETHING rather than silently stopping, even for
+// failures nobody anticipated well enough to wrap in a try/catch.
+window.addEventListener("error", function(evt){
+  var msg = (evt && evt.message) || String(evt);
+  var where = (evt && evt.filename) ? " (" + evt.filename + ":" + evt.lineno + ")" : "";
+  diag("Uncaught error: " + msg + where);
+});
+window.addEventListener("unhandledrejection", function(evt){
+  var reason = evt && evt.reason;
+  var msg = (reason && reason.message) || (reason && reason.code) || String(reason);
+  diag("Unhandled promise rejection: " + msg);
+});
 
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function nowIso(){ return new Date().toISOString(); }
@@ -47,6 +85,14 @@ function consolidateBand(bands){
   return null;
 }
 
+// The one thing that discriminates a dimension's whole shape -- statement
+// -scored (Five Dysfunctions/Tuckman style, summed through scoreBands) vs.
+// direct-rating (Spotify Squad Health Check style, one color pick with
+// nothing to sum). Named and centralized so a THIRD shape, if one's ever
+// added, only needs a new branch here rather than a hunt through every
+// place this was previously inlined as `dim.statements && dim.statements.length`.
+function isStatementDimension(dim){ return !!(dim && dim.statements && dim.statements.length); }
+
 // One response's band for a single dimension (null if that response didn't
 // cover this dimension -- shouldn't happen post-Story-5's atomic submit,
 // but an older/partial response snapshot could still lack a key).
@@ -59,7 +105,7 @@ function consolidateBand(bands){
 function bandForResponse(dim, response){
   var ans = response && response.answers && response.answers[dim.key];
   if(ans===undefined || ans===null) return null;
-  if(dim.statements && dim.statements.length){
+  if(isStatementDimension(dim)){
     if(!ans.length) return null;
     var sum = ans.reduce(function(a,b){ return a+b; }, 0);
     return bandForScore(sum, dim.scoreBands);
@@ -100,13 +146,13 @@ function retroDimensions(dims){
 }
 // The subset that uses the blind, interleaved Likert-statement survey.
 function statementDimensions(dims){
-  return retroDimensions(dims).filter(function(d){ return d.statements && d.statements.length; });
+  return retroDimensions(dims).filter(isStatementDimension);
 }
 // The subset that's answered with one direct color pick instead (Spotify
 // Squad Health Check style) -- shown openly labeled, same as Spotify's own
 // exercise, not hidden/interleaved like the statement dimensions above.
 function directRatingDimensions(dims){
-  return retroDimensions(dims).filter(function(d){ return !(d.statements && d.statements.length); });
+  return retroDimensions(dims).filter(function(d){ return !isStatementDimension(d); });
 }
 function dimByKey(key){
   for(var i=0;i<state.dimensions.length;i++){ if(state.dimensions[i].key===key) return state.dimensions[i]; }
@@ -123,6 +169,24 @@ function squadScore(squad){
     if(color!=="unscored"){ scored++; score += weight(color); }
   });
   return { score:score, scored:scored, counts:counts, total: dims.length };
+}
+
+// Human-readable labels for a color band / trend, used everywhere a cell,
+// grid, or session card needs to say a rating out loud (aria-labels, pills,
+// summaries) -- centralized so the four-way ternary chain doesn't get
+// re-typed at every call site (it previously was, in render.js, squads.js,
+// and retro.js, each with its own slightly different default/edge wording).
+function colorWord(color){
+  return color==="good" ? "Green" : color==="warn" ? "Yellow" : color==="crit" ? "Red" : "Not yet scored";
+}
+function trendWord(trend, suffix){
+  // `suffix` picks between the two phrasings actually used: an aria-label
+  // wants ", improving" appended to a sentence; a standalone label wants
+  // just "Improving". Defaults to the standalone form.
+  if(suffix){
+    return trend==="up" ? ", improving" : trend==="down" ? ", declining" : "";
+  }
+  return trend==="up" ? "Improving" : trend==="down" ? "Declining" : "";
 }
 
 function trendIcon(trend){
@@ -147,4 +211,54 @@ function unitPluralLower(){ return (state.config.unitPlural||"Squads").toLowerCa
 function findSquad(id){
   for(var i=0;i<state.squads.length;i++){ if(state.squads[i].id===id) return state.squads[i]; }
   return null;
+}
+
+// ---------- live/local write helpers ----------
+// Every mutation in this app follows one of two shapes depending on
+// whether it's safe to also apply locally before the live write confirms:
+//
+// liveOr(liveFn, localFn) -- for a CREATE where applying it locally too
+// would show a duplicate row until the live listener's own echo arrives
+// (adding a squad, starting a session, ...). Exactly one of the two ever
+// runs; whichever does, its return value (often a promise some callers
+// chain on) passes straight through.
+//
+// syncLiveIfConnected(writeFn, describe) -- for everything else (rename,
+// reorder, delete, ...), where the caller has ALREADY mutated `state` and
+// rendered by the time this runs. The live write is fire-and-forget from
+// the caller's point of view; only a failure is worth reporting, tagged
+// with `describe` so the diagnostic log says which write it was.
+//
+// Neither of these is new behavior -- both shapes already existed at every
+// call site, just re-typed each time with `if(state.live && state.db){...}
+// else {...}`, twelve-plus times across squads.js, dimensions-templates.js,
+// and retro.js. Centralizing the shape doesn't change what any one call
+// site does; it just gives that shape one name instead of one retyping.
+function liveOr(liveFn, localFn){
+  return (state.live && state.db) ? liveFn() : localFn();
+}
+function syncLiveIfConnected(writeFn, describe){
+  if(!(state.live && state.db)) return;
+  writeFn().catch(function(err){
+    diag(describe + " failed: " + (err && err.code ? err.code : String(err)));
+  });
+}
+
+// Lets tests/unit/*.js `require()` this file's pure functions directly with
+// plain Node -- no browser, no Playwright -- instead of only reaching them
+// indirectly through a full page load and UI clicks. `module` doesn't exist
+// in a browser, so this is a complete no-op there; nothing about how the
+// real app loads or runs this file changes. See tests/unit/README.md.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    esc: esc, slugify: slugify, weight: weight,
+    bandForScore: bandForScore, consolidateBand: consolidateBand,
+    bandForResponse: bandForResponse, effectiveDimResult: effectiveDimResult,
+    sortedDimensions: sortedDimensions, sortedSquads: sortedSquads,
+    squadScore: squadScore, dimByKey: dimByKey, findSquad: findSquad,
+    retroDimensions: retroDimensions, statementDimensions: statementDimensions,
+    directRatingDimensions: directRatingDimensions,
+    isStatementDimension: isStatementDimension, colorWord: colorWord, trendWord: trendWord,
+    liveOr: liveOr, syncLiveIfConnected: syncLiveIfConnected, DIAG_LINES: DIAG_LINES
+  };
 }

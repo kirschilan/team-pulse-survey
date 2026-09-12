@@ -12,13 +12,18 @@
    see build_page.py, which splices fake_store.html in *after* this script).
 
    Per STATUS.md's locked-in decision, there is still no server-side
-   database here: `db` is backed by this browser's own localStorage, so a
-   facilitator's board persists across reloads on their machine exactly as
-   Excalidraw's local-first model intends. It does NOT sync across devices --
-   that still needs the encrypted relay described in
-   docs/standalone-plan.md. Other tabs of the *same* browser do stay in
-   sync via the native `storage` event, which is enough to self-test a
-   retro across two tabs. */
+   database for the BOARD here: squads/dimensions/templates/config are
+   backed by this browser's own localStorage, so a facilitator's board
+   persists across reloads on their machine exactly as Excalidraw's
+   local-first model intends, and does NOT sync across devices (other tabs
+   of the *same* browser do, via the native `storage` event).
+
+   A retro SESSION is different: any path rooted at "sessions" is routed to
+   SquadPulseRelay (relay-client.js + crypto.js, loaded before this file)
+   instead of localStorage, so a session's live state actually syncs across
+   real devices through the encrypted relay in docs/standalone-plan.md. This
+   is the one `db` router in the app: everything else below is unchanged
+   localStorage logic. */
 (function(){
   "use strict";
   if (window.claude && typeof window.claude.use === "function") return;
@@ -118,7 +123,7 @@
     docs.sort(function(a,b){ return (a.data().order||0)-(b.data().order||0); });
     return { docs: docs, size:docs.length, empty:docs.length===0, metadata:{fromCache:false,hasPendingWrites:false} };
   }
-  function docRef(path){
+  function localDocRef(path){
     return {
       id: path.split("/").pop(), path: path,
       get: function(){ var d = STORE[path]; return Promise.resolve({ id:this.id, exists: !!d, data: function(){ return d; } }); },
@@ -131,7 +136,7 @@
         return Promise.resolve();
       },
       delete: function(){ delete STORE[path]; persist(); notify(path.split("/").slice(0,-1).join("/")); notifyDoc(path); return Promise.resolve(); },
-      collection: function(sub){ return collRef(path+"/"+sub); },
+      collection: function(sub){ return localCollRef(path+"/"+sub); },
       onSnapshot: function(next, err){
         var l = { docPath: path, cb: next };
         DOC_LISTENERS.push(l);
@@ -143,11 +148,11 @@
       }
     };
   }
-  function collRef(path){
+  function localCollRef(path){
     return {
       path: path,
-      doc: function(id){ return docRef(path+"/"+(id|| ("auto"+Math.random().toString(36).slice(2)) )); },
-      add: function(data){ var id = "auto"+Math.random().toString(36).slice(2); STORE[path+"/"+id]=data; persist(); notify(path); return Promise.resolve(docRef(path+"/"+id)); },
+      doc: function(id){ return localDocRef(path+"/"+(id|| ("auto"+Math.random().toString(36).slice(2)) )); },
+      add: function(data){ var id = "auto"+Math.random().toString(36).slice(2); STORE[path+"/"+id]=data; persist(); notify(path); return Promise.resolve(localDocRef(path+"/"+id)); },
       orderBy: function(){ return this; }, where: function(){ return this; }, limit: function(){ return this; },
       get: function(){ return Promise.resolve(buildSnapshot(path)); },
       onSnapshot: function(next, err){
@@ -157,6 +162,19 @@
         return function(){ LISTENERS = LISTENERS.filter(function(x){ return x!==l; }); };
       }
     };
+  }
+
+  // Routes any "sessions"-rooted path to the encrypted relay client instead
+  // of localStorage (see the file header comment); everything else keeps
+  // going to the local board store, unchanged. Falls back to the local
+  // store if relay-client.js somehow isn't loaded, rather than throwing.
+  function routedDocRef(path){
+    if(window.SquadPulseRelay && window.SquadPulseRelay.isSessionPath(path)) return window.SquadPulseRelay.doc(path);
+    return localDocRef(path);
+  }
+  function routedCollRef(path){
+    if(window.SquadPulseRelay && window.SquadPulseRelay.isSessionPath(path)) return window.SquadPulseRelay.collection(path);
+    return localCollRef(path);
   }
 
   load();
@@ -185,7 +203,7 @@
 
   window.claude = {
     use: function(name){
-      if (name === "db") return Promise.resolve({ doc: docRef, collection: collRef });
+      if (name === "db") return Promise.resolve({ doc: routedDocRef, collection: routedCollRef });
       if (name === "downloads") return Promise.resolve({ save: function(opts){ triggerBrowserDownload(opts.filename, opts.data); return Promise.resolve(); } });
       return Promise.resolve(null);
     }

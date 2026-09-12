@@ -5,8 +5,12 @@ codebase deployed on Vercel, in the Excalidraw model (facilitator's browser is a
 multi-tenant database, share a link, save/reload to a file), so it can be embedded on the Dr. Agile
 website as a self-serve offering for visitors.
 
-This is a proposal only — nothing described here has been built yet. It lays out the architecture,
-the repo/migration plan, and the open questions to settle before writing any code.
+This started as a proposal only. As of 2026-09-11, the relay and encryption pieces below are now
+actually built — see `relay/README.md` and STATUS.md's "What's real right now" for the current
+state, and the two update notes inline below for where the real implementation deviated from this
+original sketch (both times, to keep an existing UX path working). The rest of this document
+(embedding decisions, the local-first board itself) is still exactly what it was: architecture and
+open questions, not yet acted on.
 
 ## What "the Excalidraw model" means here, precisely
 
@@ -50,6 +54,19 @@ that key *before* it leaves the browser. The relay stores and rebroadcasts ciphe
 read what anyone answered. That's a genuinely strong, honest thing to say to a visitor trying this on
 your website: *your team's answers are visible only to your team, not to us.*
 
+> **Update, 2026-09-11 — built, with one deliberate deviation from the paragraph above:** the actual
+> key is `SHA-256(session code)`, not an independent random secret in a URL fragment. The app's
+> *primary* join path by this point is typing the 6-character code by hand (added later, to fix a
+> real iPhone bug where scanning a QR code doesn't reliably carry a fragment/query string through) —
+> a path with no fragment to carry a separate key at all. Deriving the key from the code keeps that
+> path working, at a real cost to the claim above: since the relay already sees the code (it's the
+> room id), a relay operator who deliberately computes the same public hash can derive the same key.
+> The honest version of the claim is narrower: this protects against passive network eavesdropping
+> and against answers sitting in plaintext in relay logs, memory, or backups — not against a relay
+> operator who chooses to snoop. See `public/js/crypto.js` and STATUS.md's locked decisions for the
+> full writeup. If the fragment-key version above is ever wanted for real (e.g. a link-only join
+> flow with no typed-code fallback), it can still be added as an option alongside this one.
+
 **Reconnection** works the same way it does today, just server-held instead of client-held: a
 participant who refreshes, or joins a few minutes late, asks the relay for the room's current
 ciphertext blob and picks up from there — the same recovery Excalidraw gets from Firebase, just
@@ -57,13 +74,33 @@ scoped to one sitting instead of forever, and without needing a database to get 
 
 ## Where this runs
 
-- **Relay**: one small Vercel Function using their native WebSocket support (public beta, requires
-  Fluid compute, which is on by default for new projects) — plain Node with the `ws` library, room
-  state kept in an in-memory `Map` keyed by session code. Vercel's own guidance is to reach for
-  external state (Redis/KV) only when you need to coordinate connections *across multiple function
-  instances*; at the traffic a consultancy's website demo will see, one instance comfortably holds
-  every concurrently active room, so there's no database to run or pay for here at all. If usage ever
-  outgrows that, Vercel KV is the one thing to add later — not a redesign.
+- **Relay**: originally sketched here as one small Vercel Function using their native WebSocket
+  support, with room state kept in an in-memory `Map` keyed by session code.
+  > **Update, 2026-09-11:** `relay/server.js` is built exactly this way (plain Node + `ws`, an
+  > in-memory `Map` keyed by session code) and works, verified against real WebSocket connections
+  > and real encrypted traffic — see `relay/README.md`.
+  > **Update, 2026-09-12 — deliberately NOT deployed as a Vercel Function, decision locked in:**
+  > Vercel's WebSocket support reached public beta in mid-2026; checked directly against their docs
+  > before relying on it, rather than assuming the sketch above still held. It does **not** guarantee
+  > a new connection reaches the same Function instance as an existing one, and Vercel's own guidance
+  > for anything needing shared state across connections — rooms, presence, pub/sub, exactly this
+  > relay's job — is to add an external store (Redis from the Vercel Marketplace). That's a real,
+  > ongoing dependency this project doesn't want on either of its two audiences: someone embedding
+  > this on a company website, and someone forking it to self-host entirely offline on a LAN (the
+  > repo's second, equally real purpose — see `STATUS.md`). Requiring Redis turns "no persistent
+  > database, ever" into "small database, technically," and turns "fork this, run one Node process"
+  > into "fork this, run one Node process *and* provision Redis." Instead, `relay/server.js` stays a
+  > completely ordinary, dependency-free (beyond `ws`) Node process, deployed as a genuinely separate
+  > small service — a `render.yaml` blueprint at the repo root makes Render specifically about as
+  > close to one-click as this gets (see `relay/README.md`), and the exact same process runs
+  > unmodified on Fly.io, Railway, a VPS, a container, or literally `npm start` on a LAN machine with
+  > no cloud account at all. One process holding the in-memory `Map` sidesteps the
+  > multiple-instances-don't-share-state problem entirely, at the cost of being a second deployment
+  > target instead of one — the right trade for this project's actual audiences. The static site
+  > learns that relay's URL via a `SQUAD_PULSE_RELAY_URL` Vercel environment variable and a small
+  > build step (`scripts/generate-relay-config.js`) rather than a hand-edited `index.html`, so it can
+  > be set differently for a Preview deployment (to test before merging) than for Production — see
+  > `relay/README.md`'s "Wiring the deployed static site to this relay".
 - **Frontend**: the same single-page app, deployed as a static site. Zero-config on Vercel either
   way.
 
