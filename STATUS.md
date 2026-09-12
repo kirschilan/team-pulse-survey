@@ -7,7 +7,7 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 ## What's real right now
 
 - `public/` is a working static site — `index.html` + `styles.css` + `vendor/qrcode.js` +
-  `local-store.js` + `app.js` + twelve feature modules under `public/js/` (see "The app's file
+  `local-store.js` + `app.js` + thirteen feature modules under `public/js/` (see "The app's file
   layout" below). Originally ported verbatim from the Claude Artifact prototype
   (`squad-pulse.html`) as one 2396-line `app.js`, then split by feature on 2026-09-11 (and
   `retro.js` split again, into its facilitator/participant halves, on 2026-09-12) with zero
@@ -20,7 +20,7 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 - Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-12) — see
   `tests/README.md`. **`tests/unit/`**: 2 plain-Node files (`node:test`, nothing to install) for
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
-  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 22 Playwright files
+  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 23 Playwright files
   (named for the feature/flow each one covers) for everything that needs a real browser, running in
   under 2 minutes total after a 2026-09-12 speedup (see the session log below) — zero JS errors on
   the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
@@ -64,6 +64,7 @@ along the seams the original file already had (`// ---------- section ----------
 | `db.js` | `initDb()` — the Firestore-shaped snapshot listeners that wire `db` writes into `state` and back into a render. |
 | `crypto.js` | AES-256-GCM encrypt/decrypt for retro-session documents, key derived from the session code. |
 | `relay-client.js` | The other half of `local-store.js`'s router: a `collection()`/`doc()` implementation for `sessions`- and `boards`-rooted paths, backed by a real WebSocket to `relay/server.js` instead of `localStorage`. |
+| `board-sync.js` | The opt-in "team code" setting (Admin view) and the one-way push that sends the current board to `boards/<teamCode>` on the relay after every squad/dimension/config save, once a team code is set. See "Board sync (major change, in progress)" below. |
 
 **These are plain classic `<script>` files sharing the global scope, not ES modules** — Chromium
 blocks cross-file `import` over `file://` with a CORS error, which would break both the Playwright
@@ -72,7 +73,7 @@ suite (every test navigates via `file://`) and the README's "open `index.html` d
 handful of top-level `document.getElementById(...)` lookups each file does for elements that are
 already in the DOM by the time these scripts run (they sit at the end of `<body>`) — every actual
 cross-file *call* happens inside a function body triggered later (an event handler, or `start()`),
-by which point every file has finished loading, so the specific order between the twelve files
+by which point every file has finished loading, so the specific order between the thirteen files
 doesn't otherwise matter.
 
 ## The one thing to know before touching the app
@@ -185,9 +186,18 @@ is set on a device:
    plumbing end to end at the level below any UI: two independent browser contexts exchange a real
    encrypted document under a `boards/...` path over the real relay, an unwritten board path reads
    back as not-found rather than crashing, and `sessions/*` behavior is completely unaffected.
-3. Opt-in "connect to a team code" setting; saving squads/dimensions/config also pushes an
-   encrypted snapshot to `boards/<teamCode>/config` (one-way write only). Default (no team code
-   set) is unaffected.
+3. **DONE (2026-09-12).** Opt-in "team code" setting (Admin view → new "Team sync (beta)" card,
+   `public/js/board-sync.js`): connecting pushes an encrypted full-board snapshot (squads,
+   dimensions, config) to `boards/<teamCode>` on the relay, and every subsequent squad/dimension/
+   config save pushes again — hooked into `db.js`'s three existing `onSnapshot` listeners
+   (squads/dimensions/`meta/config`), which already fire on any board mutation regardless of which
+   file caused it, so nothing else had to change. One-way only: nothing reads a team code's board
+   back yet (that's step 4). Default (no team code set) is completely unaffected —
+   `pushBoardSnapshotIfConnected()` no-ops immediately. New `tests/test_board_sync_opt_in_push.py`
+   drives the real Admin UI (not just the plumbing) end to end against the real relay: no code set
+   never touches the relay, connecting + adding a squad produces a real decryptable snapshot a
+   second device can read directly off the relay, and disconnecting genuinely stops further pushes.
+   `tests/unit/test_board_sync.js` covers `normalizeTeamCode()`'s input handling.
 4. Hydrate-on-load: if a team code is set, fetch and merge the latest board snapshot before
    rendering (last-write-wins by timestamp).
 5. Live subscribe: board updates propagate to other currently-open devices in real time, not just
@@ -491,3 +501,18 @@ Two independent tracks, either can go first:
   rather than throwing; and `sessions/*` paths are unaffected by the new routing. Full 22-file
   Playwright + 34-test unit suite (plus `relay/`'s own `npm test`) re-verified passing. Safe to ship
   to `main` as-is: purely additive, no existing call site changes behavior.
+- 2026-09-12 — **Board sync step 3:** new `public/js/board-sync.js` + an Admin-view "Team sync
+  (beta)" card — an opt-in per-device "team code" setting. Connecting pushes an encrypted
+  full-board snapshot (squads, dimensions, config) to `boards/<teamCode>` on the relay; every later
+  squad/dimension/config save pushes again. Hooked into `db.js`'s three existing snapshot
+  listeners (squads, dimensions, `meta/config`) rather than each individual writer across
+  `squads.js`/`dimensions.js`/`templates.js`/`csv.js`/`modals.js` — those listeners already fire on
+  any board mutation regardless of which file caused it, so this needed zero changes outside
+  `db.js`, `board-sync.js`, and `index.html`'s new card. One-way only: nothing reads a team code's
+  board back yet (hydrate-on-load is step 4). With no team code set, `pushBoardSnapshotIfConnected()`
+  returns immediately — zero behavior change for the default case. `tests/unit/test_board_sync.js`
+  covers `normalizeTeamCode()`; new `tests/test_board_sync_opt_in_push.py` drives the real Admin UI
+  end to end against the real relay (not just the plumbing): no code set never touches the relay,
+  connect-then-add-a-squad produces a real decryptable snapshot a second device can read straight
+  off the relay, and disconnecting genuinely stops further pushes. Full 23-file Playwright +
+  35-test unit suite re-verified passing. Safe to ship to `main` as-is.
