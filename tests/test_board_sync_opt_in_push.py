@@ -4,16 +4,17 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import write_plain_index
 
-# Step 3 of STATUS.md's "Board sync" plan: an opt-in "team code" setting
-# (Admin view, board-sync.js) that, once connected, pushes the CURRENT full
-# board to boards/<teamCode> on the relay after every squad/dimension/config
-# save -- one-way only (hydrate-on-load is the next step). This drives the
-# real UI (not a direct page.evaluate call, unlike test_relay_board_path_sync.py
-# which only proved the underlying plumbing) to prove: (1) a device with no
-# team code set never touches the relay for its board, (2) connecting one and
-# then making an ordinary board change (adding a squad) pushes a real,
-# decryptable snapshot a second device can read directly off the relay, and
-# (3) disconnecting stops further pushes.
+# Steps 3/7 of STATUS.md's "Board sync" plan: team sync is now default-on
+# (every device auto-generates its own team link at first boot -- see
+# test_board_sync_default_on.py for that specifically), reworked after the
+# security fix in the same plan's session log to a high-entropy team LINK
+# rather than a typed code. This test covers what's specific to the PUSH
+# mechanics rather than the default-on bootstrap itself: (1) an ordinary
+# board change (adding a squad) pushes a real, decryptable snapshot a
+# second device -- reading via the secret parsed out of device A's link --
+# can see directly off the relay, (2) a wrong/guessed secret can't read
+# it, and (3) disconnecting genuinely stops further pushes from reaching
+# the relay, not just the UI's own connected/not-connected label.
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 RELAY_DIR = REPO_ROOT / "relay"
@@ -62,42 +63,39 @@ try:
         a.click('.view-btn[data-view="admin"]')
         a.wait_for_timeout(100)
 
-        print("=== not connected by default: adding a squad never touches the relay ===")
-        status_before = a.eval_on_selector("#teamSyncStatus", "el=>el.textContent")
-        print("status:", status_before)
-        assert "not connected" in status_before.lower()
-        assert a.eval_on_selector("#teamCodeDisconnectBtn", "el=>el.hidden") is True
+        print("=== device A already has a default team link (step 7: default-on) ===")
+        assert a.eval_on_selector("#teamSyncConnected", "el=>el.hidden") is False
 
         b_ctx = browser.new_context()
         b_ctx.add_init_script(point_at_test_relay)
         b = b_ctx.new_page()
         b.goto(INDEX_URL, wait_until="domcontentloaded")
         b.wait_for_timeout(300)
-        unconnected_read = b.evaluate("""async () => {
-          const db = await window.claude.use("db");
-          const snap = await db.doc("boards/OPTINTEAM").get();
-          return snap.exists;
-        }""")
-        assert unconnected_read is False, "nothing should exist on the relay before any device connects a team code"
 
-        print("=== connecting a team code, then adding a squad, pushes a real board snapshot ===")
-        a.fill("#teamCodeInput", "opt-in team!")
-        a.click("#teamCodeConnectBtn")
-        a.wait_for_timeout(200)
+        print("=== adding a squad pushes a real board snapshot to device A's own default team ===")
         status_after = a.eval_on_selector("#teamSyncStatus", "el=>el.textContent")
         print("status:", status_after)
         assert "connected" in status_after.lower()
-        assert "OPTINTEAM" in status_after, "the code should be normalized (upper-cased, punctuation stripped)"
-        assert a.eval_on_selector("#teamCodeInput", "el=>el.value") == "OPTINTEAM"
+        team_link = a.eval_on_selector("#teamLinkInput", "el=>el.value")
+        print("team link:", team_link)
+        assert "?team=" in team_link, "the link should carry the high-entropy secret as a query param"
+        assert a.eval_on_selector("#teamQr svg", "el=>!!el") is True, "a QR code should render for the link"
 
         a.click("#addSquadBtn")
         a.wait_for_timeout(300)
 
-        remote = b.evaluate("""async () => {
+        # device B never touched the UI at all here -- it reads the relay's
+        # copy of the board directly, using the secret parsed out of the
+        # SAME link A generated, exactly as a second device joining for
+        # real would end up doing (opening the link, or pasting it).
+        from urllib.parse import urlparse, parse_qs
+        secret = parse_qs(urlparse(team_link).query)["team"][0]
+        remote = b.evaluate("""async (secret) => {
+          const roomId = await SquadPulseCrypto.roomIdFor(secret);
           const db = await window.claude.use("db");
-          const snap = await db.doc("boards/OPTINTEAM").get();
+          const snap = await db.doc("boards/" + roomId, secret).get();
           return { exists: snap.exists, data: snap.data() };
-        }""")
+        }""", secret)
         print("remote board doc:", remote)
         assert remote["exists"] is True
         names = [s["name"] for s in remote["data"]["squads"]]
@@ -105,19 +103,28 @@ try:
         assert "New squad" in names, "the squad just added locally should already be in the pushed snapshot"
         assert len(remote["data"]["dimensions"]) > 0
 
+        print("=== a wrong/guessed secret can't read this team's board ===")
+        wrong = b.evaluate("""async () => {
+          const roomId = await SquadPulseCrypto.roomIdFor("totally-different-secret");
+          const db = await window.claude.use("db");
+          const snap = await db.doc("boards/" + roomId, "totally-different-secret").get();
+          return snap.exists;
+        }""")
+        assert wrong is False, "a different secret must land on a completely different room id"
+
         print("=== disconnecting stops further pushes ===")
-        a.click("#teamCodeDisconnectBtn")
+        a.click("#teamDisconnectBtn")
         a.wait_for_timeout(150)
-        status_disconnected = a.eval_on_selector("#teamSyncStatus", "el=>el.textContent")
-        assert "not connected" in status_disconnected.lower()
+        assert a.eval_on_selector("#teamSyncNotConnected", "el=>el.hidden") is False
 
         a.click("#addSquadBtn")
         a.wait_for_timeout(300)
-        remote_after_disconnect = b.evaluate("""async () => {
+        remote_after_disconnect = b.evaluate("""async (secret) => {
+          const roomId = await SquadPulseCrypto.roomIdFor(secret);
           const db = await window.claude.use("db");
-          const snap = await db.doc("boards/OPTINTEAM").get();
+          const snap = await db.doc("boards/" + roomId, secret).get();
           return snap.data();
-        }""")
+        }""", secret)
         names_after = [s["name"] for s in remote_after_disconnect["squads"]]
         print("squad names on the relay after disconnecting + adding another squad locally:", names_after)
         assert names_after.count("New squad") == 1, "the second squad add happened AFTER disconnecting, so it must not have reached the relay"

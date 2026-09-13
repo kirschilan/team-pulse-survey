@@ -21,6 +21,7 @@
     <div class="actions">
       <span class="sync-note" id="syncNote"><span class="sync-dot" id="syncDot"></span><span id="syncText">Connecting&hellip;</span></span>
       <button class="btn ghost" id="joinCodeBtn" type="button">Join a retro</button>
+      <button class="btn ghost" id="backToRetroBtn" type="button" hidden>&larr; Back to my retro</button>
       <div class="view-switch" role="tablist" aria-label="View">
         <button class="view-btn" data-view="tribe" type="button" role="tab">Tribe view</button>
         <button class="view-btn" data-view="squad" type="button" role="tab">Squad view</button>
@@ -120,16 +121,39 @@
     </div>
 
     <div class="card" style="margin-top:14px;">
-      <h2>Team sync (beta)</h2>
-      <p class="hint">Optional: connect this device to a team code so this board's squads, dimensions and
-        setup start pushing to that code over the same encrypted relay retro sessions already use. One-way for
-        now &mdash; this device's changes go out, but this device won't yet pull in changes made elsewhere.</p>
-      <div class="actions" id="teamSyncActions">
-        <input type="text" id="teamCodeInput" placeholder="Team code, e.g. MYSQUAD" maxlength="40" dir="auto">
-        <button class="btn primary" id="teamCodeConnectBtn" type="button">Connect</button>
-        <button class="btn ghost" id="teamCodeDisconnectBtn" type="button" hidden>Disconnect</button>
+      <h2>Team sync</h2>
+      <p class="hint">This board syncs, live, with every other device that opens the link below
+        &mdash; over the same encrypted relay retro sessions already use. Nobody without the link can
+        read or change it.</p>
+
+      <div id="teamSyncNotConnected" hidden>
+        <p class="hint" style="margin:0 0 10px;">Syncing is off for this device.</p>
+        <div class="actions">
+          <button class="btn primary" id="teamCreateBtn" type="button">Start a new team link</button>
+        </div>
       </div>
-      <p class="hint" id="teamSyncStatus" style="margin:8px 0 0;"></p>
+
+      <div id="teamSyncConnected">
+        <p class="hint" id="teamSyncStatus" style="margin:0 0 10px;"></p>
+        <div class="join-row">
+          <div class="qr-box" id="teamQr"></div>
+          <div class="join-link-col">
+            <div class="field-label" style="margin-top:0;">Team link</div>
+            <div class="join-link-row">
+              <input class="join-link-input" id="teamLinkInput" type="text" readonly aria-label="Team link">
+              <button class="btn" id="teamCopyLinkBtn" type="button">Copy</button>
+            </div>
+          </div>
+        </div>
+        <button class="btn ghost" id="teamDisconnectBtn" type="button" style="margin-top:10px;">Stop syncing</button>
+      </div>
+
+      <p class="hint" style="margin:14px 0 6px;">Have a team link from a teammate? Opening it connects
+        automatically &mdash; or paste it here to join (or switch to) their team:</p>
+      <div class="actions">
+        <input type="text" id="teamJoinInput" placeholder="Paste a team link" dir="auto">
+        <button class="btn" id="teamJoinBtn" type="button">Join</button>
+      </div>
     </div>
 
     <div class="card" style="margin-top:14px;">
@@ -142,8 +166,9 @@
     <details class="legend" id="diagPanel" style="margin-top:14px;">
       <summary>Diagnostics (temporary — for troubleshooting save issues) <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
       <div style="padding:0 18px 16px;">
-        <p class="hint" style="margin:0 0 8px;">If saving isn't working, open this, try rating a cell, then screenshot what appears below.</p>
+        <p class="hint" style="margin:0 0 8px;">If saving isn't working, open this, try rating a cell, then copy or screenshot what appears below.</p>
         <pre id="diagLog" class="mono diag-log" style="margin:0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:11px;line-height:1.6;max-height:160px;overflow:auto;white-space:pre-wrap;">(no activity yet)</pre>
+        <button class="btn ghost copy-diag-btn" type="button" data-diag-target="diagLog" style="margin-top:8px;">Copy diagnostics</button>
       </div>
     </details>
   </section>
@@ -153,17 +178,24 @@
     <div class="card" id="joinCard">
       <h2>Connecting&hellip;</h2>
     </div>
-    <!-- This screen has no nav back to Admin's own diagnostics panel (by
-         design -- a participant shouldn't see the facilitator's board), so
-         it needs its own way to show what's actually happening: a session
-         that never opens, or a relay that can't be reached, looks
-         identical ("Connecting..." forever, or "isn't open") without this
-         -- see helpers.js's diag(), which updates every ".diag-log". -->
+    <div class="actions" style="margin-top:12px;">
+      <button class="btn ghost" id="exitJoinBtn" type="button">&larr; Back to Squad Pulse</button>
+    </div>
+    <!-- "Back to Squad Pulse" above only TOGGLES this screen's visibility
+         (see retro-join.js's exitJoinScreen()/returnToJoinScreen()) --
+         the participant still can't see Admin's own diagnostics panel (by
+         design, a participant shouldn't see the facilitator's board), so
+         this join screen needs its own way to show what's actually
+         happening while it's the one showing: a session that never opens,
+         or a relay that can't be reached, looks identical ("Connecting..."
+         forever, or "isn't open") without this -- see helpers.js's diag(),
+         which updates every ".diag-log". -->
     <details class="legend" id="joinDiagPanel" style="margin-top:14px;">
       <summary>Trouble joining? Tap for diagnostics <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
       <div style="padding:0 18px 16px;">
-        <p class="hint" style="margin:0 0 8px;">If this isn't connecting, screenshot what appears below and send it to whoever's running the retro.</p>
+        <p class="hint" style="margin:0 0 8px;">If this isn't connecting, copy or screenshot what appears below and send it to whoever's running the retro.</p>
         <pre id="joinDiagLog" class="mono diag-log" style="margin:0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:11px;line-height:1.6;max-height:160px;overflow:auto;white-space:pre-wrap;">(no activity yet)</pre>
+        <button class="btn ghost copy-diag-btn" type="button" data-diag-target="joinDiagLog" style="margin-top:8px;">Copy diagnostics</button>
       </div>
     </details>
   </section>
@@ -268,10 +300,13 @@
 <div class="backdrop" id="joinCodeBackdrop" hidden>
   <div class="modal" role="dialog" aria-modal="true">
     <h3>Join a retro</h3>
-    <p class="hint">Enter the session code your Scrum Master shared.</p>
+    <p class="hint">Enter the session code your Scrum Master shared. Answering a survey? Tap
+      Join. Co-facilitating (you'll see the live results and can finish the retro too)? Tap
+      Co-facilitate instead.</p>
     <input type="text" id="joinCodeInput" class="join-code-input" placeholder="e.g. 7K4QXB" maxlength="40" autocapitalize="characters" autocomplete="off" spellcheck="false">
     <div class="modal-actions">
       <button class="btn ghost" id="joinCodeCancel" type="button">Cancel</button>
+      <button class="btn ghost" id="coFacilitateGo" type="button">Co-facilitate</button>
       <button class="btn primary" id="joinCodeGo" type="button">Join</button>
     </div>
   </div>

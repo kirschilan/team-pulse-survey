@@ -7,10 +7,10 @@ from fixtures.build_page import write_plain_index
 # Step 5 of STATUS.md's "Board sync" plan: live subscribe. Step 4's
 # hydrate-on-load only checked the relay once, at boot (or right after
 # connecting) -- seeing a teammate's later change required a RELOAD (see
-# test_board_sync_hydrate_on_boot.py). This step keeps the boards/<teamCode>
+# test_board_sync_hydrate_on_boot.py). This step keeps the boards/<roomId>
 # relay connection open and reacts to every future update live, the same
 # way a retro session already does, so two devices open AT THE SAME TIME on
-# the same team code converge without either one reloading.
+# the same team link converge without either one reloading.
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 RELAY_DIR = REPO_ROOT / "relay"
@@ -18,7 +18,6 @@ INDEX = write_plain_index(out_name="_test_board_sync_live_index.html")
 INDEX_URL = "file://" + str(INDEX.resolve())
 RELAY_PORT = 8796
 RELAY_URL = "ws://localhost:%d" % RELAY_PORT
-TEAM_CODE = "LIVETEAM"
 
 
 def wait_for_port(port, timeout=5.0):
@@ -50,7 +49,7 @@ try:
         browser = p.chromium.launch()
         point_at_test_relay = "window.SQUAD_PULSE_RELAY_URL = %r;" % RELAY_URL
 
-        # ============ device A: connects the team code ============
+        # ============ device A: creates a team link ============
         a_ctx = browser.new_context()
         a_ctx.add_init_script(point_at_test_relay)
         a = a_ctx.new_page()
@@ -60,26 +59,22 @@ try:
         a.wait_for_timeout(300)
         a.click('.view-btn[data-view="admin"]')
         a.wait_for_timeout(100)
-        a.fill("#teamCodeInput", TEAM_CODE)
-        a.click("#teamCodeConnectBtn")
-        a.wait_for_timeout(300)
+        a.wait_for_timeout(300)  # step 7: default-on -- device A already has its own team link, no click needed
+        team_link = a.eval_on_selector("#teamLinkInput", "el=>el.value")
 
-        # ============ device B: ALSO connects the SAME team code, both
-        # devices open and live at the same time -- no reload from here on ============
+        # ============ device B: opens the SAME team link, both devices open
+        # and live at the same time -- no reload from here on ============
         b_ctx = browser.new_context()
         b_ctx.add_init_script(point_at_test_relay)
         b = b_ctx.new_page()
         b_errors = []
         b.on("pageerror", lambda e: b_errors.append(str(e)))
-        b.goto(INDEX_URL, wait_until="domcontentloaded")
-        b.wait_for_timeout(300)
+        b.goto(team_link, wait_until="domcontentloaded")
+        b.wait_for_timeout(400)
         b.click('.view-btn[data-view="admin"]')
         b.wait_for_timeout(100)
-        b.fill("#teamCodeInput", TEAM_CODE)
-        b.click("#teamCodeConnectBtn")
-        b.wait_for_timeout(300)
 
-        print("=== both devices connected; device A adds a squad -- device B should see it LIVE, no reload ===")
+        print("=== both devices connected via the same link; device A adds a squad -- device B should see it LIVE, no reload ===")
         a.click("#addSquadBtn")
         a.wait_for_timeout(600)  # give the relay round trip + B's live callback time, but no reload/navigation at all
 
@@ -95,7 +90,7 @@ try:
         assert a_squad_names.count("New squad") == 2, "device A should now see BOTH squads (its own + B's), live"
 
         print("=== disconnecting stops live updates too, not just pushes ===")
-        b.click("#teamCodeDisconnectBtn")
+        b.click("#teamDisconnectBtn")
         b.wait_for_timeout(150)
         a.click("#addSquadBtn")
         a.wait_for_timeout(600)

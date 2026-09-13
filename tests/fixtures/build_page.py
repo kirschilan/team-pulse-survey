@@ -65,6 +65,29 @@ def build_page(extra_seed_js="", out_name="_test_preview.html"):
     return out_path
 
 
+def build_custom_page(extra_head_html, out_name):
+    """Like build_page(), but splices arbitrary caller-supplied <head>
+    content (e.g. a test's own bespoke fake window.claude implementation,
+    shaped differently from fake_store.html) instead of the shared fake
+    store. Exists specifically so a test needing a custom fake store still
+    gets the same Google Fonts strip (see the module-level comment above)
+    that build_page()/write_plain_index() already apply -- hand-rolling
+    `(public_dir/"index.html").read_text()` directly, bypassing this,
+    previously cost one test file ~12 real seconds per run for no reason
+    (see STATUS.md's session log): a script tag with no output to check.
+
+    extra_head_html: raw HTML (typically one <script>...</script> block)
+    spliced in right before </head>.
+
+    out_name: as build_page() -- must start with "_test_".
+    """
+    assert out_name.startswith("_test_"), "test preview files must match the _test_* .gitignore pattern"
+    html = _TEST_INDEX_HTML.replace("</head>", extra_head_html + "\n</head>")
+    out_path = PUBLIC_DIR / out_name
+    out_path.write_text(html, encoding="utf-8")
+    return out_path
+
+
 def write_plain_index(out_name):
     """Write a copy of index.html into public/ with the Google Fonts <link>
     stripped (see the module-level comment above) but otherwise completely

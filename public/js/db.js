@@ -18,13 +18,18 @@ async function initDb(){
     setSyncStatus(true);
 
     // Step 4 of STATUS.md's "Board sync" plan: if this device has a team
-    // code connected (board-sync.js), pull in whatever the team's shared
-    // board last synced to BEFORE the squads/dimensions/config listeners
-    // below register -- so their very first fire already reflects the
-    // hydrated data instead of the stale local one, then a second fire
-    // moments later once hydration writes land. A no-op with no team code
-    // set (the default).
-    await hydrateFromTeamCodeIfConnected();
+    // connected (board-sync.js), pull in whatever the team's shared board
+    // last synced to. Deliberately NOT awaited: with board sync default-on
+    // (step 7), EVERY device now has a team secret, so awaiting this would
+    // block the squads/dimensions listeners below -- and the whole board
+    // -- behind however long the relay takes to answer, or to give up
+    // retrying with backoff if it's unreachable at all. That was fine when
+    // hydrate only ran for a device that had just deliberately opted in;
+    // it is not fine on every single boot, relay reachable or not. Local
+    // data flashes in first (registered right below), live data settles
+    // in moments later if/when hydrate resolves -- the same pattern this
+    // app already uses everywhere else for live vs. local state.
+    hydrateFromTeamIfConnected();
     subscribeToTeamBoardIfConnected();
 
     if(isJoinMode()){
@@ -58,6 +63,7 @@ async function initDb(){
       diag("Squad snapshot #" + squadSnapCount + ": " + docs.length + " doc(s) [" + docs.map(function(d){return d.id;}).join(",") + "]" + (snap.metadata && snap.metadata.fromCache ? " (from cache)" : ""));
       state.squads = docs;
       renderAll();
+      markLocalBoardPieceReady("squads");
       pushBoardSnapshotIfConnected();
     }, function(err){ diag("Squad snapshot listener error: " + (err && err.code ? err.code : String(err))); setSyncStatus(false); });
 
@@ -82,6 +88,7 @@ async function initDb(){
       state.dimensions = docs;
       renderAll();
       if(!dimBackdrop.hidden) renderDimList();
+      markLocalBoardPieceReady("dimensions");
       pushBoardSnapshotIfConnected();
     }, function(err){ diag("Dimension snapshot listener error: " + (err && err.code ? err.code : String(err))); });
 
@@ -100,7 +107,7 @@ async function initDb(){
     }, function(err){ diag("Template snapshot listener error: " + (err && err.code ? err.code : String(err))); });
 
     state.db.doc("meta/config").onSnapshot(function(snap){
-      if(!snap.exists) { diag("meta/config does not exist yet -- keeping local defaults"); return; }
+      if(!snap.exists) { diag("meta/config does not exist yet -- keeping local defaults"); markLocalBoardPieceReady("config"); return; }
       var data = snap.data() || {};
       state.config = {
         unit: data.unit || DEFAULT_CONFIG.unit,
@@ -110,8 +117,19 @@ async function initDb(){
       };
       diag("Config snapshot: unit=" + state.config.unit + " template=" + state.config.activeTemplateName);
       renderAll();
+      markLocalBoardPieceReady("config");
       pushBoardSnapshotIfConnected();
     }, function(err){ diag("Config snapshot listener error: " + (err && err.code ? err.code : String(err))); });
+
+    // Story 10: a co-facilitator link (?cofacilitate=<code>) attaches this
+    // device to an already-open session once everything above is wired up
+    // (squads/dimensions listeners registered, so Squad view has real data
+    // to show the moment coFacilitateSessionByCode() selects the squad).
+    if(state.coFacilitateSessionId){
+      coFacilitateSessionByCode(state.coFacilitateSessionId).catch(function(err){
+        diag("Co-facilitate attach failed: " + (err && err.message ? err.message : String(err)));
+      });
+    }
 
   }catch(e){ diag("initDb threw: " + (e && e.message ? e.message : String(e))); setSyncStatus(false); }
 }

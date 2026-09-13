@@ -2,15 +2,21 @@
 
 
 // ---------- retro sessions (live, facilitated) -- FACILITATOR side ----------
-// Everything here runs on the device that started the session: the session
-// card on Squad view, starting/closing it, the live reveal toggle and
-// per-dimension override, the sprint-experiment note, finishing and
-// applying results into the squad's own ratings, and the live tally of
-// anonymous submissions. The PARTICIPANT'S device -- the join screen a
-// teammate answers on -- never runs any of this; see retro-join.js for
-// that half. The two share almost no code (bandForResponse/
-// effectiveDimResult/etc. in helpers.js are the closest thing to overlap),
-// which is what makes this a clean split rather than an arbitrary one.
+// Everything here runs on a device with a FACILITATOR'S view of the
+// session: the session card on Squad view, starting/closing it, the live
+// reveal toggle and per-dimension override, the sprint-experiment note,
+// finishing and applying results into the squad's own ratings, and the
+// live tally of anonymous submissions. Originally only the device that
+// started the session ever saw this; story 10's coFacilitateSessionByCode()
+// below lets a SECOND device attach to an already-open session and get
+// the exact same view -- nothing in this file distinguishes "started it"
+// from "attached to it," since openSessionForSquad() below only checks
+// state.sessions, never who created the entry. The PARTICIPANT'S device --
+// the join screen a teammate answers on -- never runs any of this; see
+// retro-join.js for that half. The two share almost no code
+// (bandForResponse/effectiveDimResult/etc. in helpers.js are the closest
+// thing to overlap), which is what makes this a clean split rather than an
+// arbitrary one.
 //
 // A session is a lightweight live event scoped to one squad: the SM starts
 // one (snapshotting the board's CURRENT dimensions, so later template
@@ -26,6 +32,32 @@ function openSessionForSquad(squadId){
     if(s.squadId===squadId && s.status==="open") return s;
   }
   return null;
+}
+
+// Story 10: attaches this device to an ALREADY-OPEN session by code,
+// without starting or answering anything -- just reading the session doc
+// once is enough to make relay-client.js's getRoom() remember the code
+// (see rememberCode()) and connect, so the broad `sessions` listener
+// db.js's initDb() already runs for every non-join-mode device picks it
+// up the moment the relay's initial snapshot for that room arrives.
+// openSessionForSquad() above never checks who created a state.sessions
+// entry, so once this device "knows" the code, Squad view for the
+// matching squad renders the exact same facilitator card (live tally,
+// reveal, override, finish) a device that started the session sees --
+// no separate rendering path needed. Requires the squad to already exist
+// locally (e.g. via a connected team link, see board-sync.js) for
+// anything meaningful to show; without that, Squad view just has no
+// matching squad to select, same as picking any squad this device
+// doesn't have.
+function coFacilitateSessionByCode(code){
+  if(!(state.live && state.db)) return Promise.reject({ message: "Not connected to the relay yet — try again in a moment." });
+  return state.db.doc("sessions/" + code).get().then(function(snap){
+    if(!snap.exists) return Promise.reject({ message: "That session code isn’t open." });
+    var data = snap.data();
+    if(data.squadId) selectSquad(data.squadId);
+    setView("squad");
+    return data;
+  });
 }
 
 function startSession(sq){
@@ -110,6 +142,7 @@ function renderSessionCardHtml(sq){
     '</div>';
   }
   var joinUrl = joinUrlFor(sess.id);
+  var coFacilitateUrl = coFacilitateUrlFor(sess.id);
   var activeDims = retroDimensions(sess.dimensions);
   var revealMode = sess.revealMode || "hold";
   var liveHtml = "";
@@ -217,8 +250,24 @@ function renderSessionCardHtml(sq){
         '</div>' +
       '</div>' +
     '</details>' +
+    '<details class="legend" style="margin-top:8px;">' +
+      '<summary>Bring in a co-facilitator <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>' +
+      '<div style="padding:0 18px 16px;">' +
+        '<p class="hint" style="margin:0 0 10px;">A different link from the join link above &mdash; opening this gets the FULL facilitator view (live tally, override, finish), not the survey.</p>' +
+        '<div class="join-row">' +
+          '<div class="qr-box" id="coFacilitateQr"></div>' +
+          '<div class="join-link-col">' +
+            '<div class="field-label" style="margin-top:0;">Co-facilitator link</div>' +
+            '<div class="join-link-row">' +
+              '<input class="join-link-input" id="coFacilitateLink" type="text" readonly value="'+esc(coFacilitateUrl)+'" aria-label="Co-facilitator link">' +
+              '<button class="btn" id="copyCoFacilitateLinkBtn" type="button">Copy</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</details>' +
     finishHtml +
-    '<button class="btn danger" id="closeSessionBtn" type="button" style="margin-top:'+(finishHtml?"8px":"14px")+';">Close session</button>' +
+    '<button class="btn danger" id="closeSessionBtn" type="button" style="margin-top:'+(finishHtml?"8px":"14px")+';">Close session without applying results</button>' +
   '</div>';
 }
 
@@ -265,7 +314,7 @@ function bindSessionCardEvents(sq){
       "Close this retro session?",
       "Ends the session for everyone with the link. This does not change any of " + sq.name + "’s existing ratings.",
       function(){ closeSession(sess.id); },
-      "Close session"
+      "Close without applying results"
     );
   });
 
@@ -281,6 +330,20 @@ function bindSessionCardEvents(sq){
   if(qrBox){
     var sess = openSessionForSquad(sq.id);
     if(sess) renderQrInto(qrBox, joinUrlFor(sess.id));
+  }
+
+  var copyCoFacilitateBtn = document.getElementById("copyCoFacilitateLinkBtn");
+  if(copyCoFacilitateBtn) copyCoFacilitateBtn.addEventListener("click", function(){
+    var input = document.getElementById("coFacilitateLink");
+    if(!input) return;
+    input.focus(); input.select();
+    try{ navigator.clipboard && navigator.clipboard.writeText(input.value); }catch(e){ /* select() above still lets the user copy manually */ }
+  });
+
+  var coFacilitateQrBox = document.getElementById("coFacilitateQr");
+  if(coFacilitateQrBox){
+    var coFacSess = openSessionForSquad(sq.id);
+    if(coFacSess) renderQrInto(coFacilitateQrBox, coFacilitateUrlFor(coFacSess.id));
   }
 
   document.querySelectorAll(".reveal-btn").forEach(function(btn){
@@ -327,7 +390,7 @@ function bindSessionCardEvents(sq){
         "Finish this retro?",
         "No submissions or overrides yet, so " + sq.name + "’s ratings won’t change. This just closes the session.",
         function(){ closeSession(sess.id); },
-        "Close session"
+        "Close without applying results"
       );
       return;
     }

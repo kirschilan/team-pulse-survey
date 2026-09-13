@@ -17,12 +17,12 @@ docs in `docs/` are reference material this file points to, not duplicates of it
   dimension template, Tribe-view cross-squad rollup, and the facilitated live-retro flow (join by
   code/QR, blind statement survey or direct green/yellow/red pick depending on the dimension,
   live or held reveal, facilitator override, finish-and-apply into the squad's real ratings).
-- Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-12) — see
-  `tests/README.md`. **`tests/unit/`**: 2 plain-Node files (`node:test`, nothing to install) for
+- Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-13) — see
+  `tests/README.md`. **`tests/unit/`**: 3 plain-Node files (`node:test`, nothing to install) for
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
-  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 25 Playwright files
+  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 31 Playwright files
   (named for the feature/flow each one covers) for everything that needs a real browser, running in
-  under 2 minutes total after a 2026-09-12 speedup (see the session log below) — zero JS errors on
+  around 2 minutes total after two 2026-09-12 perf passes (see the session log below) — zero JS errors on
   the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
   + `tests/fixtures/build_page.py`) standing in for the real backend, for speed and determinism; a
   handful deliberately bypass it because they exist specifically to test what it stands in for —
@@ -62,9 +62,9 @@ along the seams the original file already had (`// ---------- section ----------
 | `templates.js` | Template save/load/delete. Split out of the same combined file, same day. |
 | `csv.js` | CSV export and import (parsing, column matching, preview, apply). |
 | `db.js` | `initDb()` — the Firestore-shaped snapshot listeners that wire `db` writes into `state` and back into a render. |
-| `crypto.js` | AES-256-GCM encrypt/decrypt for retro-session documents, key derived from the session code. |
-| `relay-client.js` | The other half of `local-store.js`'s router: a `collection()`/`doc()` implementation for `sessions`- and `boards`-rooted paths, backed by a real WebSocket to `relay/server.js` instead of `localStorage`. |
-| `board-sync.js` | The opt-in "team code" setting (Admin view) and the one-way push that sends the current board to `boards/<teamCode>` on the relay after every squad/dimension/config save, once a team code is set. See "Board sync (major change, in progress)" below. |
+| `crypto.js` | AES-256-GCM encrypt/decrypt. For a retro session, the key derives from the session code itself; for a team board, `generateSecret()`/`roomIdFor()` split a high-entropy secret (the key) from a separate one-way-derived room id (routing only) — see "Board sync" below. |
+| `relay-client.js` | The other half of `local-store.js`'s router: a `collection()`/`doc()` implementation for `sessions`- and `boards`-rooted paths, backed by a real WebSocket to `relay/server.js` instead of `localStorage`. `doc(path, secret)`/`collection(path, secret)` take an optional second argument so a caller (board-sync.js) can supply the encryption key separately from the path's own routing id; omitted, behavior is unchanged (the path's own code IS the key, as sessions have always used). |
+| `board-sync.js` | The opt-in team-sync setting (Admin view): a device either creates a high-entropy team link or joins one via a link/QR, then stays in sync live with every other device on the same link. See "Board sync (major change, in progress)" below. |
 
 **These are plain classic `<script>` files sharing the global scope, not ES modules** — Chromium
 blocks cross-file `import` over `file://` with a CORS error, which would break both the Playwright
@@ -94,26 +94,26 @@ dimensions, templates, `meta/config`) still goes to this browser's own `localSto
 `window.claude.use("downloads")` still triggers a real browser file download. The whole shim only
 installs itself when no real `window.claude` is already present, so it's a no-op both inside a
 Claude Artifact and inside the Playwright test harness (`tests/fixtures/fake_store.html` sets its
-own `window.claude` and loads after this file — see `build_page.py`). **Retro sessions now
-genuinely sync across different devices/browsers** through the relay — see the new bullet above and
-`relay/README.md`. Squads/dimensions/templates/config still don't sync across devices, per the
-locked decision below; only a session's own content does.
+own `window.claude` and loads after this file — see `build_page.py`). **Retro sessions, and now the
+whole board too, genuinely sync across different devices/browsers** through the relay — see the new
+bullet above, `relay/README.md`, and "Board sync" below. `localStorage` is still each device's own
+source of truth (nothing here changes that), but by default it now also stays in sync, live, with
+every other device on the same team link.
 (There's one other `window.claude.use(...)` call, for `"downloads"` in `public/js/csv.js`, and a
 `window.claude.hot` hot-reload guard at the bottom of `app.js` that already degrades safely with no
 `window.claude` present — neither of those blocks anything.)
 
 ## Decisions locked in (don't re-litigate these)
 
-- **No persistent, multi-tenant database, ever — being deliberately reversed, incrementally, as of
-  2026-09-12.** This was the original decision (a facilitator's own browser as the board's sole
-  source of truth), but it's the direct cause of a real bug: two devices independently seed
-  identical squad IDs, so per-device `localStorage` boards never actually agree once more than one
-  device is involved in a retro. The replacement direction — **see "Board sync (major change, in
-  progress)" below** — keeps the relay content-blind (server never sees plaintext, unchanged) but
-  makes it a durable, pluggable, encrypted key-value store for the whole board, not just live
-  session traffic. Being rolled out as a sequence of small, independently-tested,
-  independently-shippable increments; nothing here breaks until a later increment explicitly wires
-  board reads/writes through it.
+- **No persistent, multi-tenant database, ever — reversed, as of 2026-09-13 (default-on).** This
+  was the original decision (a facilitator's own browser as the board's sole source of truth), but
+  it was the direct cause of a real bug: two devices independently seed identical squad IDs, so
+  per-device `localStorage` boards never actually agreed once more than one device was involved in
+  a retro. The replacement — **see "Board sync" below, now DONE** — keeps the relay content-blind
+  (server never sees plaintext, unchanged) but makes it a durable, encrypted key-value store for the
+  whole board, not just live session traffic, and every device now uses it by default: a fresh
+  device auto-generates its own team link at first boot, ready to share immediately. Rolled out as a
+  sequence of small, independently-tested increments — see "Board sync" below for the full history.
 - **Only a live retro session touches a server**, and only for that session's lifetime — an
   ephemeral, in-memory, per-session-code relay (dimensions snapshot + responses + status/
   revealMode/overrides/experimentNote), forgotten once the room empties. No database.
@@ -128,7 +128,10 @@ locked decision below; only a session's own content does.
   plaintext in relay logs/memory/backups — but NOT protection against a relay operator who
   deliberately computes the same public hash, since the code and the room id are the same value.
   Full rationale and the researched Excalidraw/Vercel architecture this is based on:
-  `docs/standalone-plan.md`.
+  `docs/standalone-plan.md`. **This code-is-the-key tradeoff is scoped to retro sessions
+  specifically** (app-generated random code, forgotten within minutes) — a team board's link-based
+  secret is deliberately NOT this model; see "Board sync"'s "Security fix" for why a persistent,
+  user-chosen team code would have been the wrong tradeoff there.
 - **The relay is a plain standalone Node process, deployed as a genuinely separate small service —
   deliberately NOT a Vercel Function**, even though Vercel Functions gained native WebSocket support
   in 2026. Verified against Vercel's own docs before deciding: a new connection there isn't
@@ -153,7 +156,7 @@ locked decision below; only a session's own content does.
   forever without adding real persistence, which is exactly the trade-off already rejected for the
   relay itself (see the Vercel Function decision above). This is the deliberate stopping point.
 
-## Board sync (major change, in progress)
+## Board sync (major change, DONE — default-on as of 2026-09-13)
 
 Replacing the "no persistent database, ever" decision above with a model the user specified
 directly, after independently verifying Excalidraw's real architecture (a content-blind relay for
@@ -186,7 +189,7 @@ is set on a device:
    plumbing end to end at the level below any UI: two independent browser contexts exchange a real
    encrypted document under a `boards/...` path over the real relay, an unwritten board path reads
    back as not-found rather than crashing, and `sessions/*` behavior is completely unaffected.
-3. **DONE (2026-09-12).** Opt-in "team code" setting (Admin view → new "Team sync (beta)" card,
+3. **DONE (2026-09-12), mechanism since replaced — see "Security fix" below.** Opt-in "team code" setting (Admin view → new "Team sync (beta)" card,
    `public/js/board-sync.js`): connecting pushes an encrypted full-board snapshot (squads,
    dimensions, config) to `boards/<teamCode>` on the relay, and every subsequent squad/dimension/
    config save pushes again — hooked into `db.js`'s three existing `onSnapshot` listeners
@@ -198,7 +201,7 @@ is set on a device:
    never touches the relay, connecting + adding a squad produces a real decryptable snapshot a
    second device can read directly off the relay, and disconnecting genuinely stops further pushes.
    `tests/unit/test_board_sync.js` covers `normalizeTeamCode()`'s input handling.
-4. **DONE (2026-09-12).** Hydrate-on-load: `board-sync.js`'s `hydrateFromTeamCodeIfConnected()`
+4. **DONE (2026-09-12), updated for the link-based secret — see "Security fix" below.** Hydrate-on-load: `board-sync.js`'s `hydrateFromTeamIfConnected()`
    runs once at boot (`db.js`'s `initDb()`), before the squads/dimensions/config listeners
    register, and again right after a fresh "Connect" — if the relay's copy of `boards/<teamCode>`
    is newer (by the payload's own `updatedAt`, tracked per-code via `getSyncedAt`/`setSyncedAt`)
@@ -210,8 +213,8 @@ is set on a device:
    BOTH directions: a device booting with a team code already set pulls another device's
    already-pushed board with zero clicks, then after that second device makes its own change, the
    first device's next reload pulls the newer state back too.
-5. **DONE (2026-09-12).** Live subscribe: `board-sync.js`'s `subscribeToTeamBoardIfConnected()`
-   keeps `boards/<teamCode>`'s relay connection open (same one-persistent-WebSocket-per-room-code
+5. **DONE (2026-09-12), updated for the link-based secret — see "Security fix" below.** Live subscribe: `board-sync.js`'s `subscribeToTeamBoardIfConnected()`
+   keeps a team's relay connection open (same one-persistent-WebSocket-per-room-id
    machinery retro sessions already use) and reacts to every future update via the shared
    `maybeApplyRemote()` guard, rather than only checking once at boot. Started right after the
    boot-time hydrate and right after a fresh "Connect"; stopped on "Disconnect"
@@ -219,39 +222,229 @@ is set on a device:
    devices connected to the same team code AT THE SAME TIME converge on a squad add in BOTH
    directions with zero reloads (unlike step 4, which needed one), and that disconnecting stops
    live updates too, not just outgoing pushes.
-6. Wire "finish retro" through the shared board doc — the actual fix for the Mac/iOS divergence
-   bug and the co-facilitator question above.
-7. Promote from opt-in to default-on once proven; retire the "no persistent database" language in
-   this file, `README.md`, and `docs/standalone-plan.md` for good.
+6. **DONE (2026-09-12).** Wire "finish retro" through the shared board doc. Turned out to need very
+   little NEW plumbing — "Finish & apply" already writes into the local `squads/<id>` doc
+   (`squads.js`'s `persistDimensionRatings`), and that path was already covered by steps 3/5's
+   push/subscribe machinery, since `db.js`'s squads listener doesn't care WHY a squad doc changed.
+   Written test-first (this repo's new `tdd` skill, test-flighted for the first time on this story):
+   the very first end-to-end run of the real cross-device scenario surfaced a genuine, separate bug
+   — `board-sync.js`'s `applyRemoteBoardSnapshot()` wrote a remote squad's `dimensions` object
+   (frozen, per `deepFreezeClone()`) straight into a local doc; the next `persistDimensionRatings()`
+   call on that squad threw ("object is not extensible") trying to add a new dimension key to it.
+   Fixed with a `plainClone()` helper (JSON round-trip) applied to every frozen nested value a
+   remote snapshot hands over before it's written locally — `dimensions`, `statements`,
+   `scoreBands`, `strategies`. `tests/test_board_sync_finish_retro_convergence.py` proves the
+   original bug report's exact repro shape now converges: two devices, each facilitating a
+   different squad's retro, both end up seeing BOTH squads' real results, live; a third,
+   never-team-synced device (the rainy-day case) is confirmed unaffected. Also surfaced, directly
+   while writing this test, exactly why story 9 (participant exit/return) is real and not
+   cosmetic: a joined participant has no in-app way back to the main board, so the test itself had
+   to simulate what a real user does today (navigate back to the plain URL) to even get there.
+7. **DONE (2026-09-13).** Promote from opt-in to default-on: a fresh device that has never touched
+   team sync now auto-generates its own random secret at first boot (`board-sync.js`'s
+   `ensureDefaultTeamSecret()`) and shows the link/QR/copy immediately — no "Create" click needed —
+   while a `TEAM_SYNC_EVER_INITIALIZED_KEY` flag (set the moment ANY secret is ever stored, by
+   whichever path) lets a device that explicitly disconnected stay disconnected forever, rather than
+   silently regenerating a secret on its next reload. Two never-configured devices get two different
+   random secrets (each device runs its own `generateSecret()`), so they never accidentally land on
+   the same team; opening someone else's real team link still correctly switches a device onto their
+   team, same as before. Admin's "Team sync (beta)" card lost the "(beta)" and its Not-Connected
+   state (now the rare case, not the default).
 
-Also on deck, not yet scheduled into a specific step: a participant's way to leave the retro join
-screen and return to the main app and back to their own participation; a co-facilitator join path
-via code/link (payoff of steps 5–6 plus a facilitator-role join flow).
+   Turning this on by default — every device now actually exercises the full hydrate/push/subscribe
+   machinery on every single boot, not just an opted-in device once in a while — surfaced a run of
+   real concurrency bugs that opt-in had been quietly hiding, each found the same way: run the full
+   suite, watch something that used to pass fail, add targeted `diag()` tracing, fix the actual root
+   cause instead of the symptom. In order:
+   - **A blocking `await`.** `db.js`'s `initDb()` used to `await hydrateFromTeamIfConnected()` before
+     registering the squads/dimensions/config listeners — harmless when hydrate only ran for a
+     device that had just deliberately opted in (rare), fatal once every device does it on every
+     boot: an unreachable relay's exponential-backoff give-up (`relay-client.js`'s
+     `MAX_RECONNECT_ATTEMPTS`) can take 20+ seconds, during which the entire rest of the board was
+     blocked from loading. Fixed by no longer awaiting it — local data flashes in first, live data
+     settles in later if/when hydrate resolves, the same pattern the rest of the app already uses.
+   - **A partial-board push race.** Squads, dimensions, and config are three independent `db.js`
+     listeners firing on independent schedules; `pushBoardSnapshotIfConnected()` could fire from
+     real squads paired with still-placeholder dimensions (or vice versa) if it ran before all three
+     had reported in even once. Fixed with `isLocalBoardReady()`/`markLocalBoardPieceReady()`, one
+     flag per piece, gating every push until all three are real.
+   - **A timestamp-capture-order bug.** `pushBoardSnapshotIfConnected()` used to stamp
+     `updatedAt` only after the async `roomIdFor()` resolved — but concurrent `crypto.subtle.digest()`
+     calls aren't guaranteed to resolve in the order they started, so a later push could occasionally
+     get an earlier timestamp than one that started before it, silently breaking last-write-wins for
+     whoever read it back. Fixed by capturing the payload (and its timestamp) synchronously, before
+     the async call.
+   - **`maybeApplyRemote()` reentrancy.** The boot-time hydrate's one-shot fetch and the live
+     subscription's own first callback both key off the same `room.ready` promise and can resolve
+     concurrently; a live update can also arrive while an earlier apply's own `Promise.all(ops)` is
+     still mid-flight. Two overlapping applies interleaving their writes meant whichever finished
+     LAST won, regardless of which one actually held the newer data. Fixed with `pendingRemoteApply`,
+     a single-slot queue that serializes applies (run the newest pending one right after the current
+     one finishes) — a lightweight stand-in for a real per-room mutex.
+   - **A genesis-push race.** A device joining an EXISTING team reaches "my local board is fully
+     loaded" (the fix above) before its own hydrate's relay round trip necessarily finishes — so it
+     could push its own stale, pre-hydrate local board, racing (and sometimes beating, purely on
+     timestamp) a teammate's real concurrent edit. Fixed with `hydrateAttemptedForSecret`, which
+     blocks `pushBoardSnapshotIfConnected()` until this device has completed at least one hydrate
+     ATTEMPT (success, not-found, or give-up all count) for its current secret — plus an explicit
+     re-trigger of the push at the end of `hydrateFromTeamIfConnected()`, for the "hydrate found
+     nothing, genuinely new team" case that would otherwise never get a second chance.
+   - **A relay-client bug, found last, via `test_board_sync_finish_retro_convergence.py`'s own test
+     regressing at a new point once the above were all fixed:** `relay-client.js`'s `getRoom()`
+     unconditionally `rememberCode()`'d every room it ever connected to, for the broad, code-less
+     `sessions` listener's reconnect-known-codes-on-boot logic (`subscribeBroadSessions`) — including
+     a board's room id, which was never meant to be in that list. Once a device had ever joined a
+     retro session (populating its knownCodes) and then reloaded, that broad listener's synchronous
+     `loadKnownCodes().forEach(code => getRoom(code))` would create the board's room object FIRST, on
+     the new page, with no secret — and since a room's encryption key is fixed by whichever call
+     creates it first, board-sync.js's own later, correctly-secreted call just inherited that wrong
+     key (derived from the room id itself instead of the real secret) for the rest of that page's
+     life. The device could still round-trip with ITSELF (self-consistent wrong key) but could never
+     again decrypt what a correctly-keyed teammate sent, or vice versa — silently, with no error
+     surfaced anywhere, just a permanently stuck board. Fixed by only remembering a code when no
+     secret was given (`if(!secret) rememberCode(code);`) — exactly the signal that distinguishes a
+     plain session code from a board's secret-derived room id.
+   - **A test-harness-only bug, found while chasing an unrelated suite of failures this story's
+     default-on change newly exposed:** `tests/fixtures/fake_store.html` (the fast, deterministic
+     stand-in for the local board backend that most Playwright tests drive) has no concept of
+     routing some paths to a relay — every path, including a brand-new `boards/<roomId>`, was just
+     another doc in the same shared in-memory map as squads/dimensions/config. With board sync
+     default-on now reading and writing that path on every single boot, a delayed hydrate could read
+     back a stale snapshot of the very board a test had just changed and silently overwrite it —
+     intermittently breaking several template/dimension tests that have nothing to do with board
+     sync at all. Fixed by routing `boards/` paths in the fake store to an always-inert doc (reads as
+     not-found, writes reject as unavailable) — the same behavior a real deployment gets with no
+     relay configured, which is the accurate simulation for a harness that never pretends to run one.
+
+   All of the above were caught by re-running this repo's existing regression suite after each
+   change, per the TDD skill's Step 5 — none were found by writing a new test first, since they're
+   emergent timing bugs between existing, already-tested pieces rather than a missing behavior.
+   `tests/test_board_sync_default_on.py` (new) proves the actual default-on claims directly: a fresh
+   device's Admin view shows a ready-to-share link/QR immediately, two never-configured devices get
+   different secrets, disconnecting and reloading stays disconnected (no silent re-enable), and
+   opening a real team link still switches a device onto that team. Every other `test_board_sync_*`,
+   `test_cofacilitator_join`, and `test_encryption_no_plaintext_on_wire` file needed a small update
+   (mostly: stop clicking a "Create" button that no longer exists, since a link is already there at
+   boot) but no behavior changes.
+
+Story 9 (**DONE, 2026-09-12**): a participant's way to leave the retro join screen and return to
+the main app and back to their own participation. `retro-join.js` gained `exitJoinScreen()`/
+`returnToJoinScreen()` — a header "← Back to my retro" button and an on-screen "← Back to Squad
+Pulse" button that ONLY toggle which section is visible; `state.joinSessionId` and
+`listenJoinSession()`'s listener are never torn down, so the session keeps updating in the
+background and returning always shows current state. `joinCodeBtn` stays hidden the whole time
+(exited or not) so a participant can't accidentally start joining a second session while one's
+still open. Written test-first: `tests/test_retro_join_exit_and_return.py` covers the happy path
+(submit → exit → return shows the same personal results, not a re-shown survey) and two rainy-day
+cases (exiting mid-survey, before submitting anything, preserves the in-progress draft rather than
+resetting it; a device that never joined anything never shows the "back to my retro" button at
+all). Passed on the very first real run once the buttons existed — no surprises this time, unlike
+step 6's hydrate-freezing bug.
+
+Story 10 (**DONE, 2026-09-12**): a co-facilitator join path via code/link. Turned out to need very
+little new mechanism, same story as step 6: `openSessionForSquad()` never checked WHO started a
+session, only whether `state.sessions` has a matching open one — and `state.sessions` is
+reconstructed from whatever codes this device's relay-client.js has ever "remembered"
+(`rememberCode()`), regardless of role. So `retro-facilitator.js`'s new
+`coFacilitateSessionByCode(code)` just reads `sessions/<code>` once (enough to make `getRoom()`
+remember the code and connect); the moment that snapshot arrives, the SAME broad `sessions`
+listener every non-join-mode device already runs picks it up, and Squad view renders the identical
+facilitator card (live tally, reveal, override, finish) a device that started the session sees —
+no separate rendering path needed. Reachable two ways, both wired: a NEW "Co-facilitate" button in
+the existing join-code modal (typed code), and a genuinely separate link/QR
+(`?cofacilitate=<code>`, `coFacilitateUrlFor()`) shown on the session card next to the existing
+participant join link — opening it boots the normal app (never join mode) and attaches
+automatically. Written test-first: `tests/test_cofacilitator_join.py` proves the real three-device
+shape (originating facilitator + a participant who answers + a co-facilitator who never started
+the session) — the co-facilitator sees the live tally, finishes the retro, and that finish reaches
+the ORIGINATING facilitator's device too, live, via team sync (story 6). Also checks the actual
+link/QR (not just the typed code) and a device opening it directly. Rainy day: co-facilitating
+with a wrong/nonexistent code shows a clear error, not a crash. Passed cleanly on the first real
+run, both happy-path and rainy-day, once the wiring existed.
+
+Story 11 (**DONE/VERIFIED, 2026-09-12**): as all users, we want our data encrypted so no one else
+but we who have the link/code can see it. Already true by construction (retro sessions: code-
+derived AES-256-GCM key, locked decision; boards: a separate high-entropy link/QR secret, see the
+"Security fix" above) — every prior test proved it INDIRECTLY, by showing a wrong key fails to
+decrypt. New `tests/test_encryption_no_plaintext_on_wire.py` proves the literal claim directly
+instead: it captures every real WebSocket frame a browser sends/receives (Playwright's
+`page.on("websocket")` + `framesent`/`framereceived`) while renaming a squad to a distinctive,
+impossible-to-coincidentally-reproduce plaintext string and saving an equally distinctive
+sprint-experiment note, for both a team board and a retro session, and asserts neither string EVER
+appears in a raw frame — only base64 ciphertext (with a sanity check that the capture really did
+see encrypted `ct` fields, so the assertion isn't vacuously passing over an empty capture). Passed
+cleanly on the first run — no gap found, no new production code needed, just a real proof where
+only an inference existed before.
+
+### Security fix (2026-09-12): typed team codes replaced with a high-entropy link/QR secret
+
+Steps 3–5 above originally let a device type a human-chosen "team code" (e.g. "MYSQUAD"), reusing
+retro sessions' "the code IS the encryption key" model. Caught in review before this went anywhere
+near real use: that tradeoff was made deliberately for retro sessions because the code there is
+**app-generated, random, and forgotten within minutes** of the session ending. A team code is the
+opposite on every axis — **user-chosen** (a dictionary word, not random), **long-lived by design**,
+and — once step 1's durable storage is opted into — **actually persisted**. A short, guessable,
+low-entropy code protecting a durable, ongoing, sensitive board is a real vulnerability: the relay
+can't distinguish a legitimate join from a guess (it's deliberately content-blind), so entropy in
+the code/key itself is the only real defense, and a typed team code had nowhere near enough of it.
+
+Fixed by splitting the two roles Excalidraw's real architecture keeps separate (the same
+verified-before-building research the whole "Board sync" direction is based on): a **high-entropy
+secret** (128 random bits, `crypto.js`'s `generateSecret()`) is what the encryption key derives
+from, and it's never typed or spoken — only ever shared as a link (`?team=<secret>`) or a QR code,
+reusing the exact link/QR pattern retro sessions already use to join. The relay only ever sees a
+**separate, one-way hash** of that secret (`roomIdFor()`, SHA-256 truncated to 64 bits) for
+routing — knowing the room id buys an attacker nothing, since it can't run backward to the secret.
+`relay-client.js`'s `doc()`/`collection()` gained an optional second `secret` argument so a caller
+can supply the key separately from the path's own routing id; omitted (every session caller),
+behavior is byte-for-byte unchanged — the path's own code is still the key, exactly as before.
+
+`board-sync.js`'s UI changed to match: "Create a team link" (first device) generates the secret and
+shows it as a link + QR + copy button; joining means opening that link (an inline
+`autoConnectFromLink()` reads `?team=`, persists it, then strips it from the visible URL/history —
+the same hygiene a magic-link auth flow uses) or pasting it into a "paste a team link" box. No code
+is ever typed.
+
+**A real second bug surfaced while testing this**, predating the security fix and latent the whole
+time: `relay-client.js`'s `putDoc()` re-derived its encryption key from `room.code` on every write,
+rather than reusing the key the room actually connected with. Harmless for sessions (where `code`
+and the key material were always the same value), but for a board using a separate secret this
+meant every board write was silently encrypted with the WRONG key — decryption on any receiving
+client (including the sender's own live subscription) failed and was silently dropped (the existing
+`.catch(){}` around decrypt treats a bad key indistinguishably from a corrupt envelope). Fixed by
+storing the room's actual `keyPromise` on the room object at connect time and having `putDoc()`
+reuse it instead of re-deriving. `tests/test_board_sync_opt_in_push.py` is what caught it (a
+cross-device read came back `exists:false` for data that had definitely been pushed).
+
+All three Playwright board-sync tests (`test_board_sync_opt_in_push.py`,
+`test_board_sync_hydrate_on_boot.py`, `test_board_sync_live_subscribe.py`) were rewritten against
+the new link-based UI, driving a real "second device opens the link" join for hydrate/live-subscribe
+coverage rather than pre-seeding localStorage. `test_relay_board_path_sync.py` gained direct
+coverage of the secret/routing-id split itself (same routing id, wrong secret → decryption fails,
+not a fallback to the path-derived key — verified from a **fresh** browser context specifically,
+since `relay-client.js` caches an opened room per page and a page that already opened a room with
+the right secret would otherwise mask the check). `tests/unit/test_board_sync.js` now covers
+`parseTeamSecretInput()`/`teamLinkFor()` instead of the retired `normalizeTeamCode()`. Full 25-file
+Playwright + 38-test unit suite passing.
 
 ## Deliberately not built yet (and why)
 
 | Not built | Why it's cut for now | What would trigger building it |
 |---|---|---|
 | Relay deployed anywhere public | Built, tested, and now deploy-ready (`render.yaml` + `SQUAD_PULSE_RELAY_URL`-driven build step — see `relay/README.md`), but this session has no hosting/Vercel account access to actually click "deploy" | Whoever has account access runs the Render blueprint (or any equivalent host) and sets the Vercel env var — see `relay/README.md`'s "Wiring the deployed static site to this relay" for the exact steps, including testing it on a Preview deployment before merging to `main` |
-| Co-facilitator "finish retro" ownership | A session doc is self-contained, so a co-facilitator's device can watch/reveal/override live over the relay with no extra work — but "Finish & apply" writes into the SQUAD's own rating, which lives in whichever browser's local board actually holds that squad. A co-facilitator on a genuinely different, independently-seeded browser doesn't have that squad locally, so their "Finish" would write nowhere useful. Open question, not yet resolved: should only the session's originating device be allowed to finish, or does finishing need to become a relay-carried action the owning board listens for? | Whenever a real second facilitator device needs to finish a retro, not just watch one |
 | Save-board / Load-board-to-file | `local-store.js` already persists the board via `localStorage`, which covers the same browser/device | Once someone needs a board to move between browsers/devices without a relay |
 | Relay deployed on Vercel itself (one deployment, not two) | Deliberately rejected, not just deferred — see the locked decision above and `relay/README.md`'s "Why not a Vercel Function" | Only if Vercel's WebSocket support later guarantees same-instance routing without an external store, which would remove the reason this was rejected |
 | Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing | Once the marketing site (separate Claude Code project) is further along |
 
 ## Suggested next step
 
-Two independent tracks, either can go first:
-
-1. **Deploy the relay.** No code changes needed — the static site is already live on Vercel; the
-   relay just needs someone with a Render (or equivalent) account to run the `render.yaml`
-   blueprint at the repo root, then set `SQUAD_PULSE_RELAY_URL` in Vercel's project settings (scope
-   it to Preview first to test on this branch before merging to `main`, then Production). Full
-   steps: `relay/README.md`'s "Deploying it" and "Wiring the deployed static site to this relay".
-   This is the real unblock for testing cross-device retro sessions with a real team, not just in
-   this repo's own tests.
-2. **Resolve the co-facilitator "finish retro" question** above, then build whatever it takes
-   (likely a relay-carried "finish" action the session's owning device listens for and applies
-   locally, rather than a raw squads-collection write from any device).
+**Deploy the relay.** No code changes needed — the static site is already live on Vercel; the
+relay just needs someone with a Render (or equivalent) account to run the `render.yaml`
+blueprint at the repo root, then set `SQUAD_PULSE_RELAY_URL` in Vercel's project settings (scope
+it to Preview first to test on this branch before merging to `main`, then Production). Full
+steps: `relay/README.md`'s "Deploying it" and "Wiring the deployed static site to this relay".
+This is the real unblock for testing cross-device retro sessions and board sync with a real team,
+not just in this repo's own tests.
 
 ## Session log
 
@@ -568,3 +761,166 @@ Two independent tracks, either can go first:
   pushes. Full 25-file Playwright + 35-test unit suite re-verified passing. Safe to ship to `main`
   as-is: identical no-team-code-set behavior; the only change for a connected device is seeing
   updates sooner (live vs. next reload), never a different final state than step 4 already produced.
+- 2026-09-12 — **Board sync security fix**, from user review of steps 3–5: a typed, user-chosen
+  "team code" doubling as the encryption key (retro sessions' deliberate tradeoff, wrong here — see
+  "Board sync"'s new "Security fix" section for the full reasoning) replaced with a high-entropy
+  secret shared only via link/QR, mirroring Excalidraw's real architecture and reusing retro
+  sessions' own join-by-link/QR UI. `crypto.js` gained `generateSecret()`/`roomIdFor()`;
+  `relay-client.js`'s `doc()`/`collection()` gained an optional `secret` argument (omitted, sessions
+  are byte-for-byte unchanged); `board-sync.js`'s UI became "Create a team link" / paste-a-link /
+  auto-connect-from-`?team=`. Testing this also caught a real, previously-latent bug in
+  `relay-client.js`'s `putDoc()` (re-derived its key from the room's routing id instead of reusing
+  the room's actual key — invisible for sessions, silently broke every board write) — fixed by
+  storing the room's `keyPromise` at connect time. All three board-sync Playwright tests rewritten
+  against the new UI; `test_relay_board_path_sync.py` gained direct secret/routing-id-separation
+  coverage; `tests/unit/test_board_sync.js` now covers `parseTeamSecretInput()`/`teamLinkFor()`.
+  Full 25-file Playwright + 38-test unit suite passing. **Not yet merged to `main`** — the user
+  clarified mid-session that "safe to push to main" is a standing capability they want, not a
+  standing instruction to auto-merge every finished increment: from here on, increments land on the
+  feature branch and stay there, tested and ready, until the user explicitly says to merge.
+- 2026-09-12 — **Playwright suite perf pass**, prompted by the user noticing the suite had gotten
+  slow again. Timed all 25 files individually (`time python3 tests/test_*.py` per file) before
+  touching anything: 133.65s sequential total, one huge outlier —
+  `test_dimension_and_template_admin.py` at 17.58s, more than double the next-slowest file. Root
+  cause: it built its own test page by reading `public/index.html` and splicing its fake store in
+  by hand, instead of calling `tests/fixtures/build_page.py`'s `build_page()`/`write_plain_index()`
+  — bypassing the Google Fonts `<link>` strip those apply, and re-triggering the exact ~12-second
+  stall `build_page.py`'s own header comment already documented as the reason that strip exists in
+  the first place. Fixed by adding `build_custom_page(extra_head_html, out_name)` (same strip, for
+  a test needing its own bespoke fake store shape) and switching this file to use it:
+  17.58s → 5.03s. Also trimmed `test_csv_import_column_matching.py`'s "renamed headers" scenario
+  (positional-fallback header matching, preview-only, never applies anything) since
+  `tests/unit/test_csv.js`'s "`mapImportColumns()` falls back to `toCSV()`'s fixed column order"
+  already covers the exact same logic, and the file's other two scenarios already prove the same
+  preview-rendering pipeline works: 3.44s → 3.08s. No other file was found reading `index.html` by
+  hand, and no other fully-redundant Playwright-vs-unit-test overlap was found on this pass — every
+  other file exercises real DOM rendering, `localStorage`, a real WebSocket, or `crypto.subtle` that
+  a unit test structurally can't reach. New sequential total: 118.9s (down from 133.65s). Documented
+  the pattern and a "run this if it gets slow again" note in `tests/README.md` so this doesn't
+  quietly regress a third time. Full 25-file Playwright + 38-test unit suite re-verified passing.
+- 2026-09-12 — **New policy: test-first, from here on.** The product owner asked for TDD going
+  forward rather than tests-after-code. No general-purpose TDD skill existed to install (checked
+  the skill/plugin marketplace — nothing generic fit), so added a repo-scoped one instead:
+  `.claude/skills/tdd/SKILL.md`. It encodes this repo's actual two-tier decision (pure logic →
+  `tests/unit/`, real DOM/relay/crypto → `tests/test_*.py`), the "check for existing unit coverage
+  before adding a Playwright test" rule from the perf pass above, and the write-test-first →
+  watch-it-fail-for-the-right-reason → minimal-code → refactor → full-suite loop this file's own
+  session log has been documenting in practice all along. Applies to any change under
+  `public/js/*.js`, `public/local-store.js`, or `relay/*.js`.
+- 2026-09-12 — **Board sync step 6, and the `tdd` skill's first real test-flight.** Followed the new
+  skill exactly: picked the tier (Playwright — real relay, real cross-device), wrote
+  `tests/test_board_sync_finish_retro_convergence.py` FIRST reproducing the original bug report's
+  exact shape (two team-synced devices, each facilitating a different squad's retro), then ran it
+  before writing any new production code. It failed for a real reason on the first run — not the
+  one expected. `board-sync.js`'s `applyRemoteBoardSnapshot()` was writing a remote squad's
+  `dimensions` object (frozen, per `deepFreezeClone()`) straight into a local doc; the next
+  `persistDimensionRatings()` call on that squad threw trying to add a new key to it ("object is
+  not extensible"). This is precisely the kind of bug a test-after approach tends to miss — a
+  weaker test (does `applyRemoteBoardSnapshot()` return without throwing?) would have stayed green
+  right through it, since the throw only happens on the NEXT write to that squad, not the hydrate
+  itself. Fixed with a `plainClone()` helper (JSON round-trip) applied everywhere a remote
+  snapshot's nested value gets written into a local doc. Full scenario now passes: two devices,
+  each finishing a different squad's retro, both converge on seeing BOTH squads' real results,
+  live; a rainy-day third device that never connected to the team link is confirmed unaffected.
+  Skill verdict: worked as intended, no changes needed to the skill itself this round — the
+  "pick the tier" and "write it first" steps did their job. One incidental discovery while writing
+  the test, not a skill gap: a joined participant has no in-app way back to the main board (the
+  test had to `page.goto()` the plain URL to simulate what a real user does today), independent
+  confirmation that story 9 is real. Full 26-file Playwright + 38-test unit suite passing.
+- 2026-09-12/13 — Stories 9, 10, 11, and Board sync step 7 (default-on), test-flighting the `tdd`
+  skill across all four. Stories 9 (participant exit/return), 10 (co-facilitator join via
+  code/link/QR), and 11 (wire-level encryption verification) all landed clean on the first real run
+  — see "Board sync" above for each one's detail; no skill changes needed. Step 7 (default-on) was
+  the hard one: turning on the full hydrate/push/subscribe cycle for EVERY device on EVERY boot
+  (instead of only an opted-in device once in a while) surfaced five real, previously-latent
+  concurrency/timing bugs the existing test suite caught one at a time as each prior fix exposed
+  the next — a blocking `await` that could stall the whole board behind a slow/unreachable relay, a
+  partial-board push race between three independently-timed local listeners, a timestamp-capture-
+  order bug that could invert last-write-wins, `maybeApplyRemote()` reentrancy between hydrate and
+  live-subscribe, and a genesis-push race for a device joining an existing team. The trickiest was
+  found LAST, via `test_board_sync_finish_retro_convergence.py` (story 6's own test) regressing at
+  a new assertion after all five of the above were fixed: `relay-client.js`'s `getRoom()` was
+  remembering every room it ever connected to — including a board's secret-derived room id, not
+  just plain session codes — for the broad `sessions` listener's reconnect-on-boot bookkeeping.
+  Once a device had ever joined a retro session and then reloaded, that bookkeeping's blind,
+  no-secret `getRoom(code)` call could create the board's room FIRST on the new page, permanently
+  fixing its encryption key to the wrong value (derived from the room id instead of the real
+  secret) — the device could still round-trip with itself but could never again decrypt a
+  correctly-keyed teammate's pushes, with no error surfaced anywhere. Fixed by only remembering a
+  code when no secret was given. Chasing the same regression also surfaced a SEPARATE, test-only
+  bug: `tests/fixtures/fake_store.html` had no concept of routing to a relay, so board sync's new
+  always-on `boards/<roomId>` traffic was landing in the exact same shared in-memory map as the
+  real squads/dimensions data in every fake-store test — a delayed hydrate could echo back a stale
+  snapshot and silently clobber a test's freshly-written board, intermittently breaking several
+  unrelated template/dimension tests. Fixed by making `boards/` paths inert in the fake store
+  (reads as not-found, writes reject as unavailable), the same behavior a real deployment gets with
+  no relay configured. Retired the "no persistent database, ever" language in this file, `README.md`,
+  and `docs/standalone-plan.md` for good — board sync's default-on rollout is what that
+  language was always going to give way to once proven. Full 30-file Playwright + 38-test unit
+  suite passing with zero regressions.
+- 2026-09-13 — **Test suite performance pass.** Runtime, not behavior: no product code changed.
+  Confirmed every file in `tests/test_*.py` is fully independent (its own unique `build_page()`/
+  `write_plain_index()` output filename, its own hardcoded relay port where a relay-backed file
+  spawns one — no two files share either), so added `tests/run_all.sh` to run the suite as parallel
+  processes instead of the serial `for` loop tests/README.md used to suggest. Measured on this
+  machine: serial ~170s → 2-at-a-time ~75s (zero failures) → 4-at-a-time ~41s but with one real,
+  reproducible flake (`test_relay_cross_device_sync.py`, an element read right after a genuine
+  WebSocket round trip, purely from CPU contention on a 4-core box with no headroom) — so
+  `run_all.sh` defaults to 2, not `nproc`. `.github/workflows/tests.yml` now shards the Playwright
+  suite three ways across separate runners (each running `run_all.sh` internally at 2), and split
+  the relay/unit checks into their own job that runs concurrently with the Playwright shards rather
+  than serially before them. Separately, converted the small number of `wait_for_timeout(N)` calls
+  that were guessing at a REAL relay round trip's duration (right after `#startSessionBtn`, a
+  join-by-code, or before touching `#experimentNoteBox`) to `page.wait_for_selector(...)` on
+  whatever that round trip actually produces — same fixed pattern that was causing the P=4 flake
+  above, now fixed at the source rather than by capping concurrency alone. Deliberately did NOT
+  touch the much larger set of `wait_for_timeout` calls with no equivalent DOM signal to wait on
+  (a write with no visible effect, several independent listeners settling) — converting those
+  would mean guessing a different, unproven condition rather than removing a real one, which is not
+  a safe trade at suite-wide scale. Also audited `tests/unit/*.js` vs. several Playwright files
+  that looked like candidates for trimming duplicate pure-logic coverage (consolidation/tie-
+  breaking, scored-template math) — found each one already earns its slower cost per this file's
+  own established rule (real DOM rendering, live-toggle persistence through the shared session doc,
+  wiring from actual clicks through to the real aggregation code path, not just re-checking the
+  math), so none were removed. Full 30-file Playwright + 38-test unit suite passing with zero
+  regressions throughout, including three consecutive clean runs of the suite's most timing-
+  sensitive file after the wait-condition changes.
+- 2026-09-13 — **Real bug report, three devices (Mac facilitator, iPhone + iPad participants),
+  fixed.** Diagnostics from all three showed different board-sync room ids -- three unrelated
+  teams -- even though a retro was shared between them: iPhone and iPad had each joined only the
+  retro session's OWN participant join link, never the facilitator's separate team link, so a
+  finished retro (and, separately, a squad rename tried on one device) never reached the others in
+  either direction. Root cause and fix are exactly what the product owner proposed: unify the two
+  mechanisms, matching the Excalidraw "one link, one shared document" model this repo's docs
+  already reference, rather than requiring a second, separate team-link step. `joinUrlFor()` (and
+  `coFacilitateUrlFor()`, same gap) now appends the facilitator's own current team secret as
+  `&team=<secret>` whenever they have one connected (the default per step 7); `board-sync.js`'s
+  existing `autoConnectFromLink()` already applies a `?team=` param generically and runs before the
+  default-bootstrap step, so no other production code needed to change. A facilitator who
+  explicitly stopped syncing produces a plain, session-only link exactly like before this fix --
+  the join link never forces a team onto anyone. New `tests/test_retro_join_link_carries_team_sync.py`
+  proves both directions over the real relay (a device that only ever opens the join link ends up
+  team-synced and sees the facilitator's real board; the reverse also reaches the facilitator live)
+  plus the rainy day above. A separate reported bug ("Starting retro session" stuck on iPhone/iPad
+  while Mac worked fine) is very likely explained by the same diagnostics -- both mobile devices
+  show repeated relay disconnect/reconnect cycles roughly every 30-90s (absent on Mac), consistent
+  with a mobile network's NAT dropping an idle WebSocket with no application-level keep-alive to
+  prevent it (`relay/server.js` has no ping/pong). Not fixed this round -- flagged as a follow-up
+  (a server-side heartbeat, and/or a client-side connection-attempt timeout in `relay-client.js`'s
+  `connectRoom()` so a hung initial connect can't block a brand-new session's `.set()` forever) --
+  since it's a distinct, separately-scoped resilience improvement to the wire protocol rather than
+  a one-line fix, and wasn't confirmed as an infinite hang (only a real, repeated slowdown) in the
+  captured diagnostics.
+- 2026-09-13 — Two small UI fixes from the same bug report. (1) The session card's "Close session"
+  button sits right next to "Finish retro & apply results" and was reported as easy to mistake for
+  also saving results -- renamed it and both confirm-dialog OK labels that lead to the same
+  `closeSession()` action to "Close session without applying results" / "Close without applying
+  results". Text-only; the action itself is unchanged. Regression assertion added to
+  `test_retro_join_flow.py`. (2) Added a one-click "Copy diagnostics" button to both diagnostics
+  panels (Admin view and the participant join screen) -- `diag()`'s own selection-preserving logic
+  already existed because a fast-moving log made manual select-and-copy fiddly; a button sidesteps
+  that entirely by reading the log's current text at click time. Falls back to a hidden-textarea +
+  `execCommand("copy")` if the Clipboard API isn't available. New assertions in
+  `test_uncaught_error_diagnostics.py` verify the REAL clipboard content (not just "didn't throw"),
+  which needed granting the test's browser context `clipboard-write`/`clipboard-read` permissions
+  Playwright doesn't have by default. Full 31-file Playwright + 38-test unit suite passing.

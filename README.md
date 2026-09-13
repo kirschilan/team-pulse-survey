@@ -1,9 +1,9 @@
 # Squad Pulse
 
-A no-database team pulse survey and facilitated retro tool, with customizable
-predefined templates (The Five Dysfunctions of a Team, Spotify Squad Health
-Check, Tuckman's stages of group development) that can be customized. Built
-by [Dr. Agile](https://dragile.com).
+A team pulse survey and facilitated retro tool, with customizable predefined
+templates (The Five Dysfunctions of a Team, Spotify Squad Health Check,
+Tuckman's stages of group development) that can be customized. Built by
+[Dr. Agile](https://dragile.com).
 
 Squad view gives a squad a quick health snapshot across whatever dimensions
 your template defines; Tribe view rolls those up into cross-squad hotspots —
@@ -23,11 +23,12 @@ not built yet, and the session log — that's the one place "what's outstanding"
 lives, kept up to date as work lands. Short version: this app originated as a
 prototype running inside a Claude Artifact's `db` capability and has been
 migrated to run standalone. The board (squads, dimensions, templates) stays in
-the browser's own `localStorage` via `public/local-store.js` — deliberately
-per-device, not synced (see `STATUS.md`). A live retro **session**, on the
-other hand, now genuinely syncs across real devices through a small
-self-hosted relay (`relay/`) with client-side encryption — see
-`relay/README.md`.
+the browser's own `localStorage` via `public/local-store.js`, same as always —
+but by default now also syncs, live, with every other device that opens the
+same team link, over the same self-hosted relay (`relay/`) and client-side
+encryption a live retro **session** already used (see `relay/README.md` and
+`STATUS.md`'s "Board sync"). The relay only ever sees encrypted ciphertext,
+never a board's real contents.
 
 ## Project layout
 

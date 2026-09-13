@@ -4,10 +4,11 @@
 // same Firestore-shaped surface (collection()/doc() with
 // get/set/update/delete/add/onSnapshot) that local-store.js already gives
 // the rest of the app, so db.js and everything upstream of it needs zero
-// changes. Only paths rooted at "sessions" are ever routed here (see the
-// SquadPulseRelay.isSessionPath check local-store.js uses) -- squads,
-// dimensions, templates, and config stay on localStorage per the "no
-// persistent multi-tenant board database, ever" decision in STATUS.md.
+// changes. Paths rooted at "sessions" (a live retro) or "boards" (a synced
+// team board, see board-sync.js) are routed here; everything else -- squads,
+// dimensions, templates, and config -- stays on localStorage as each
+// device's own source of truth (see local-store.js's isRelayPath check and
+// STATUS.md's "Board sync").
 //
 // Every doc this module sends or receives over the wire is an encrypted
 // {iv, ct} envelope (see crypto.js) -- room.docs below holds the DECRYPTED
@@ -47,15 +48,17 @@ var SquadPulseRelay = (function(){
   }
 
   function isSessionPath(path){ return path.split("/")[0] === "sessions"; }
-  // "boards/<teamCode>[/...]" is the same wire mechanism as a retro
-  // session, aimed at a different room namespace: an opt-in, durable,
-  // whole-board sync a device joins with a persistent team code instead of
-  // a one-off session code. Nothing calls doc()/collection() with a
-  // "boards"-rooted path yet -- see STATUS.md's "Board sync" plan, step 2 --
-  // this only makes the plumbing accept one alongside "sessions" paths, so
-  // the relay (which never inspects a path's meaning, just routes by
-  // whatever room code opened the connection -- see relay/server.js) and
-  // this router both already work the moment something calls it.
+  // "boards/<roomId>[/...]" is the same wire mechanism as a retro session,
+  // aimed at a different room namespace: an opt-in, durable, whole-board
+  // sync (see board-sync.js). `roomId` is a one-way hash of a high-entropy
+  // secret shared only via link/QR -- NOT the secret itself, and not
+  // user-typed (see crypto.js's roomIdFor()/generateSecret() and
+  // STATUS.md's "Board sync" plan for why: a session's code can double as
+  // its own key because it's random and short-lived, but a team's code
+  // would be user-chosen and long-lived, which is a real vulnerability
+  // once the board it protects is durably stored). The relay itself never
+  // inspects a path's meaning either way -- it just routes by whatever
+  // room code opened the connection (see relay/server.js).
   function isBoardPath(path){ return path.split("/")[0] === "boards"; }
   function codeFromPath(path){ return path.split("/")[1]; }
 
@@ -155,9 +158,33 @@ var SquadPulseRelay = (function(){
     ws.addEventListener("error", function(){ /* the close handler above still fires and retries/gives up */ });
   }
 
-  function getRoom(code){
+  // `secret`, when given, is what the encryption key derives from instead
+  // of `code` itself -- board-sync.js's whole reason for existing (see
+  // crypto.js's generateSecret()/roomIdFor()): `code` there is a one-way
+  // hash of the real secret, safe to use for routing since it can't be run
+  // backward, while `secret` never touches this room object's own `code`
+  // field or anything sent to the relay. Retro sessions never pass one,
+  // so `secret || code` preserves their exact original behavior --
+  // the code IS the key, unchanged.
+  function getRoom(code, secret){
     if(rooms[code]) return rooms[code];
-    rememberCode(code);
+    // Only remember plain retro-session codes here, for
+    // subscribeBroadSessions()'s reconnect-known-codes-on-boot logic below
+    // -- never a board room's id. A board room is always reached WITH a
+    // real secret (board-sync.js's push/hydrate/subscribe all pass one);
+    // a bare code with none is exactly the session case this bookkeeping
+    // is for. Remembering a board room id here too let
+    // subscribeBroadSessions's blind `getRoom(code)` loop (no secret)
+    // create THIS room FIRST on a later page load, before board-sync.js's
+    // own correctly-secreted call ever ran -- and since the room object
+    // created by whichever call runs first is what every later getRoom(
+    // code) call for that code reuses (the cache check just above), that
+    // wrong key (derived from the room id instead of the real secret)
+    // stuck for the rest of the page's life. Found exactly this way: two
+    // team-synced devices, after either one had ever joined a retro
+    // session (which is what first puts anything in knownCodes) and then
+    // reloaded, could no longer decrypt each other's board pushes at all.
+    if(!secret) rememberCode(code);
 
     var room = {
       code: code, docs: {},
@@ -192,7 +219,8 @@ var SquadPulseRelay = (function(){
       return room;
     }
 
-    var keyPromise = SquadPulseCrypto.deriveKey(code);
+    var keyPromise = SquadPulseCrypto.deriveKey(secret || code);
+    room.keyPromise = keyPromise; // putDoc() below reuses this rather than re-deriving from room.code, which is only the encryption key for a codeless (session) room -- see the getRoom() comment above
     connectRoom(room, keyPromise);
 
     return room;
@@ -213,7 +241,7 @@ var SquadPulseRelay = (function(){
     // observed, is what keeps subscribeBroadSessions() from accumulating
     // one live WebSocket per session this device has EVER started.
     if(path === "sessions/" + room.code && data && data.status === "closed") forgetCode(room.code);
-    SquadPulseCrypto.deriveKey(room.code).then(function(key){
+    room.keyPromise.then(function(key){
       return SquadPulseCrypto.encrypt(key, data);
     }).then(function(envelope){
       send(room, { op:"put", path: path, envelope: envelope });
@@ -262,8 +290,8 @@ var SquadPulseRelay = (function(){
     return { code:"unavailable", message:"Relay unavailable for room " + room.code + " -- this write was never sent." };
   }
 
-  function docRef(path){
-    var room = getRoom(codeFromPath(path));
+  function docRef(path, secret){
+    var room = getRoom(codeFromPath(path), secret);
     return {
       id: path.split("/").pop(), path: path,
       get: function(){
@@ -292,7 +320,7 @@ var SquadPulseRelay = (function(){
           deleteDoc(room, path);
         });
       },
-      collection: function(sub){ return collRef(path + "/" + sub); },
+      collection: function(sub){ return collRef(path + "/" + sub, secret); },
       onSnapshot: function(next, err){
         var l = { path: path, cb: next };
         room.docListeners.push(l);
@@ -305,30 +333,30 @@ var SquadPulseRelay = (function(){
     };
   }
 
-  function collRef(path){
+  function collRef(path, secret){
     var codeHere = codeFromPath(path); // undefined for the bare "sessions" collection
     return {
       path: path,
-      doc: function(id){ return docRef(path + "/" + (id || ("auto"+Math.random().toString(36).slice(2)))); },
+      doc: function(id){ return docRef(path + "/" + (id || ("auto"+Math.random().toString(36).slice(2))), secret); },
       add: function(data){
         var id = "auto"+Math.random().toString(36).slice(2);
-        var room = getRoom(codeHere);
+        var room = getRoom(codeHere, secret);
         return room.ready.then(function(){
           if(room.unavailable) return Promise.reject(unavailableError(room));
-          putDoc(room, path+"/"+id, data); return docRef(path+"/"+id);
+          putDoc(room, path+"/"+id, data); return docRef(path+"/"+id, secret);
         });
       },
       orderBy: function(){ return this; }, where: function(){ return this; }, limit: function(){ return this; },
       get: function(){
         if(codeHere){
-          var room = getRoom(codeHere);
+          var room = getRoom(codeHere, secret);
           return room.ready.then(function(){ return buildSnapshot(room, path); });
         }
         return Promise.resolve(broadSessionsSnapshot());
       },
       onSnapshot: function(next, err){
         if(codeHere){
-          var room = getRoom(codeHere);
+          var room = getRoom(codeHere, secret);
           var l = { path: path, cb: next };
           room.collListeners.push(l);
           room.ready.then(function(){ next(buildSnapshot(room, path)); });

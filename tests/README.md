@@ -78,6 +78,82 @@ automatically.
 Screenshots and scratch CSV fixtures go through `test_output_path(name)`,
 which resolves to `tests/output/` (gitignored).
 
+A test needing a materially different fake store than `fake_store.html`
+provides (a custom `window.claude` shape, extra test-only globals) can call
+`build_custom_page(extra_head_html, out_name)` instead, splicing its own
+`<script>` block in the same way. **Never** read and splice
+`public/index.html` by hand (`(public_dir/"index.html").read_text()...`) —
+that bypasses the Google Fonts `<link>` strip both `build_page()` and
+`write_plain_index()` apply, and costs the file real, measured wall-clock
+time (~12s) per run: found in a 2026-09-12 perf pass, where it was most of
+one file's 17.6s runtime — see `test_dimension_and_template_admin.py`'s
+history and STATUS.md's session log.
+
+## Performance
+
+**Run the suite with `tests/run_all.sh`, not a serial loop.** Every file is
+fully independent by construction — its own unique `build_page()` /
+`write_plain_index()` output filename, and its own hardcoded relay port
+where a relay-backed file spawns one (verified, 2026-09-13 perf pass: no
+two files in the suite share either) — so running them as separate
+processes at the same time is safe with zero test changes. `run_all.sh`
+defaults to 2 at a time; measured on a 4-core machine, that ran the full
+30-file suite with zero failures in ~75s, against ~170s run serially (a
+plain `for f in tests/test_*.py; do python3 "$f"; done` loop) — a ~2.3x
+wall-clock win for free. Pushing concurrency to 4 (one worker per core, no
+headroom) cut it further (~41s) but produced a real, reproducible flake in
+a timing-sensitive relay test purely from CPU contention (an element read
+right after a genuine WebSocket round trip occasionally hadn't rendered
+yet) — passing standalone every time, only failing under a fully-saturated
+CPU. 2 is the concurrency this repo has actually verified safe; raise it
+(`TEST_JOBS=N tests/run_all.sh`) only after checking your own machine has
+the headroom, and re-running enough times to trust it. CI shards the suite
+further still — see `.github/workflows/tests.yml`'s `playwright` job's own
+comments for why that's a matrix of separate runners, not just a bigger
+`TEST_JOBS`.
+
+If a specific file still feels slow, `time python3 tests/test_whatever.py`
+it directly — the fake-store files should mostly run in the 2-6s range
+each; anything past ~10s is worth a look before just letting it slide, and
+a `page.goto()` in the file that reads/splices `index.html` by hand rather
+than calling `build_page()` / `write_plain_index()` / `build_custom_page()`
+is the first thing to check (see above). The relay-backed files
+(`test_relay_*`, `test_board_sync_*`) are inherently a bit slower — a real
+Node subprocess plus real WebSocket round trips per test — that overhead
+is the cost of them being genuine, not fake-store, integration tests, and
+isn't itself something to optimize away. What IS worth checking in a
+relay-backed file: a `wait_for_timeout(N)` sitting right after a click that
+kicks off a real round trip (starting a session, joining one, a team-board
+push) and right before reading whatever that round trip produces — that's
+a guess at how long the network will take, not a real wait. Prefer
+`page.wait_for_selector(...)` on the element the round trip actually
+produces (e.g. `.session-code` after `#startSessionBtn`, `.direct-row`
+after joining) — it resolves the moment the real thing happens rather than
+after a fixed guess, which is both faster in the common case and immune to
+exactly the CPU-contention flake above. This isn't free to apply
+everywhere blindly, though: it only works where the test already knows a
+specific selector that appears if and only if the awaited work finished —
+a `wait_for_timeout` guarding something with no such signal (a write with
+no visible DOM effect, a UI settle after several independent listeners
+each fire) is doing real work and should stay as it is rather than being
+converted just to remove a sleep.
+
+Before adding a new Playwright test, check whether what it would prove is
+already fully covered by a `tests/unit/*.js` test on the same underlying
+pure function (see `docs/` and `tests/unit/README.md` — `helpers.js`'s
+consolidation/scoring math and `csv.js`'s column-matching/import-plan
+logic are the two richest examples). A Playwright test earns its slower,
+real-browser cost by covering something a unit test structurally can't:
+real DOM rendering/interaction, `localStorage`, a real WebSocket, or
+`crypto.subtle`. A scenario whose ONLY assertions re-check already
+unit-tested logic through a preview pane, with nothing applied or
+rendered beyond that, is a case for trimming it (see
+`test_csv_import_column_matching.py`'s history for a worked example: its
+"renamed headers, positional-fallback" scenario was removed once
+`tests/unit/test_csv.js` was confirmed to cover that exact logic, since
+the file's other two scenarios already proved the same preview-rendering
+pipeline works).
+
 ## Naming
 
 Every file is named for the feature or flow it covers, not for the order it
@@ -111,7 +187,13 @@ references.)
 | `test_view_switch_refreshes_stale_state.py` | A db snapshot that arrives while a view (Tribe/Squad/Admin) is hidden updates `state` but not that view's DOM, since every listener gates its own render on the currently-visible view (see `db.js`) -- switching back must show current state, not whatever was last rendered before you left |
 | `test_relay_error_handling.py` | What happens when the relay is unavailable: no relay configured fails fast with no network attempt at all (not a doomed `ws://localhost` guess triggering a private-network permission prompt), a malformed URL scheme (e.g. a `wss://` typo) fails the same clean way instead of an uncaught `SyntaxError`, a configured-but-unreachable relay retries with bounded backoff instead of forever, a rapid multi-click on "Start retro session" only ever creates one session, the diagnostic log survives an in-progress text selection, and the join screen's "can't connect" message is distinct from "isn't open" |
 | `test_relay_config_injection.py` | `scripts/generate-relay-config.js` (the Vercel build step that wires a deployed relay's URL in via the `SQUAD_PULSE_RELAY_URL` environment variable): writes a real assignment when the variable is set, leaves a no-op placeholder when it isn't, and — driven through `index.html`'s actual script order — an injected value really does win over the page's own protocol/hostname default |
-| `test_relay_board_path_sync.py` | Step 2 of STATUS.md's "Board sync" plan: `relay-client.js`/`local-store.js` correctly route a `boards/<teamCode>`-rooted path to the real relay (same as `sessions/*`), two independent browser contexts exchange a real encrypted document under one, an unwritten board path reads back as not-found rather than crashing, and adding this doesn't touch `sessions/*` behavior at all — no UI calls a `boards/*` path yet, this proves the plumbing alone |
-| `test_board_sync_opt_in_push.py` | Step 3 of STATUS.md's "Board sync" plan: the real Admin-view "Team sync" UI, end to end — a device with no team code never touches the relay for its board, connecting one and then making an ordinary change (adding a squad) pushes a real encrypted full-board snapshot a second device can read directly off the relay, and disconnecting genuinely stops further pushes |
-| `test_board_sync_hydrate_on_boot.py` | Step 4 of STATUS.md's "Board sync" plan: hydrate-on-load, both directions — a device booting with a team code already configured pulls another device's already-pushed board with no click at all, then after IT makes its own change, the FIRST device's next reload pulls that newer state back — proving last-write-wins-by-timestamp genuinely round-trips, not just "second device catches up once" |
-| `test_board_sync_live_subscribe.py` | Step 5 of STATUS.md's "Board sync" plan: live subscribe — two devices connected to the same team code AT THE SAME TIME converge on a squad add in BOTH directions with no reload at all (unlike step 4, which needed one), and disconnecting stops live updates too, not just outgoing pushes |
+| `test_relay_board_path_sync.py` | Step 2 of STATUS.md's "Board sync" plan: `relay-client.js`/`local-store.js` correctly route a `boards/<roomId>`-rooted path to the real relay (same as `sessions/*`), two independent browser contexts exchange a real encrypted document under one, an unwritten board path reads back as not-found rather than crashing, `sessions/*` behavior is completely unaffected, and (added with the security fix) `doc()`'s optional `secret` argument really does decouple the encryption key from the routing id — same room id, wrong secret, decryption fails rather than falling back to the path-derived key |
+| `test_board_sync_opt_in_push.py` | Step 3 of STATUS.md's "Board sync" plan (rewritten for the link/QR security fix): the real Admin-view "Team sync" UI, end to end — a device with no team link never touches the relay for its board, creating one and then making an ordinary change (adding a squad) pushes a real encrypted full-board snapshot a second device can read directly off the relay (using the secret parsed from that same link), a wrong/guessed secret can't read it, and disconnecting genuinely stops further pushes |
+| `test_board_sync_hydrate_on_boot.py` | Step 4 of STATUS.md's "Board sync" plan (rewritten for the link/QR security fix): hydrate-on-load, both directions — a device booting by opening another device's team link pulls its already-pushed board with no click beyond following the link, then after IT makes its own change, the FIRST device's next reload pulls that newer state back — proving last-write-wins-by-timestamp genuinely round-trips, not just "second device catches up once" |
+| `test_board_sync_live_subscribe.py` | Step 5 of STATUS.md's "Board sync" plan (rewritten for the link/QR security fix): live subscribe — two devices that opened the same team link AT THE SAME TIME converge on a squad add in BOTH directions with no reload at all (unlike step 4, which needed one), and disconnecting stops live updates too, not just outgoing pushes |
+| `test_board_sync_finish_retro_convergence.py` | Step 6 of STATUS.md's "Board sync" plan: the original bug report's exact repro, fixed — two team-synced devices each facilitate a different squad's retro; both end up seeing BOTH squads' real, finished results, live, over the shared team board. Rainy day: a third device that never connected to the team link is confirmed unaffected |
+| `test_board_sync_default_on.py` | Step 7 of STATUS.md's "Board sync" plan: default-on — a fresh device's Admin view shows a ready-to-share team link/QR immediately at first boot, no "Create" click needed, and two never-configured devices land on two different (random) teams, not the same one by accident. Rainy day: an explicit "stop syncing" survives a reload with no silent re-enable, and opening a real team link still correctly switches a device onto that team |
+| `test_retro_join_exit_and_return.py` | Story 9: a participant can leave the join screen for the normal board and come back to exactly where they left off — happy path (submit, exit, return shows the same personal results, not a re-shown survey), plus two rainy-day cases (exiting mid-survey preserves the in-progress draft; a device that never joined anything never shows the "back to my retro" control) |
+| `test_cofacilitator_join.py` | Story 10: a co-facilitator joins an already-open session by code, link, or QR and gets the FULL facilitator view (live tally, override, finish) instead of the participant survey — a three-device scenario (originating facilitator + a participant who answers + a co-facilitator who never started the session) proves the co-facilitator's finish reaches the originating device too, live, via team sync. Rainy day: a wrong/nonexistent code shows a clear error, not a crash |
+| `test_encryption_no_plaintext_on_wire.py` | Story 11: captures every real WebSocket frame a browser sends/receives (not just API-level decrypt success/failure) while renaming a squad and saving a sprint-experiment note to distinctive, unmistakable strings, for both a team board and a retro session, and proves neither ever appears as plaintext in a raw frame — only base64 ciphertext, with a sanity check that the capture really did see encrypted `ct` fields |
+| `test_retro_join_link_carries_team_sync.py` | Real bug report fix: a retro session's join link (`joinUrlFor()`) now carries the facilitator's own team secret, not just the session code, so a device that opens ONLY that link (never the separate team link) still ends up team-synced with the facilitator — proves a real board change reaches both directions between a facilitator and a device that only ever used the join link, with the specific squad's retro still joinable normally. Rainy day: a facilitator who explicitly stopped syncing produces a plain, session-only link, and a device opening it keeps its own separate default team rather than being forced onto one |

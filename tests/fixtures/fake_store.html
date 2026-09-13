@@ -104,11 +104,64 @@
       }
     };
   }
+  // This fake store only ever mimics the LOCAL board backend (squads/
+  // dimensions/templates/config, and a "sessions/..." doc when a test
+  // explicitly seeds or starts one) -- it has no concept of routing some
+  // paths to a real relay the way local-store.js/relay-client.js do, and
+  // was never meant to. Board sync (public/js/board-sync.js) changed that:
+  // it now unconditionally reads/writes a "boards/<roomId>" doc on every
+  // single page load (hydrate + push), with no test ever asking for that.
+  // Left alone, every fake-store test would share this SAME plain STORE
+  // object for its "boards/..." doc as for its real squads/dimensions --
+  // so board-sync's own hydrate could read back a stale snapshot of the
+  // board it just pushed a moment earlier and silently overwrite whatever
+  // the test just set up, purely by accident of both living in one
+  // in-memory map. (Found exactly this way: a template-switch test's
+  // freshly loaded dimensions occasionally got wiped back to an earlier,
+  // in-flight state.) Routing "boards/" to an always-inert doc instead
+  // mirrors exactly what a real deployment does with no relay configured
+  // (relay-client.js's giveUp(): reads as not-found, writes never land) --
+  // which is the accurate simulation here, since this harness never
+  // pretends to run a relay at all.
+  function isBoardPath(path){ return path.split("/")[0] === "boards"; }
+  function inertDocRef(path){
+    var id = path.split("/").pop();
+    var notFound = { id: id, exists: false, unavailable: true, data: function(){ return undefined; } };
+    return {
+      id: id, path: path,
+      get: function(){ return Promise.resolve(notFound); },
+      set: function(){ return Promise.reject({ code:"unavailable", message:"no relay in this fake store" }); },
+      update: function(){ return Promise.reject({ code:"unavailable", message:"no relay in this fake store" }); },
+      delete: function(){ return Promise.reject({ code:"unavailable", message:"no relay in this fake store" }); },
+      collection: function(sub){ return inertCollRef(path+"/"+sub); },
+      onSnapshot: function(next){
+        setTimeout(function(){ next(notFound); }, 10);
+        return function(){};
+      }
+    };
+  }
+  function inertCollRef(path){
+    var emptySnapshot = { docs: [], size: 0, empty: true, metadata: { fromCache:false, hasPendingWrites:false } };
+    return {
+      path: path,
+      doc: function(id){ return inertDocRef(path+"/"+(id||("auto"+Math.random().toString(36).slice(2)))); },
+      add: function(){ return Promise.reject({ code:"unavailable", message:"no relay in this fake store" }); },
+      orderBy: function(){ return this; }, where: function(){ return this; }, limit: function(){ return this; },
+      get: function(){ return Promise.resolve(emptySnapshot); },
+      onSnapshot: function(next){
+        setTimeout(function(){ next(emptySnapshot); }, 10);
+        return function(){};
+      }
+    };
+  }
   window.__FAKE_STORE__ = STORE;
   window.__NOTIFY__ = notify;
   window.claude = {
     use: function(name){
-      if (name==="db") return Promise.resolve({ doc: docRef, collection: collRef });
+      if (name==="db") return Promise.resolve({
+        doc: function(path){ return isBoardPath(path) ? inertDocRef(path) : docRef(path); },
+        collection: function(path){ return isBoardPath(path) ? inertCollRef(path) : collRef(path); }
+      });
       if (name==="downloads") return Promise.resolve(null);
       return Promise.resolve(null);
     }

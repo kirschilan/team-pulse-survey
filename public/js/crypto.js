@@ -66,5 +66,28 @@ var SquadPulseCrypto = (function(){
     return JSON.parse(utf8Decode(new Uint8Array(plaintext)));
   }
 
-  return { deriveKey: deriveKey, encrypt: encrypt, decrypt: decrypt };
+  // For a persistent team board (unlike a one-off retro session -- see the
+  // big comment above), deriving the key from something a human types or
+  // says out loud is the wrong tradeoff: a team code is user-CHOSEN
+  // (people pick real words, not random strings) and, once board sync adds
+  // real persistence, the thing it protects is no longer short-lived
+  // either. generateSecret()/roomIdFor() split the two roles Excalidraw's
+  // real architecture keeps separate: a high-entropy secret (128 bits,
+  // never typed -- shared only via a link or QR, see board-sync.js) is
+  // what the encryption key derives from, while a SEPARATE, one-way-derived
+  // room id is all the relay ever sees for routing. Knowing the room id
+  // buys an attacker nothing -- it doesn't run backward to the secret.
+  function generateSecret(){
+    var bytes = crypto.getRandomValues(new Uint8Array(16));
+    return bytesToBase64(bytes).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  }
+  async function roomIdFor(secret){
+    var digest = await crypto.subtle.digest("SHA-256", utf8Encode(String(secret)));
+    var bytes = new Uint8Array(digest);
+    var hex = "";
+    for(var i=0;i<bytes.length;i++){ hex += (bytes[i] < 16 ? "0" : "") + bytes[i].toString(16); }
+    return hex.slice(0, 16); // routing only, doesn't need to be secret or collision-proof at internet scale
+  }
+
+  return { deriveKey: deriveKey, encrypt: encrypt, decrypt: decrypt, generateSecret: generateSecret, roomIdFor: roomIdFor };
 })();

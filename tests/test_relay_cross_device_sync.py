@@ -68,7 +68,7 @@ try:
         fac.click('.squad-pick-btn[data-id="squad-1"]')
         fac.wait_for_timeout(150)
         fac.click('#startSessionBtn')
-        fac.wait_for_timeout(400)
+        fac.wait_for_selector('.session-code')  # real relay round trip -- wait for it, don't guess how long
 
         code = fac.eval_on_selector('.session-code', 'el=>el.textContent')
         print("=== facilitator started a session ===")
@@ -91,7 +91,7 @@ try:
         team.wait_for_timeout(100)
         team.fill('#joinCodeInput', code)
         team.click('#joinCodeGo')
-        team.wait_for_timeout(600)
+        team.wait_for_selector('#joinCard .direct-row')  # real relay round trip -- wait for it, don't guess how long
 
         print("=== participant joined by code, over the real relay ===")
         heading = team.eval_on_selector('#joinCard h2', 'el=>el.textContent')

@@ -48,11 +48,82 @@ window.addEventListener("unhandledrejection", function(evt){
   diag("Unhandled promise rejection: " + msg);
 });
 
+// A one-click alternative to select-and-copy on the diagnostics panels --
+// select-and-copy is exactly the case diag()'s own selection-preserving
+// logic above works around, but a fast-moving log (the relay reconnecting
+// every few seconds) still makes manual selection fiddly, and copying was
+// reported as inconvenient enough to be worth a dedicated button. Reads
+// the log's CURRENT text at click time, so it always copies what's on
+// screen regardless of any selection state.
+document.querySelectorAll(".copy-diag-btn").forEach(function(btn){
+  var targetId = btn.getAttribute("data-diag-target");
+  var originalLabel = btn.textContent;
+  btn.addEventListener("click", function(){
+    var target = document.getElementById(targetId);
+    if(!target) return;
+    var text = target.textContent;
+    var showCopied = function(){
+      btn.textContent = "Copied!";
+      clearTimeout(btn.__copiedTimer);
+      btn.__copiedTimer = setTimeout(function(){ btn.textContent = originalLabel; }, 1500);
+    };
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(showCopied).catch(function(){
+          diag("Copy diagnostics failed -- clipboard write was rejected");
+        });
+      } else {
+        // No Clipboard API (very old browser, or a non-HTTPS/non-localhost
+        // context that disallows it) -- fall back to the pre-Clipboard-API
+        // way: a temporary offscreen textarea plus execCommand("copy").
+        var ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        showCopied();
+      }
+    }catch(e){
+      diag("Copy diagnostics failed: " + (e && e.message ? e.message : String(e)));
+    }
+  });
+});
+
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function nowIso(){ return new Date().toISOString(); }
 function isJoinMode(){ return !!state.joinSessionId; }
+// A session join link now doubles as a team-sync invite when the
+// facilitator has a team connected (the default since board sync step 7):
+// opening it both joins this one retro AND switches the device onto the
+// facilitator's team, the same "one link, one shared board" model
+// Excalidraw uses and this repo's docs already reference. Without this, a
+// device that only ever opened a session's join link (never the separate
+// team link) stayed on its own unrelated default team forever -- it could
+// answer the survey, but never saw the facilitator's board sync in either
+// direction, and vice versa. Real bug report, confirmed via diagnostics:
+// three devices in one retro, three different board-sync room ids.
+// getTeamSecret() (board-sync.js) returns "" for a facilitator who
+// explicitly stopped syncing -- in that case this omits the team param
+// entirely, exactly like before this fix, rather than forcing a team back
+// onto a device that deliberately isn't using one.
+function teamParamFor(){
+  var secret = (typeof getTeamSecret === "function") ? getTeamSecret() : "";
+  return secret ? "&team=" + encodeURIComponent(secret) : "";
+}
 function joinUrlFor(sessionId){
-  return window.location.origin + window.location.pathname + "?session=" + encodeURIComponent(sessionId);
+  return window.location.origin + window.location.pathname + "?session=" + encodeURIComponent(sessionId) + teamParamFor();
+}
+// Story 10: a SEPARATE link from joinUrlFor() above -- opening this one
+// attaches a device as a co-facilitator (full facilitator view) rather
+// than the participant join screen. See state.js's coFacilitateSessionId
+// and retro-facilitator.js's coFacilitateSessionByCode(). Carries the same
+// team param and for the same reason: a co-facilitator needs the
+// facilitator's real board locally too, not just the session's own data.
+function coFacilitateUrlFor(sessionId){
+  return window.location.origin + window.location.pathname + "?cofacilitate=" + encodeURIComponent(sessionId) + teamParamFor();
 }
 function slugify(s, fallback){
   var slug = String(s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");

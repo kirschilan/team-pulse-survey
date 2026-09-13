@@ -37,6 +37,38 @@ function joinSessionByCode(code){
   if(state.live && state.db) listenJoinSession();
 }
 
+// Story 9: a participant can leave the join screen for the normal
+// Tribe/Squad/Admin board, then come straight back to exactly where they
+// left off. This ONLY toggles which section is visible -- it deliberately
+// doesn't touch `state.joinSessionId` or unsubscribe listenJoinSession(),
+// so the session keeps updating in the background and any in-progress
+// draft answer or already-submitted personal result is still there,
+// unchanged, on return. `joinCodeBtn` stays hidden the whole time (exited
+// or not) so a participant can't accidentally start joining a SECOND
+// session while this one's still open -- the join flow only ever tracks
+// one at a time (see state.joinSessionId).
+function exitJoinScreen(){
+  if(!state.joinSessionId) return;
+  document.getElementById("viewJoin").hidden = true;
+  var switcher = document.querySelector(".view-switch");
+  if(switcher) switcher.hidden = false;
+  document.getElementById("backToRetroBtn").hidden = false;
+  applyViewVisibility();
+  renderAll();
+}
+function returnToJoinScreen(){
+  document.getElementById("viewTribe").hidden = true;
+  document.getElementById("viewSquad").hidden = true;
+  document.getElementById("viewAdmin").hidden = true;
+  var switcher = document.querySelector(".view-switch");
+  if(switcher) switcher.hidden = true;
+  document.getElementById("backToRetroBtn").hidden = true;
+  document.getElementById("viewJoin").hidden = false;
+  renderJoinScreen();
+}
+document.getElementById("exitJoinBtn").addEventListener("click", exitJoinScreen);
+document.getElementById("backToRetroBtn").addEventListener("click", returnToJoinScreen);
+
 document.getElementById("joinCodeBtn").addEventListener("click", function(){
   document.getElementById("joinCodeInput").value = "";
   document.getElementById("joinCodeBackdrop").hidden = false;
@@ -54,6 +86,23 @@ function submitJoinCode(){
   joinSessionByCode(raw);
 }
 document.getElementById("joinCodeGo").addEventListener("click", submitJoinCode);
+
+// Story 10: same modal, same code, different verb -- "Co-facilitate"
+// attaches this device to the session (coFacilitateSessionByCode(), in
+// retro-facilitator.js) instead of entering the participant join screen.
+function submitCoFacilitateCode(){
+  var raw = document.getElementById("joinCodeInput").value.trim().toUpperCase().replace(/\s+/g,"");
+  if(!raw) return;
+  closeJoinCodeModal();
+  coFacilitateSessionByCode(raw).catch(function(err){
+    openConfirm(
+      "Couldn’t co-facilitate that session",
+      (err && err.message) ? err.message : "Something went wrong reaching the relay. Check the diagnostic log below for details.",
+      function(){}, "OK"
+    );
+  });
+}
+document.getElementById("coFacilitateGo").addEventListener("click", submitCoFacilitateCode);
 document.getElementById("joinCodeInput").addEventListener("keydown", function(e){
   if(e.key==="Enter") submitJoinCode();
 });
