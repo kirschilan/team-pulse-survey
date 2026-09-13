@@ -87,7 +87,7 @@ try:
         a.click('.squad-pick-btn[data-id="squad-1"]')
         a.wait_for_timeout(150)
         a.click("#startSessionBtn")
-        a.wait_for_timeout(400)
+        a.wait_for_selector(".session-code")  # real relay round trip -- wait for it, don't guess how long
         code = a.eval_on_selector(".session-code", "el=>el.textContent")
         print("session code:", code)
 

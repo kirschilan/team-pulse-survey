@@ -91,17 +91,52 @@ history and STATUS.md's session log.
 
 ## Performance
 
-Run `for f in tests/test_*.py; do time python3 "$f"; done` (or write a
-small runner) if the suite ever feels slow again — the fake-store files
-should mostly run in the 2-6s range each; anything past ~10s is worth a
-look before just letting it slide, and a `page.goto()` in the file that
-reads/splices `index.html` by hand rather than calling `build_page()` /
-`write_plain_index()` / `build_custom_page()` is the first thing to check
-(see above). The relay-backed files (`test_relay_*`, `test_board_sync_*`)
-are inherently a bit slower — a real Node subprocess plus real WebSocket
-round trips per test — that overhead is the cost of them being genuine,
-not fake-store, integration tests, and isn't itself something to optimize
-away.
+**Run the suite with `tests/run_all.sh`, not a serial loop.** Every file is
+fully independent by construction — its own unique `build_page()` /
+`write_plain_index()` output filename, and its own hardcoded relay port
+where a relay-backed file spawns one (verified, 2026-09-13 perf pass: no
+two files in the suite share either) — so running them as separate
+processes at the same time is safe with zero test changes. `run_all.sh`
+defaults to 2 at a time; measured on a 4-core machine, that ran the full
+30-file suite with zero failures in ~75s, against ~170s run serially (a
+plain `for f in tests/test_*.py; do python3 "$f"; done` loop) — a ~2.3x
+wall-clock win for free. Pushing concurrency to 4 (one worker per core, no
+headroom) cut it further (~41s) but produced a real, reproducible flake in
+a timing-sensitive relay test purely from CPU contention (an element read
+right after a genuine WebSocket round trip occasionally hadn't rendered
+yet) — passing standalone every time, only failing under a fully-saturated
+CPU. 2 is the concurrency this repo has actually verified safe; raise it
+(`TEST_JOBS=N tests/run_all.sh`) only after checking your own machine has
+the headroom, and re-running enough times to trust it. CI shards the suite
+further still — see `.github/workflows/tests.yml`'s `playwright` job's own
+comments for why that's a matrix of separate runners, not just a bigger
+`TEST_JOBS`.
+
+If a specific file still feels slow, `time python3 tests/test_whatever.py`
+it directly — the fake-store files should mostly run in the 2-6s range
+each; anything past ~10s is worth a look before just letting it slide, and
+a `page.goto()` in the file that reads/splices `index.html` by hand rather
+than calling `build_page()` / `write_plain_index()` / `build_custom_page()`
+is the first thing to check (see above). The relay-backed files
+(`test_relay_*`, `test_board_sync_*`) are inherently a bit slower — a real
+Node subprocess plus real WebSocket round trips per test — that overhead
+is the cost of them being genuine, not fake-store, integration tests, and
+isn't itself something to optimize away. What IS worth checking in a
+relay-backed file: a `wait_for_timeout(N)` sitting right after a click that
+kicks off a real round trip (starting a session, joining one, a team-board
+push) and right before reading whatever that round trip produces — that's
+a guess at how long the network will take, not a real wait. Prefer
+`page.wait_for_selector(...)` on the element the round trip actually
+produces (e.g. `.session-code` after `#startSessionBtn`, `.direct-row`
+after joining) — it resolves the moment the real thing happens rather than
+after a fixed guess, which is both faster in the common case and immune to
+exactly the CPU-contention flake above. This isn't free to apply
+everywhere blindly, though: it only works where the test already knows a
+specific selector that appears if and only if the awaited work finished —
+a `wait_for_timeout` guarding something with no such signal (a write with
+no visible DOM effect, a UI settle after several independent listeners
+each fire) is doing real work and should stay as it is rather than being
+converted just to remove a sleep.
 
 Before adding a new Playwright test, check whether what it would prove is
 already fully covered by a `tests/unit/*.js` test on the same underlying

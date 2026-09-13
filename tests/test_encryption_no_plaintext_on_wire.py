@@ -118,7 +118,7 @@ try:
         a.click('.squad-pick-btn[data-id="squad-2"]')
         a.wait_for_timeout(150)
         a.click("#startSessionBtn")
-        a.wait_for_timeout(400)
+        a.wait_for_selector("#experimentNoteBox")  # real relay round trip -- wait for it, don't guess how long
         note_box = a.query_selector("#experimentNoteBox")
         note_box.fill(SECRET_NOTE)
         a.click("#saveExperimentNoteBtn")

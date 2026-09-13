@@ -5,8 +5,60 @@ on:
   pull_request:
 
 jobs:
+  # Fast, Playwright-independent checks. Split into its own job (rather
+  # than the single job this used to be) so it runs CONCURRENTLY with the
+  # Playwright shards below instead of serially before them -- it needs no
+  # browser install and finishes in seconds, so there's no reason to make
+  # every push wait for it before Playwright even starts.
+  unit-and-relay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install relay dependencies
+        working-directory: relay
+        run: npm install
+
+      - name: Run relay's own protocol tests
+        working-directory: relay
+        run: npm test
+
+      - name: Run frontend unit tests
+        run: node --test tests/unit/test_*.js
+
   playwright:
     runs-on: ubuntu-latest
+    env:
+      # Kept out of `matrix` (rather than a second matrix axis) because
+      # GitHub Actions' `${{ }}` expression syntax parses `-` as
+      # subtraction -- a `shard-count` matrix key would be misread as
+      # `shard - count` wherever it's referenced. A plain job-level env
+      # var sidesteps that entirely. Bump this (and extend the `shard`
+      # list below to match) if the suite grows enough to want
+      # finer-grained sharding later.
+      SHARD_COUNT: 3
+    strategy:
+      fail-fast: false
+      matrix:
+        # Splits the tests/test_*.py suite into independent shards, each
+        # on its own GitHub-hosted runner (its own CPU, no contention with
+        # the other shards) -- and within a shard, tests/run_all.sh runs
+        # its files two at a time (see that script's own comment: a
+        # standard GitHub-hosted runner has 2 vCPUs, and running more than
+        # 2 headless-Chromium workers at once on one was measured to cause
+        # a real, reproducible flake in a timing-sensitive relay test
+        # under CPU contention -- 2 was the safe number found).
+        #
+        # Every test file is fully independent by construction -- its own
+        # unique build_page()/write_plain_index() output filename, its own
+        # hardcoded relay port where it spawns one (verified: no two files
+        # in the suite share either) -- so this split is purely a
+        # scheduling change with no effect on what runs or what it proves.
+        shard: [0, 1, 2]
     steps:
       - uses: actions/checkout@v4
 
@@ -27,18 +79,11 @@ jobs:
         working-directory: relay
         run: npm install
 
-      - name: Run relay's own protocol tests
-        working-directory: relay
-        run: npm test
-
-      - name: Run frontend unit tests
-        run: node --test tests/unit/test_*.js
-
-      - name: Run Playwright regression suite
+      - name: Run this shard's Playwright files
+        env:
+          TEST_JOBS: 2
         run: |
-          status=0
-          for f in tests/test_*.py; do
-            echo "=== $f ==="
-            python3 "$f" || { echo "FAILED: $f"; status=1; }
-          done
-          exit $status
+          mapfile -t files < <(ls tests/test_*.py | awk -v n="$SHARD_COUNT" -v i="${{ matrix.shard }}" 'NR % n == i')
+          echo "Shard ${{ matrix.shard }}/$SHARD_COUNT running ${#files[@]} file(s):"
+          printf '  %s\n' "${files[@]}"
+          tests/run_all.sh "${files[@]}"

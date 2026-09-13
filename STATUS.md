@@ -858,3 +858,30 @@ not just in this repo's own tests.
   and `docs/standalone-plan.md` for good — board sync's default-on rollout is what that
   language was always going to give way to once proven. Full 30-file Playwright + 38-test unit
   suite passing with zero regressions.
+- 2026-09-13 — **Test suite performance pass.** Runtime, not behavior: no product code changed.
+  Confirmed every file in `tests/test_*.py` is fully independent (its own unique `build_page()`/
+  `write_plain_index()` output filename, its own hardcoded relay port where a relay-backed file
+  spawns one — no two files share either), so added `tests/run_all.sh` to run the suite as parallel
+  processes instead of the serial `for` loop tests/README.md used to suggest. Measured on this
+  machine: serial ~170s → 2-at-a-time ~75s (zero failures) → 4-at-a-time ~41s but with one real,
+  reproducible flake (`test_relay_cross_device_sync.py`, an element read right after a genuine
+  WebSocket round trip, purely from CPU contention on a 4-core box with no headroom) — so
+  `run_all.sh` defaults to 2, not `nproc`. `.github/workflows/tests.yml` now shards the Playwright
+  suite three ways across separate runners (each running `run_all.sh` internally at 2), and split
+  the relay/unit checks into their own job that runs concurrently with the Playwright shards rather
+  than serially before them. Separately, converted the small number of `wait_for_timeout(N)` calls
+  that were guessing at a REAL relay round trip's duration (right after `#startSessionBtn`, a
+  join-by-code, or before touching `#experimentNoteBox`) to `page.wait_for_selector(...)` on
+  whatever that round trip actually produces — same fixed pattern that was causing the P=4 flake
+  above, now fixed at the source rather than by capping concurrency alone. Deliberately did NOT
+  touch the much larger set of `wait_for_timeout` calls with no equivalent DOM signal to wait on
+  (a write with no visible effect, several independent listeners settling) — converting those
+  would mean guessing a different, unproven condition rather than removing a real one, which is not
+  a safe trade at suite-wide scale. Also audited `tests/unit/*.js` vs. several Playwright files
+  that looked like candidates for trimming duplicate pure-logic coverage (consolidation/tie-
+  breaking, scored-template math) — found each one already earns its slower cost per this file's
+  own established rule (real DOM rendering, live-toggle persistence through the shared session doc,
+  wiring from actual clicks through to the real aggregation code path, not just re-checking the
+  math), so none were removed. Full 30-file Playwright + 38-test unit suite passing with zero
+  regressions throughout, including three consecutive clean runs of the suite's most timing-
+  sensitive file after the wait-condition changes.

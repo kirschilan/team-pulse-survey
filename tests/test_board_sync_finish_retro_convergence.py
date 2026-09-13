@@ -110,7 +110,7 @@ try:
         a.click('.squad-pick-btn[data-id="squad-1"]')
         a.wait_for_timeout(150)
         a.click("#startSessionBtn")
-        a.wait_for_timeout(400)
+        a.wait_for_selector(".session-code")  # real relay round trip -- wait for it, don't guess how long
         code1 = a.eval_on_selector(".session-code", "el=>el.textContent")
         assert code1 and len(code1) == 6
         print("session 1 code:", code1)
@@ -165,7 +165,7 @@ try:
         b.click('.squad-pick-btn[data-id="squad-2"]')
         b.wait_for_timeout(150)
         b.click("#startSessionBtn")
-        b.wait_for_timeout(400)
+        b.wait_for_selector(".session-code")  # real relay round trip -- wait for it, don't guess how long
         code2 = b.eval_on_selector(".session-code", "el=>el.textContent")
         assert code2 and len(code2) == 6 and code2 != code1
         print("session 2 code:", code2)
