@@ -2,10 +2,16 @@
 
 Plain Node tests (`node:test` + `node:assert/strict` -- ships with Node,
 nothing to install) for the app's pure logic: consolidation/scoring math
-(`helpers.js`) and CSV parsing/column-matching/import-planning (`csv.js`).
-No browser, no DOM, no Playwright -- these run in milliseconds, not
-seconds, and a failure points straight at the function and input that
-broke, rather than at a UI assertion three layers away from the actual bug.
+(`helpers.js`), CSV parsing/column-matching/import-planning (`csv.js`), and
+`i18n.js`'s `t()` lookup/fallback/interpolation plus the English/Hebrew
+key-parity check (`test_i18n.js`) that mechanically enforces the product
+owner's "every future change supports every supported language" DOD (see
+STATUS.md) -- it catches a missing or blank translation, not a wrong one;
+translation quality is still a human read-through, per `locales/he.js`'s own
+header comment. No browser, no DOM, no Playwright -- these run in
+milliseconds, not seconds, and a failure points straight at the function and
+input that broke, rather than at a UI assertion three layers away from the
+actual bug.
 
 ## Why these exist alongside the Playwright suite
 

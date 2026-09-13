@@ -361,7 +361,7 @@ function renderTeamSyncStatus(){
   if(secret){
     notConnected.hidden = true;
     connected.hidden = false;
-    status.textContent = "Connected — this device stays in sync, live, with every other device using this link.";
+    status.textContent = t("admin.teamSync.connectedStatus");
     var link = teamLinkFor(secret);
     var linkInput = document.getElementById("teamLinkInput");
     if(linkInput) linkInput.value = link;
