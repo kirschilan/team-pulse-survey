@@ -24,7 +24,7 @@ function renderHeader(){
     badge.hidden = true;
   }
   document.getElementById("statAssessedLabel").textContent = state.config.unitPlural + " assessed";
-  document.getElementById("addSquadBtn").textContent = "+ Add " + unitLower();
+  document.getElementById("addSquadBtn").textContent = t("admin.squads.addButton", { unit: unitLower() });
 }
 
 function renderStats(){

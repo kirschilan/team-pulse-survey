@@ -249,7 +249,11 @@ var state = {
   // remembering it via localStorage is just a convenience (each device
   // tends to be used by/for the same squad) and never grants or restricts
   // access to anything -- the underlying data stays fully shared/visible.
-  ui: { view:"tribe", selectedSquadId:null },
+  // locale: which language's strings the Admin panel renders (see i18n.js)
+  // -- "en"/"he" today, more as future stories translate more of the app.
+  // Same per-viewer-only, localStorage-remembered shape as view/
+  // selectedSquadId above.
+  ui: { view:"tribe", selectedSquadId:null, locale:"en" },
   // set when this page was opened via a retro session's join link
   // (?session=<id>) -- a device in this mode shows only the join screen,
   // never the Tribe/Squad/Admin switcher, regardless of ui.view above
@@ -284,7 +288,9 @@ state.coFacilitateSessionId = getQueryParam("cofacilitate");
   try{
     var v = localStorage.getItem("squadpulse:view");
     var s = localStorage.getItem("squadpulse:squad");
+    var lang = localStorage.getItem("squadpulse:lang");
     if(v==="tribe" || v==="squad" || v==="admin") state.ui.view = v;
     if(s) state.ui.selectedSquadId = s;
+    if(lang==="en" || lang==="he") state.ui.locale = lang;
   }catch(e){ /* localStorage unavailable -- fall back to defaults */ }
 })();

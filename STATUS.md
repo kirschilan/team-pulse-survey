@@ -52,7 +52,9 @@ along the seams the original file already had (`// ---------- section ----------
 
 | File | Covers |
 |---|---|
-| `state.js` | Shared `state` object, starter templates, placeholder squads/dimensions, initial UI-prefs load. Loads first. |
+| `state.js` | Shared `state` object, starter templates, placeholder squads/dimensions, initial UI-prefs load (including `ui.locale`). Loads first. |
+| `locales/en.js`, `locales/he.js` | Multi-language support: the English source-of-truth string table and its Hebrew translation (plain `key: "text"` objects, no build step -- see `he.js`'s own header comment on how a human corrects a translation). Loads right after `state.js`, before anything that calls `t()`. |
+| `i18n.js` | `t(key, vars)`/`setLocale()` -- looks up the active locale (falling back to English for any missing key), interpolates `{word}` tokens, applies `[data-i18n]`/`[data-i18n-placeholder]` markup, and scopes `dir`/`lang` to `#viewAdmin` only (Story 1: Admin panel translated, the rest of the app not yet). |
 | `helpers.js` | Pure helpers used everywhere: `esc`, `diag`, banding/consolidation math, `colorWord`/`trendWord`, `isStatementDimension`, `sortedSquads`/`sortedDimensions`, `findSquad`, unit-label helpers, and the `liveOr`/`syncLiveIfConnected` write-shape helpers every mutator uses. |
 | `render.js` | `renderAll` and everything it drives — header/stats/ranking/hotspots/grid/legend, grid tooltip. |
 | `modals.js` | The generic confirm modal, the cell-rating modal, and the busy overlay — shared widgets several features reuse. |
@@ -1016,3 +1018,42 @@ not just in this repo's own tests.
   suite passing (one `test_relay_board_path_sync.py` failure seen under `run_all.sh -P2` reproduced
   as this file's own documented CPU-contention flake -- passed clean standalone, unrelated to this
   change, no relay/board-sync file touched).
+- 2026-09-13 — **Multi-language support, Story 2: i18n infrastructure + a first translated module
+  (Admin panel) + the AI-human correction workflow.** Deliberately scoped as one small, INVEST-shaped
+  vertical slice per the product owner's explicit redirect on the first draft plan (which had spread
+  infra/translation/DOD across separate stories) -- infra, a real translated screen, and a working
+  correction mechanism, all in one story, or none of it proves anything end to end. New
+  `locales/en.js` (source of truth) and `locales/he.js` (AI-translated, flagged for human review in
+  its own header comment) are plain `key: "text"` objects, not `.json` files as first sketched in
+  planning -- this app's static `<script>` architecture can't `fetch()` a same-origin JSON file over
+  `file://` (the Playwright suite's own transport), so locale data follows the exact same
+  no-build-step pattern as every other `public/js/*.js` file instead. New `i18n.js`'s `t(key, vars)`
+  falls back to English for any key missing from the active locale (generic by locale, not
+  hardcoded to Hebrew, so a future third language degrades the same way); `[data-i18n]`/
+  `[data-i18n-placeholder]` cover static markup, JS-built Admin strings (`squads.js`'s aria-labels,
+  delete-confirm dialogs, the CSV-mismatch-adjacent "Untitled X" fallback, `render.js`'s
+  unit-interpolated "+ Add {unit}") call `t()` directly. Translated the ENTIRE Admin screen except
+  modal interiors (Edit dimensions/Templates/CSV import stay English -- explicitly later stories):
+  Board setup, Team sync (including `board-sync.js`'s dynamically-set "Connected..." status line,
+  easy to miss since it's not in static markup -- caught by screenshotting the live Hebrew page,
+  not just reading the diff), Squads, Diagnostics. `dir`/`lang` scope to `#viewAdmin` ONLY, not the
+  document root -- the rest of the app is still English-only, so a page-wide RTL flip would visibly
+  break it; confirmed by asserting Tribe view's own heading stays unaffected while Admin is in
+  Hebrew. New `.lang-switch .lang-btn` CSS is a scoped duplicate of `.view-btn`'s look (same
+  reasoning as the existing `.reveal-toggle .reveal-btn`, see that rule's own comment) -- reusing
+  `.view-btn` literally would have both mis-toggled these buttons' active state AND, worse,
+  attached `app.js`'s boot-time `.view-btn` click listener to them, firing `setView(null)` on every
+  language switch and hiding all three main views; caught before shipping by re-reading that
+  existing CSS comment rather than by a failing test. `state.ui.locale` persists via
+  `squadpulse:lang` in `localStorage`, same try/catch pattern as `squadpulse:view`/`squadpulse:squad`
+  in `state.js`. The AI-human correction workflow is git-native, not an in-app editor (deferred,
+  separable scope per the product owner's own plan): `locales/he.js` is a plain file a human edits
+  directly and commits; `tests/unit/test_i18n.js`'s key-parity check (every `LOCALE_EN` key has a
+  `LOCALE_HE` counterpart and vice versa, plus no blank Hebrew values) is the mechanical guardrail
+  that stands in for the DOD until it's formalized as written policy in Story 3 -- it catches a
+  missing/blank translation, not a wrong one; wording quality is still the product owner's own
+  read-through, exactly as `he.js`'s header comment says. New `test_admin_language_switch.py`
+  proves the switcher end to end: defaults to English, Hebrew renders (static + JS-built strings),
+  `#viewAdmin` flips to rtl while `<html>` doesn't, Tribe view is unaffected, the choice survives a
+  reload via the real `localStorage` key, and switching back to English fully restores everything.
+  Full 33-file Playwright + 45-test unit suite passing.
