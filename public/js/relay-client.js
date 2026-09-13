@@ -4,10 +4,11 @@
 // same Firestore-shaped surface (collection()/doc() with
 // get/set/update/delete/add/onSnapshot) that local-store.js already gives
 // the rest of the app, so db.js and everything upstream of it needs zero
-// changes. Only paths rooted at "sessions" are ever routed here (see the
-// SquadPulseRelay.isSessionPath check local-store.js uses) -- squads,
-// dimensions, templates, and config stay on localStorage per the "no
-// persistent multi-tenant board database, ever" decision in STATUS.md.
+// changes. Paths rooted at "sessions" (a live retro) or "boards" (a synced
+// team board, see board-sync.js) are routed here; everything else -- squads,
+// dimensions, templates, and config -- stays on localStorage as each
+// device's own source of truth (see local-store.js's isRelayPath check and
+// STATUS.md's "Board sync").
 //
 // Every doc this module sends or receives over the wire is an encrypted
 // {iv, ct} envelope (see crypto.js) -- room.docs below holds the DECRYPTED
@@ -167,7 +168,23 @@ var SquadPulseRelay = (function(){
   // the code IS the key, unchanged.
   function getRoom(code, secret){
     if(rooms[code]) return rooms[code];
-    rememberCode(code);
+    // Only remember plain retro-session codes here, for
+    // subscribeBroadSessions()'s reconnect-known-codes-on-boot logic below
+    // -- never a board room's id. A board room is always reached WITH a
+    // real secret (board-sync.js's push/hydrate/subscribe all pass one);
+    // a bare code with none is exactly the session case this bookkeeping
+    // is for. Remembering a board room id here too let
+    // subscribeBroadSessions's blind `getRoom(code)` loop (no secret)
+    // create THIS room FIRST on a later page load, before board-sync.js's
+    // own correctly-secreted call ever ran -- and since the room object
+    // created by whichever call runs first is what every later getRoom(
+    // code) call for that code reuses (the cache check just above), that
+    // wrong key (derived from the room id instead of the real secret)
+    // stuck for the rest of the page's life. Found exactly this way: two
+    // team-synced devices, after either one had ever joined a retro
+    // session (which is what first puts anything in knownCodes) and then
+    // reloaded, could no longer decrypt each other's board pushes at all.
+    if(!secret) rememberCode(code);
 
     var room = {
       code: code, docs: {},

@@ -92,8 +92,7 @@ try:
         a.wait_for_timeout(300)
         a.click('.view-btn[data-view="admin"]')
         a.wait_for_timeout(100)
-        a.click("#teamCreateBtn")
-        a.wait_for_timeout(300)
+        a.wait_for_timeout(300)  # step 7: default-on -- device A already has its own team link, no click needed
         team_link = a.eval_on_selector("#teamLinkInput", "el=>el.value")
 
         # ============ device B opens the same team link ============
@@ -224,7 +223,7 @@ try:
         a.wait_for_timeout(150)
         assert cell_color(a, "squad-2", "release") == b_squad2_release, "device A ALSO has squad-2's result (this is the fix)"
 
-        print("=== RAINY DAY: a third device, never team-synced, is unaffected by any of this ===")
+        print("=== RAINY DAY: a third device, never opened A/B's team link, is unaffected by any of this ===")
         c_ctx = browser.new_context(viewport={"width": 420, "height": 900})
         c_ctx.add_init_script(point_at_test_relay)
         c = c_ctx.new_page()
@@ -234,10 +233,14 @@ try:
         c.wait_for_timeout(400)
         c.click('.view-btn[data-view="admin"]')
         c.wait_for_timeout(100)
-        c_status = c.eval_on_selector("#teamSyncStatus", "el=>el.textContent") if c.query_selector("#teamSyncStatus") else ""
-        not_connected = c.eval_on_selector("#teamSyncNotConnected", "el=>el.hidden")
-        print("device C team-sync connected panel hidden (should be False, i.e. showing 'not connected'):", not_connected)
-        assert not_connected is False
+        # Step 7: default-on means device C isn't "not connected" any more --
+        # it auto-generated its OWN random team secret at boot, same as A and
+        # B did. The real rainy-day invariant is that C's team link is its
+        # OWN, distinct from A/B's -- proving it's a genuinely separate team,
+        # not somehow onto the same one -- so it never sees A/B's board.
+        c_link = c.eval_on_selector("#teamLinkInput", "el=>el.value")
+        print("device C's own (different) team link:", c_link)
+        assert c_link and c_link != team_link
         c.click('.view-btn[data-view="squad"]')
         c.wait_for_timeout(150)
         c.click('.squad-pick-btn[data-id="squad-1"]')

@@ -25,6 +25,15 @@ database at all.** A facilitator's board lives in their own browser; sharing a l
 join *that* live session; saving to a file is how the facilitator keeps it beyond the browser. That's
 actually a step simpler than Excalidraw itself (which does persist rooms server-side) — Squad Pulse
 doesn't need "come back next month and reopen this," it needs "run today's retro live, right now."
+> **Update, 2026-09-13 — this specific claim is superseded; see `STATUS.md`'s "Board sync":** the
+> original bug reports this sketch didn't anticipate (two devices' boards silently diverging,
+> co-facilitators unable to see each other's retro results) turned out to need real board sync after
+> all, once actually used by more than one device at a time. The board is now, by default, a durable,
+> encrypted key-value blob on the SAME relay described here — still content-blind (client-side
+> AES-256-GCM, a high-entropy secret shared only via link/QR, never typed or sent in the clear), just
+> extended past session traffic. It stays this proposal's core Excalidraw-style shape (a relay that
+> holds only opaque ciphertext, keyed by a one-way hash of a secret it never sees) — only the scope of
+> what's synced grew.
 
 ## Revised architecture
 
@@ -37,6 +46,12 @@ current ratings stay in `localStorage`, exactly like today, with two new explici
 No server ever sees this data. A visitor trying the embedded demo on your website never creates an
 account and never has their board sitting on any server anywhere — it's theirs, in their tab, until
 they choose to save it.
+> **Update, 2026-09-13:** board sync (see `STATUS.md`) means this is no longer the default — a fresh
+> device now auto-generates its own team link at first boot, and any device that opens it (or an
+> explicit "Join") stays synced, live, with every other device on that link, through the relay. "No
+> server ever sees this data" still holds in the sense that matters here: the relay only ever stores
+> and forwards the same client-encrypted ciphertext described above, never plaintext. Save/Load-board
+> file export-import stays available too — sync and a portable file backup aren't exclusive.
 
 **Only a live retro session talks to a server, and only for the session's lifetime.** This is the one
 place multiple devices genuinely need to see the same thing at the same time. Looking at what a

@@ -23,14 +23,26 @@
 // secret. With no secret set (the default), this whole file stays inert.
 
 var TEAM_SECRET_KEY = "squadpulse:teamSecret";
+// Step 7 of STATUS.md's "Board sync" plan: promoted from opt-in to
+// default-on. This flag (never cleared once set) is what lets a device
+// tell "never configured -- give it a default team" apart from "this
+// device explicitly stopped syncing -- respect that, don't silently
+// re-enable it." Set the moment ANY secret is ever stored, by whichever
+// path set it (the default bootstrap below, opening a link, or the manual
+// Create/Join buttons).
+var TEAM_SYNC_EVER_INITIALIZED_KEY = "squadpulse:teamSync:everInitialized";
 
 function getTeamSecret(){
   try{ return localStorage.getItem(TEAM_SECRET_KEY) || ""; }catch(e){ return ""; }
 }
 function setTeamSecret(secret){
   try{
-    if(secret) localStorage.setItem(TEAM_SECRET_KEY, secret);
-    else localStorage.removeItem(TEAM_SECRET_KEY);
+    if(secret){
+      localStorage.setItem(TEAM_SECRET_KEY, secret);
+      localStorage.setItem(TEAM_SYNC_EVER_INITIALIZED_KEY, "1");
+    } else {
+      localStorage.removeItem(TEAM_SECRET_KEY);
+    }
   }catch(e){ /* storage unavailable -- team sync just won't persist across reloads on this device */ }
 }
 function teamLinkFor(secret){
@@ -65,6 +77,21 @@ function parseTeamSecretInput(raw){
   }catch(e){ /* history API unavailable -- the param just stays visible, harmless */ }
 })();
 
+// The actual default-on bootstrap: a device that has NEVER had a team
+// secret (not opened a link, not clicked Create/Join, and never explicitly
+// disconnected either) gets a fresh one generated automatically, so it's
+// ready to share the moment someone opens Admin -- no click required. A
+// device that DID explicitly stop syncing (TEAM_SYNC_EVER_INITIALIZED_KEY
+// is set, but the secret itself was cleared) is left alone; re-enabling
+// from there is the manual Create/Join buttons, same as before this step.
+(function ensureDefaultTeamSecret(){
+  if(getTeamSecret()) return;
+  try{
+    if(localStorage.getItem(TEAM_SYNC_EVER_INITIALIZED_KEY)) return;
+  }catch(e){ /* localStorage unavailable -- can't remember a prior disconnect either way; proceed as first-time */ }
+  setTeamSecret(SquadPulseCrypto.generateSecret());
+})();
+
 function syncedAtKeyFor(roomId){ return "squadpulse:teamRoom:syncedAt:" + roomId; }
 function getSyncedAt(roomId){
   try{ return localStorage.getItem(syncedAtKeyFor(roomId)) || ""; }catch(e){ return ""; }
@@ -78,6 +105,25 @@ function boardSnapshotPayload(){
 }
 function teamBoardPath(roomId){ return "boards/" + roomId; }
 
+// Squads, dimensions, and config are three INDEPENDENT db.js listeners,
+// each firing on its own schedule -- state.squads can already reflect the
+// real local board while state.dimensions is still whatever state.js
+// initially seeded it to (PLACEHOLDER_DIMENSIONS), or vice versa. Pushing
+// a snapshot built from `state` before all three have settled at least
+// once pushes a genuinely INCONSISTENT board (real squads + placeholder
+// dimensions, say) -- and with a live subscription open, that snapshot
+// echoes straight back and overwrites the real local data with it. This
+// was invisible while board sync was opt-in (nothing pushed during a
+// normal boot), and surfaced immediately once step 7 made it run by
+// default on every page load. db.js calls markLocalBoardPieceReady() from
+// each of the three listeners' first fire; pushBoardSnapshotIfConnected()
+// below refuses to push anything until all three have reported in.
+var localBoardReady = { squads: false, dimensions: false, config: false };
+function markLocalBoardPieceReady(piece){ localBoardReady[piece] = true; }
+function isLocalBoardReady(){
+  return localBoardReady.squads && localBoardReady.dimensions && localBoardReady.config;
+}
+
 // While a hydrate-triggered rewrite of local squad/dimension/config docs is
 // in flight, the very same db.js listeners that normally trigger a push
 // would otherwise fire once per doc touched, each pushing back an
@@ -88,10 +134,34 @@ var hydrating = false;
 
 function pushBoardSnapshotIfConnected(){
   if(hydrating) return;
+  if(!isLocalBoardReady()) return; // don't push a snapshot built from a still-partially-loaded local board
   var secret = getTeamSecret();
   if(!secret || !state.db) return;
+  // A device joining an EXISTING team must check whether the team already
+  // has real data before pushing its own (possibly stale, pre-hydrate)
+  // local board -- otherwise this device's own "here's what I had before
+  // I even looked" can race a teammate's real edit and win purely on
+  // timestamp, silently erasing it. Found exactly this way: step 7's
+  // default-on bootstrap means EVERY device, including one that just
+  // opened someone else's team link, reaches "local board fully loaded"
+  // (the check above) before its own hydrate's relay round-trip
+  // necessarily finishes. Waiting for at least one hydrate ATTEMPT
+  // (success, not-found, or give-up-after-retries all count) for this
+  // exact secret closes that window without needing to block boot on it
+  // (hydrateFromTeamIfConnected() itself stays un-awaited).
+  if(hydrateAttemptedForSecret !== secret) return;
+  // Capture the payload (and its updatedAt timestamp) SYNCHRONOUSLY, before
+  // the async roomIdFor() call -- multiple pushes can be in flight at once
+  // (a burst of board changes each fires its own push), and the underlying
+  // crypto.subtle.digest() calls are NOT guaranteed to resolve in the same
+  // order they were started. Stamping the timestamp only after roomIdFor()
+  // resolves let a LATER push's payload occasionally get an EARLIER
+  // timestamp than an EARLIER push's -- breaking last-write-wins for
+  // whoever reads these back (found via a real, reproducible ordering bug
+  // once step 7 made every boot fire a "genesis" push immediately followed
+  // by a real edit's push in quick succession).
+  var payload = boardSnapshotPayload();
   SquadPulseCrypto.roomIdFor(secret).then(function(roomId){
-    var payload = boardSnapshotPayload();
     return state.db.doc(teamBoardPath(roomId), secret).set(payload).then(function(){
       setSyncedAt(roomId, payload.updatedAt);
     });
@@ -162,19 +232,62 @@ function applyRemoteBoardSnapshot(remote){
 // first callback (which always fires immediately with current state, same
 // as any onSnapshot) safely no-ops when it's just echoing what hydrate
 // already applied a moment earlier.
+//
+// hydrate's one-shot fetch and the live subscription's own initial fire
+// both resolve off the same room.ready promise, and a live "put" can also
+// arrive while an earlier apply is still mid-flight (its own
+// Promise.all(ops) writing several local docs isn't instant) -- so this
+// CAN legitimately be called again before a previous call has finished.
+// Running two applies concurrently would interleave their writes to the
+// same local docs, and whichever happens to finish LAST wins regardless
+// of which one actually held the newer data -- an older apply that
+// started first but does slightly more work (e.g. deleting a squad) can
+// finish after a newer, smaller one and silently regress the board. Found
+// exactly this way, once board sync went default-on and a boot-time
+// hydrate started regularly racing the live subscription for real.
+// Serializing here (queue only the newest pending request, run it right
+// after the current apply finishes) is what a real per-room mutex would
+// give you, without needing one.
+var pendingRemoteApply = null;
+
 function maybeApplyRemote(roomId, remote){
   if(!remote || !remote.updatedAt) return Promise.resolve();
   var known = getSyncedAt(roomId);
   if(known && remote.updatedAt <= known) return Promise.resolve();
+
+  if(hydrating){
+    if(!pendingRemoteApply || remote.updatedAt > pendingRemoteApply.remote.updatedAt){
+      pendingRemoteApply = { roomId: roomId, remote: remote };
+    }
+    return Promise.resolve();
+  }
+
   hydrating = true;
   return applyRemoteBoardSnapshot(remote).then(function(){
     setSyncedAt(roomId, remote.updatedAt);
     hydrating = false;
+    return runPendingRemoteApply();
   }, function(err){
     hydrating = false;
+    runPendingRemoteApply();
     throw err;
   });
 }
+function runPendingRemoteApply(){
+  if(!pendingRemoteApply) return;
+  var next = pendingRemoteApply;
+  pendingRemoteApply = null;
+  return maybeApplyRemote(next.roomId, next.remote);
+}
+
+// Tracks which secret this device has already run a hydrate ATTEMPT for
+// (successful or not) -- see pushBoardSnapshotIfConnected()'s guard below
+// for why a push must wait for this. Deliberately keyed by the secret
+// value itself, not a bare boolean: switching to a different team (a
+// fresh Create, or Join-ing someone else's link) must require a fresh
+// hydrate attempt for THAT secret before this device pushes anything to
+// it, the same as the very first connection did.
+var hydrateAttemptedForSecret = null;
 
 function hydrateFromTeamIfConnected(){
   var secret = getTeamSecret();
@@ -186,6 +299,16 @@ function hydrateFromTeamIfConnected(){
     });
   }).catch(function(err){
     diag("Team sync hydrate failed: " + (err && err.code ? err.code : String(err)));
+  }).then(function(){
+    hydrateAttemptedForSecret = secret;
+    // If hydrate found nothing to apply (a genuinely new team -- the
+    // common "just created a link" case), no local write happened to
+    // naturally re-trigger db.js's listeners, so nothing else would ever
+    // retry the push pushBoardSnapshotIfConnected() skipped earlier while
+    // this hydrate was still in flight. One explicit call here covers it;
+    // it's a normal no-op via the same guards if there's nothing new to
+    // push (e.g. hydrate DID apply something instead).
+    pushBoardSnapshotIfConnected();
   });
 }
 

@@ -4,17 +4,17 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import write_plain_index
 
-# Step 3 of STATUS.md's "Board sync" plan (opt-in team sync), as reworked
-# after the security fix in the same plan's session log: no more typing a
-# short, guessable "team code" -- a device either creates a high-entropy
-# team LINK (board-sync.js's "Create a team link" button) or joins one
-# someone else created, by pasting the link (or, in real use, just opening
-# it). This drives the real Admin UI end to end: (1) a device with no team
-# link never touches the relay for its board, (2) creating one and then
-# making an ordinary board change (adding a squad) pushes a real
-# decryptable snapshot a second device -- which joins by pasting the SAME
-# link -- can read directly off the relay, and (3) disconnecting stops
-# further pushes.
+# Steps 3/7 of STATUS.md's "Board sync" plan: team sync is now default-on
+# (every device auto-generates its own team link at first boot -- see
+# test_board_sync_default_on.py for that specifically), reworked after the
+# security fix in the same plan's session log to a high-entropy team LINK
+# rather than a typed code. This test covers what's specific to the PUSH
+# mechanics rather than the default-on bootstrap itself: (1) an ordinary
+# board change (adding a squad) pushes a real, decryptable snapshot a
+# second device -- reading via the secret parsed out of device A's link --
+# can see directly off the relay, (2) a wrong/guessed secret can't read
+# it, and (3) disconnecting genuinely stops further pushes from reaching
+# the relay, not just the UI's own connected/not-connected label.
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 RELAY_DIR = REPO_ROOT / "relay"
@@ -63,9 +63,8 @@ try:
         a.click('.view-btn[data-view="admin"]')
         a.wait_for_timeout(100)
 
-        print("=== not connected by default: adding a squad never touches the relay ===")
-        assert a.eval_on_selector("#teamSyncNotConnected", "el=>el.hidden") is False
-        assert a.eval_on_selector("#teamSyncConnected", "el=>el.hidden") is True
+        print("=== device A already has a default team link (step 7: default-on) ===")
+        assert a.eval_on_selector("#teamSyncConnected", "el=>el.hidden") is False
 
         b_ctx = browser.new_context()
         b_ctx.add_init_script(point_at_test_relay)
@@ -73,9 +72,7 @@ try:
         b.goto(INDEX_URL, wait_until="domcontentloaded")
         b.wait_for_timeout(300)
 
-        print("=== device A creates a team link, then adding a squad pushes a real board snapshot ===")
-        a.click("#teamCreateBtn")
-        a.wait_for_timeout(300)
+        print("=== adding a squad pushes a real board snapshot to device A's own default team ===")
         status_after = a.eval_on_selector("#teamSyncStatus", "el=>el.textContent")
         print("status:", status_after)
         assert "connected" in status_after.lower()

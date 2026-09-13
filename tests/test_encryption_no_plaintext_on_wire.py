@@ -89,9 +89,7 @@ try:
         a.wait_for_timeout(300)
 
         a.click('.view-btn[data-view="admin"]')
-        a.wait_for_timeout(100)
-        a.click("#teamCreateBtn")
-        a.wait_for_timeout(300)
+        a.wait_for_timeout(300)  # step 7: default-on -- device A already has its own team link, no click needed
 
         print("=== renaming a squad to a distinctive, unmistakable plaintext name ===")
         a.click('.view-btn[data-view="admin"]')

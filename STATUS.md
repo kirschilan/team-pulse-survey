@@ -17,10 +17,10 @@ docs in `docs/` are reference material this file points to, not duplicates of it
   dimension template, Tribe-view cross-squad rollup, and the facilitated live-retro flow (join by
   code/QR, blind statement survey or direct green/yellow/red pick depending on the dimension,
   live or held reveal, facilitator override, finish-and-apply into the squad's real ratings).
-- Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-12) — see
+- Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-13) — see
   `tests/README.md`. **`tests/unit/`**: 3 plain-Node files (`node:test`, nothing to install) for
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
-  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 29 Playwright files
+  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 30 Playwright files
   (named for the feature/flow each one covers) for everything that needs a real browser, running in
   around 2 minutes total after two 2026-09-12 perf passes (see the session log below) — zero JS errors on
   the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
@@ -94,26 +94,26 @@ dimensions, templates, `meta/config`) still goes to this browser's own `localSto
 `window.claude.use("downloads")` still triggers a real browser file download. The whole shim only
 installs itself when no real `window.claude` is already present, so it's a no-op both inside a
 Claude Artifact and inside the Playwright test harness (`tests/fixtures/fake_store.html` sets its
-own `window.claude` and loads after this file — see `build_page.py`). **Retro sessions now
-genuinely sync across different devices/browsers** through the relay — see the new bullet above and
-`relay/README.md`. Squads/dimensions/templates/config still don't sync across devices, per the
-locked decision below; only a session's own content does.
+own `window.claude` and loads after this file — see `build_page.py`). **Retro sessions, and now the
+whole board too, genuinely sync across different devices/browsers** through the relay — see the new
+bullet above, `relay/README.md`, and "Board sync" below. `localStorage` is still each device's own
+source of truth (nothing here changes that), but by default it now also stays in sync, live, with
+every other device on the same team link.
 (There's one other `window.claude.use(...)` call, for `"downloads"` in `public/js/csv.js`, and a
 `window.claude.hot` hot-reload guard at the bottom of `app.js` that already degrades safely with no
 `window.claude` present — neither of those blocks anything.)
 
 ## Decisions locked in (don't re-litigate these)
 
-- **No persistent, multi-tenant database, ever — being deliberately reversed, incrementally, as of
-  2026-09-12.** This was the original decision (a facilitator's own browser as the board's sole
-  source of truth), but it's the direct cause of a real bug: two devices independently seed
-  identical squad IDs, so per-device `localStorage` boards never actually agree once more than one
-  device is involved in a retro. The replacement direction — **see "Board sync (major change, in
-  progress)" below** — keeps the relay content-blind (server never sees plaintext, unchanged) but
-  makes it a durable, pluggable, encrypted key-value store for the whole board, not just live
-  session traffic. Being rolled out as a sequence of small, independently-tested,
-  independently-shippable increments; nothing here breaks until a later increment explicitly wires
-  board reads/writes through it.
+- **No persistent, multi-tenant database, ever — reversed, as of 2026-09-13 (default-on).** This
+  was the original decision (a facilitator's own browser as the board's sole source of truth), but
+  it was the direct cause of a real bug: two devices independently seed identical squad IDs, so
+  per-device `localStorage` boards never actually agreed once more than one device was involved in
+  a retro. The replacement — **see "Board sync" below, now DONE** — keeps the relay content-blind
+  (server never sees plaintext, unchanged) but makes it a durable, encrypted key-value store for the
+  whole board, not just live session traffic, and every device now uses it by default: a fresh
+  device auto-generates its own team link at first boot, ready to share immediately. Rolled out as a
+  sequence of small, independently-tested increments — see "Board sync" below for the full history.
 - **Only a live retro session touches a server**, and only for that session's lifetime — an
   ephemeral, in-memory, per-session-code relay (dimensions snapshot + responses + status/
   revealMode/overrides/experimentNote), forgotten once the room empties. No database.
@@ -156,7 +156,7 @@ locked decision below; only a session's own content does.
   forever without adding real persistence, which is exactly the trade-off already rejected for the
   relay itself (see the Vercel Function decision above). This is the deliberate stopping point.
 
-## Board sync (major change, in progress)
+## Board sync (major change, DONE — default-on as of 2026-09-13)
 
 Replacing the "no persistent database, ever" decision above with a model the user specified
 directly, after independently verifying Excalidraw's real architecture (a content-blind relay for
@@ -240,8 +240,92 @@ is set on a device:
    while writing this test, exactly why story 9 (participant exit/return) is real and not
    cosmetic: a joined participant has no in-app way back to the main board, so the test itself had
    to simulate what a real user does today (navigate back to the plain URL) to even get there.
-7. Promote from opt-in to default-on once proven; retire the "no persistent database" language in
-   this file, `README.md`, and `docs/standalone-plan.md` for good.
+7. **DONE (2026-09-13).** Promote from opt-in to default-on: a fresh device that has never touched
+   team sync now auto-generates its own random secret at first boot (`board-sync.js`'s
+   `ensureDefaultTeamSecret()`) and shows the link/QR/copy immediately — no "Create" click needed —
+   while a `TEAM_SYNC_EVER_INITIALIZED_KEY` flag (set the moment ANY secret is ever stored, by
+   whichever path) lets a device that explicitly disconnected stay disconnected forever, rather than
+   silently regenerating a secret on its next reload. Two never-configured devices get two different
+   random secrets (each device runs its own `generateSecret()`), so they never accidentally land on
+   the same team; opening someone else's real team link still correctly switches a device onto their
+   team, same as before. Admin's "Team sync (beta)" card lost the "(beta)" and its Not-Connected
+   state (now the rare case, not the default).
+
+   Turning this on by default — every device now actually exercises the full hydrate/push/subscribe
+   machinery on every single boot, not just an opted-in device once in a while — surfaced a run of
+   real concurrency bugs that opt-in had been quietly hiding, each found the same way: run the full
+   suite, watch something that used to pass fail, add targeted `diag()` tracing, fix the actual root
+   cause instead of the symptom. In order:
+   - **A blocking `await`.** `db.js`'s `initDb()` used to `await hydrateFromTeamIfConnected()` before
+     registering the squads/dimensions/config listeners — harmless when hydrate only ran for a
+     device that had just deliberately opted in (rare), fatal once every device does it on every
+     boot: an unreachable relay's exponential-backoff give-up (`relay-client.js`'s
+     `MAX_RECONNECT_ATTEMPTS`) can take 20+ seconds, during which the entire rest of the board was
+     blocked from loading. Fixed by no longer awaiting it — local data flashes in first, live data
+     settles in later if/when hydrate resolves, the same pattern the rest of the app already uses.
+   - **A partial-board push race.** Squads, dimensions, and config are three independent `db.js`
+     listeners firing on independent schedules; `pushBoardSnapshotIfConnected()` could fire from
+     real squads paired with still-placeholder dimensions (or vice versa) if it ran before all three
+     had reported in even once. Fixed with `isLocalBoardReady()`/`markLocalBoardPieceReady()`, one
+     flag per piece, gating every push until all three are real.
+   - **A timestamp-capture-order bug.** `pushBoardSnapshotIfConnected()` used to stamp
+     `updatedAt` only after the async `roomIdFor()` resolved — but concurrent `crypto.subtle.digest()`
+     calls aren't guaranteed to resolve in the order they started, so a later push could occasionally
+     get an earlier timestamp than one that started before it, silently breaking last-write-wins for
+     whoever read it back. Fixed by capturing the payload (and its timestamp) synchronously, before
+     the async call.
+   - **`maybeApplyRemote()` reentrancy.** The boot-time hydrate's one-shot fetch and the live
+     subscription's own first callback both key off the same `room.ready` promise and can resolve
+     concurrently; a live update can also arrive while an earlier apply's own `Promise.all(ops)` is
+     still mid-flight. Two overlapping applies interleaving their writes meant whichever finished
+     LAST won, regardless of which one actually held the newer data. Fixed with `pendingRemoteApply`,
+     a single-slot queue that serializes applies (run the newest pending one right after the current
+     one finishes) — a lightweight stand-in for a real per-room mutex.
+   - **A genesis-push race.** A device joining an EXISTING team reaches "my local board is fully
+     loaded" (the fix above) before its own hydrate's relay round trip necessarily finishes — so it
+     could push its own stale, pre-hydrate local board, racing (and sometimes beating, purely on
+     timestamp) a teammate's real concurrent edit. Fixed with `hydrateAttemptedForSecret`, which
+     blocks `pushBoardSnapshotIfConnected()` until this device has completed at least one hydrate
+     ATTEMPT (success, not-found, or give-up all count) for its current secret — plus an explicit
+     re-trigger of the push at the end of `hydrateFromTeamIfConnected()`, for the "hydrate found
+     nothing, genuinely new team" case that would otherwise never get a second chance.
+   - **A relay-client bug, found last, via `test_board_sync_finish_retro_convergence.py`'s own test
+     regressing at a new point once the above were all fixed:** `relay-client.js`'s `getRoom()`
+     unconditionally `rememberCode()`'d every room it ever connected to, for the broad, code-less
+     `sessions` listener's reconnect-known-codes-on-boot logic (`subscribeBroadSessions`) — including
+     a board's room id, which was never meant to be in that list. Once a device had ever joined a
+     retro session (populating its knownCodes) and then reloaded, that broad listener's synchronous
+     `loadKnownCodes().forEach(code => getRoom(code))` would create the board's room object FIRST, on
+     the new page, with no secret — and since a room's encryption key is fixed by whichever call
+     creates it first, board-sync.js's own later, correctly-secreted call just inherited that wrong
+     key (derived from the room id itself instead of the real secret) for the rest of that page's
+     life. The device could still round-trip with ITSELF (self-consistent wrong key) but could never
+     again decrypt what a correctly-keyed teammate sent, or vice versa — silently, with no error
+     surfaced anywhere, just a permanently stuck board. Fixed by only remembering a code when no
+     secret was given (`if(!secret) rememberCode(code);`) — exactly the signal that distinguishes a
+     plain session code from a board's secret-derived room id.
+   - **A test-harness-only bug, found while chasing an unrelated suite of failures this story's
+     default-on change newly exposed:** `tests/fixtures/fake_store.html` (the fast, deterministic
+     stand-in for the local board backend that most Playwright tests drive) has no concept of
+     routing some paths to a relay — every path, including a brand-new `boards/<roomId>`, was just
+     another doc in the same shared in-memory map as squads/dimensions/config. With board sync
+     default-on now reading and writing that path on every single boot, a delayed hydrate could read
+     back a stale snapshot of the very board a test had just changed and silently overwrite it —
+     intermittently breaking several template/dimension tests that have nothing to do with board
+     sync at all. Fixed by routing `boards/` paths in the fake store to an always-inert doc (reads as
+     not-found, writes reject as unavailable) — the same behavior a real deployment gets with no
+     relay configured, which is the accurate simulation for a harness that never pretends to run one.
+
+   All of the above were caught by re-running this repo's existing regression suite after each
+   change, per the TDD skill's Step 5 — none were found by writing a new test first, since they're
+   emergent timing bugs between existing, already-tested pieces rather than a missing behavior.
+   `tests/test_board_sync_default_on.py` (new) proves the actual default-on claims directly: a fresh
+   device's Admin view shows a ready-to-share link/QR immediately, two never-configured devices get
+   different secrets, disconnecting and reloading stays disconnected (no silent re-enable), and
+   opening a real team link still switches a device onto that team. Every other `test_board_sync_*`,
+   `test_cofacilitator_join`, and `test_encryption_no_plaintext_on_wire` file needed a small update
+   (mostly: stop clicking a "Create" button that no longer exists, since a link is already there at
+   boot) but no behavior changes.
 
 Story 9 (**DONE, 2026-09-12**): a participant's way to leave the retro join screen and return to
 the main app and back to their own participation. `retro-join.js` gained `exitJoinScreen()`/
@@ -348,25 +432,19 @@ Playwright + 38-test unit suite passing.
 | Not built | Why it's cut for now | What would trigger building it |
 |---|---|---|
 | Relay deployed anywhere public | Built, tested, and now deploy-ready (`render.yaml` + `SQUAD_PULSE_RELAY_URL`-driven build step — see `relay/README.md`), but this session has no hosting/Vercel account access to actually click "deploy" | Whoever has account access runs the Render blueprint (or any equivalent host) and sets the Vercel env var — see `relay/README.md`'s "Wiring the deployed static site to this relay" for the exact steps, including testing it on a Preview deployment before merging to `main` |
-| Co-facilitator ACCESS (not ownership anymore) | The data-layer half of this is resolved (see "Board sync" step 6): once two devices are connected to the same team link, "Finish & apply" on either one reaches the other live, since both share the same synced `squads`/`dimensions`. What's left is the UI/access layer — a genuinely different device actually getting a facilitator-shaped view (live tally, override, finish button) for a session it didn't start, rather than the participant-only join screen. That's story 10 (co-facilitator join via barcode/link), not yet built. | Story 10 |
 | Save-board / Load-board-to-file | `local-store.js` already persists the board via `localStorage`, which covers the same browser/device | Once someone needs a board to move between browsers/devices without a relay |
 | Relay deployed on Vercel itself (one deployment, not two) | Deliberately rejected, not just deferred — see the locked decision above and `relay/README.md`'s "Why not a Vercel Function" | Only if Vercel's WebSocket support later guarantees same-instance routing without an external store, which would remove the reason this was rejected |
 | Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing | Once the marketing site (separate Claude Code project) is further along |
 
 ## Suggested next step
 
-Two independent tracks, either can go first:
-
-1. **Deploy the relay.** No code changes needed — the static site is already live on Vercel; the
-   relay just needs someone with a Render (or equivalent) account to run the `render.yaml`
-   blueprint at the repo root, then set `SQUAD_PULSE_RELAY_URL` in Vercel's project settings (scope
-   it to Preview first to test on this branch before merging to `main`, then Production). Full
-   steps: `relay/README.md`'s "Deploying it" and "Wiring the deployed static site to this relay".
-   This is the real unblock for testing cross-device retro sessions with a real team, not just in
-   this repo's own tests.
-2. **Resolve the co-facilitator "finish retro" question** above, then build whatever it takes
-   (likely a relay-carried "finish" action the session's owning device listens for and applies
-   locally, rather than a raw squads-collection write from any device).
+**Deploy the relay.** No code changes needed — the static site is already live on Vercel; the
+relay just needs someone with a Render (or equivalent) account to run the `render.yaml`
+blueprint at the repo root, then set `SQUAD_PULSE_RELAY_URL` in Vercel's project settings (scope
+it to Preview first to test on this branch before merging to `main`, then Production). Full
+steps: `relay/README.md`'s "Deploying it" and "Wiring the deployed static site to this relay".
+This is the real unblock for testing cross-device retro sessions and board sync with a real team,
+not just in this repo's own tests.
 
 ## Session log
 
@@ -749,3 +827,34 @@ Two independent tracks, either can go first:
   the test, not a skill gap: a joined participant has no in-app way back to the main board (the
   test had to `page.goto()` the plain URL to simulate what a real user does today), independent
   confirmation that story 9 is real. Full 26-file Playwright + 38-test unit suite passing.
+- 2026-09-12/13 — Stories 9, 10, 11, and Board sync step 7 (default-on), test-flighting the `tdd`
+  skill across all four. Stories 9 (participant exit/return), 10 (co-facilitator join via
+  code/link/QR), and 11 (wire-level encryption verification) all landed clean on the first real run
+  — see "Board sync" above for each one's detail; no skill changes needed. Step 7 (default-on) was
+  the hard one: turning on the full hydrate/push/subscribe cycle for EVERY device on EVERY boot
+  (instead of only an opted-in device once in a while) surfaced five real, previously-latent
+  concurrency/timing bugs the existing test suite caught one at a time as each prior fix exposed
+  the next — a blocking `await` that could stall the whole board behind a slow/unreachable relay, a
+  partial-board push race between three independently-timed local listeners, a timestamp-capture-
+  order bug that could invert last-write-wins, `maybeApplyRemote()` reentrancy between hydrate and
+  live-subscribe, and a genesis-push race for a device joining an existing team. The trickiest was
+  found LAST, via `test_board_sync_finish_retro_convergence.py` (story 6's own test) regressing at
+  a new assertion after all five of the above were fixed: `relay-client.js`'s `getRoom()` was
+  remembering every room it ever connected to — including a board's secret-derived room id, not
+  just plain session codes — for the broad `sessions` listener's reconnect-on-boot bookkeeping.
+  Once a device had ever joined a retro session and then reloaded, that bookkeeping's blind,
+  no-secret `getRoom(code)` call could create the board's room FIRST on the new page, permanently
+  fixing its encryption key to the wrong value (derived from the room id instead of the real
+  secret) — the device could still round-trip with itself but could never again decrypt a
+  correctly-keyed teammate's pushes, with no error surfaced anywhere. Fixed by only remembering a
+  code when no secret was given. Chasing the same regression also surfaced a SEPARATE, test-only
+  bug: `tests/fixtures/fake_store.html` had no concept of routing to a relay, so board sync's new
+  always-on `boards/<roomId>` traffic was landing in the exact same shared in-memory map as the
+  real squads/dimensions data in every fake-store test — a delayed hydrate could echo back a stale
+  snapshot and silently clobber a test's freshly-written board, intermittently breaking several
+  unrelated template/dimension tests. Fixed by making `boards/` paths inert in the fake store
+  (reads as not-found, writes reject as unavailable), the same behavior a real deployment gets with
+  no relay configured. Retired the "no persistent database, ever" language in this file, `README.md`,
+  and `docs/standalone-plan.md` for good — board sync's default-on rollout is what that
+  language was always going to give way to once proven. Full 30-file Playwright + 38-test unit
+  suite passing with zero regressions.

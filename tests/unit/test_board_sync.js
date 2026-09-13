@@ -10,6 +10,11 @@ require("./fake_dom").installFakeDom();
 // level, on load. Stubbing it to "no ?team= param" here reproduces the
 // ordinary boot case without pulling in the whole of state.js.
 global.getQueryParam = function(){ return null; };
+// Since step 7 (default-on team sync), ensureDefaultTeamSecret() ALSO runs
+// at the top level on load and calls SquadPulseCrypto.generateSecret() --
+// stub it rather than pull in the real crypto.js (which needs a real
+// window.crypto.subtle this Node environment doesn't have).
+global.SquadPulseCrypto = { generateSecret: function(){ return "stub-secret-for-unit-tests"; } };
 const boardSync = require(path.join(__dirname, "..", "..", "public", "js", "board-sync.js"));
 
 test("parseTeamSecretInput() extracts the secret from a pasted team link", () => {

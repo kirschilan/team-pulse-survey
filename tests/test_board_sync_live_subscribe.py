@@ -59,8 +59,7 @@ try:
         a.wait_for_timeout(300)
         a.click('.view-btn[data-view="admin"]')
         a.wait_for_timeout(100)
-        a.click("#teamCreateBtn")
-        a.wait_for_timeout(300)
+        a.wait_for_timeout(300)  # step 7: default-on -- device A already has its own team link, no click needed
         team_link = a.eval_on_selector("#teamLinkInput", "el=>el.value")
 
         # ============ device B: opens the SAME team link, both devices open

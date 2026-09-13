@@ -11,19 +11,17 @@
    fake_store.html, both set `window.claude` themselves and take priority --
    see build_page.py, which splices fake_store.html in *after* this script).
 
-   Per STATUS.md's locked-in decision, there is still no server-side
-   database for the BOARD here: squads/dimensions/templates/config are
-   backed by this browser's own localStorage, so a facilitator's board
-   persists across reloads on their machine exactly as Excalidraw's
-   local-first model intends, and does NOT sync across devices (other tabs
-   of the *same* browser do, via the native `storage` event).
-
-   A retro SESSION is different: any path rooted at "sessions" is routed to
-   SquadPulseRelay (relay-client.js + crypto.js, loaded before this file)
-   instead of localStorage, so a session's live state actually syncs across
-   real devices through the encrypted relay in docs/standalone-plan.md. This
-   is the one `db` router in the app: everything else below is unchanged
-   localStorage logic. */
+   Squads/dimensions/templates/config are backed by this browser's own
+   localStorage, so a facilitator's board persists across reloads on their
+   machine exactly as Excalidraw's local-first model intends -- that part is
+   unchanged. What DOES sync across devices, by default (see STATUS.md's
+   "Board sync"): a retro SESSION's live state, and now the whole board too,
+   both routed to SquadPulseRelay (relay-client.js + crypto.js, loaded
+   before this file) instead of localStorage -- any path rooted at
+   "sessions" (a session) or "boards" (a synced team board) goes there
+   instead, over the same encrypted relay described in
+   docs/standalone-plan.md. This is the one `db` router in the app:
+   everything else below is unchanged localStorage logic. */
 (function(){
   "use strict";
   if (window.claude && typeof window.claude.use === "function") return;
@@ -165,13 +163,10 @@
   }
 
   // Routes any "sessions"- or "boards"-rooted path to the encrypted relay
-  // client instead of localStorage (see the file header comment);
-  // everything else keeps going to the local board store, unchanged. Falls
-  // back to the local store if relay-client.js somehow isn't loaded, rather
-  // than throwing. "boards" is currently unused by anything upstream (see
-  // STATUS.md's "Board sync" plan, step 2) -- it's wired here so the router
-  // already handles it correctly once something starts calling it, rather
-  // than needing a second change alongside whatever does.
+  // client instead of localStorage (see the file header comment) --
+  // "sessions" for a live retro, "boards" for board-sync.js's synced team
+  // board. Falls back to the local store if relay-client.js somehow isn't
+  // loaded, rather than throwing.
   function isRelayPath(path){
     return !!(window.SquadPulseRelay && (window.SquadPulseRelay.isSessionPath(path) || window.SquadPulseRelay.isBoardPath(path)));
   }
