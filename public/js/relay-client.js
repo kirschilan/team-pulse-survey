@@ -84,9 +84,30 @@ var SquadPulseRelay = (function(){
   var MAX_RECONNECT_DELAY_MS = 5000;
   var MAX_RECONNECT_ATTEMPTS = 8; // ~a few minutes of backoff, then give up loudly once, not silently forever
 
+  // Every put/delete this device sends gets its own opId, so relay/server.js
+  // can echo it back on the matching {op:"ack"}/{op:"error"} and this module
+  // can resolve/reject the ONE write promise it belongs to -- see
+  // relay/server.js's wire-protocol comment. A single counter shared by
+  // every room is simplest and always unique; the server never interprets
+  // it, just echoes it back, so there's no reason to key it per-room.
+  var nextOpId = 1;
+
+  // Rejects every write still awaiting a response for `room` -- used both
+  // when giving up on the room entirely (below) and per-write when the
+  // relay itself sends back a targeted {op:"error", opId}. Not exported;
+  // callers just delete the room's own pendingWrites entries directly.
+  function unavailableError(room){
+    return { code:"unavailable", message:"Relay unavailable for room " + room.code + " -- this write did not complete." };
+  }
+
   function giveUp(room, reason){
     room.unavailable = true;
     if(typeof diag === "function") diag("Relay unavailable for room " + room.code + ": " + reason + " -- giving up (start a new session to try again).");
+    Object.keys(room.pendingWrites).forEach(function(opId){
+      room.pendingWrites[opId].reject(unavailableError(room));
+    });
+    room.pendingWrites = {};
+    room.sendQueue = []; // nothing left to flush once the room is unavailable for good
     room.resolveReady(); // unblocks anything awaiting room.ready; room.docs stays empty, which reads as "not found" everywhere that matters
     notifyEverything(room);
   }
@@ -101,7 +122,10 @@ var SquadPulseRelay = (function(){
       room.wsOpen = true;
       room.reconnectDelayMs = 250; // reset backoff on a real, successful connection
       room.reconnectAttempts = 0;
-      room.sendQueue.forEach(function(msg){ ws.send(JSON.stringify(msg)); });
+      room.sendQueue.forEach(function(msg){
+        ws.send(JSON.stringify(msg));
+        if(msg.opId && room.pendingWrites[msg.opId]) room.pendingWrites[msg.opId].awaitingAck = true;
+      });
       room.sendQueue = [];
       if(typeof diag === "function") diag("Relay connected: room " + room.code);
     });
@@ -109,6 +133,20 @@ var SquadPulseRelay = (function(){
     ws.addEventListener("message", function(evt){
       var msg;
       try{ msg = JSON.parse(evt.data); }catch(e){ return; }
+      // ack/error resolve or reject a specific pending write by opId --
+      // neither carries an envelope, so this needs no decryption and must
+      // not wait behind keyPromise (a write's caller is often the very
+      // thing awaiting keyPromise to resolve in the first place).
+      if(msg.op === "ack"){
+        var acked = room.pendingWrites[msg.opId];
+        if(acked){ delete room.pendingWrites[msg.opId]; acked.resolve({ opId: msg.opId, path: msg.path }); }
+        return;
+      }
+      if(msg.op === "error"){
+        var rejected = msg.opId && room.pendingWrites[msg.opId];
+        if(rejected){ delete room.pendingWrites[msg.opId]; rejected.reject({ code:"rejected", message: msg.message }); }
+        return;
+      }
       keyPromise.then(function(key){
         if(msg.op === "snapshot"){
           var paths = Object.keys(msg.docs);
@@ -146,6 +184,16 @@ var SquadPulseRelay = (function(){
     ws.addEventListener("close", function(){
       room.wsOpen = false;
       if(room.unavailable) return;
+      // Any write that was actually sent on this now-dead socket will never
+      // get an ack from it -- requeue it (same sendQueue a write made while
+      // still disconnected already goes through) so the next successful
+      // open resends it. Safe to resend unconditionally: put/delete are
+      // both full-replace/remove-by-path, so a write that actually landed
+      // just before the drop gets harmlessly reapplied, not duplicated.
+      Object.keys(room.pendingWrites).forEach(function(opId){
+        var pw = room.pendingWrites[opId];
+        if(pw.awaitingAck){ pw.awaitingAck = false; room.sendQueue.push(pw.msg); }
+      });
       room.reconnectAttempts++;
       if(room.reconnectAttempts > MAX_RECONNECT_ATTEMPTS){
         giveUp(room, "could not reach " + RELAY_URL + " after " + room.reconnectAttempts + " attempts");
@@ -191,7 +239,8 @@ var SquadPulseRelay = (function(){
       ws: null, wsOpen: false, sendQueue: [],
       collListeners: [], docListeners: [],
       ready: null, reconnectDelayMs: 250, reconnectAttempts: 0,
-      unavailable: false
+      unavailable: false,
+      pendingWrites: {} // opId -> {resolve, reject, msg, awaitingAck} -- see sendTracked()
     };
     rooms[code] = room;
     room.ready = new Promise(function(res){ room.resolveReady = res; });
@@ -226,9 +275,33 @@ var SquadPulseRelay = (function(){
     return room;
   }
 
-  function send(room, msg){
-    if(room.wsOpen) room.ws.send(JSON.stringify(msg));
-    else room.sendQueue.push(msg);
+  // Sends `msg` (a put or delete) and returns a promise that resolves only
+  // once the relay actually ACKS it -- not once it's merely handed to the
+  // WebSocket, and not once it's merely queued for later. This is the
+  // completion contract putDoc()/deleteDoc() need: without it, a caller
+  // awaiting a write has no real signal that a fresh connection elsewhere
+  // would actually see it yet (see relay/server.js's wire-protocol comment
+  // and tests/test_relay_write_acknowledgment.py for the bug this replaces
+  // -- a fixed sleep guessing how long the write "probably" takes).
+  //
+  // `room.sendQueue` is reused for both cases a message isn't currently
+  // going out over an open socket: queued before the FIRST connection ever
+  // opens, and requeued after a later disconnect for a write that was sent
+  // but never acked (see connectRoom()'s close handler below) -- put/delete
+  // are both full-replace/remove-by-path, so resending the identical
+  // message on reconnect is always safe, never a duplicate-application risk.
+  function sendTracked(room, msg){
+    return new Promise(function(resolve, reject){
+      var opId = String(nextOpId++);
+      msg.opId = opId;
+      room.pendingWrites[opId] = { resolve: resolve, reject: reject, msg: msg, awaitingAck: false };
+      if(room.wsOpen){
+        room.ws.send(JSON.stringify(msg));
+        room.pendingWrites[opId].awaitingAck = true;
+      } else {
+        room.sendQueue.push(msg);
+      }
+    });
   }
 
   function putDoc(room, path, data){
@@ -241,17 +314,17 @@ var SquadPulseRelay = (function(){
     // observed, is what keeps subscribeBroadSessions() from accumulating
     // one live WebSocket per session this device has EVER started.
     if(path === "sessions/" + room.code && data && data.status === "closed") forgetCode(room.code);
-    room.keyPromise.then(function(key){
+    return room.keyPromise.then(function(key){
       return SquadPulseCrypto.encrypt(key, data);
     }).then(function(envelope){
-      send(room, { op:"put", path: path, envelope: envelope });
+      return sendTracked(room, { op:"put", path: path, envelope: envelope });
     });
   }
   function deleteDoc(room, path){
     delete room.docs[path];
     notifyPath(room, path);
-    send(room, { op:"delete", path: path });
     if(path === "sessions/" + room.code) forgetCode(room.code);
+    return sendTracked(room, { op:"delete", path: path });
   }
 
   function buildSnapshot(room, collectionPath){
@@ -286,10 +359,6 @@ var SquadPulseRelay = (function(){
     notifyBroadListeners();
   }
 
-  function unavailableError(room){
-    return { code:"unavailable", message:"Relay unavailable for room " + room.code + " -- this write was never sent." };
-  }
-
   function docRef(path, secret){
     var room = getRoom(codeFromPath(path), secret);
     return {
@@ -303,7 +372,7 @@ var SquadPulseRelay = (function(){
       set: function(data){
         return room.ready.then(function(){
           if(room.unavailable) return Promise.reject(unavailableError(room));
-          putDoc(room, path, data);
+          return putDoc(room, path, data);
         });
       },
       update: function(patch){
@@ -311,13 +380,13 @@ var SquadPulseRelay = (function(){
           if(room.unavailable) return Promise.reject(unavailableError(room));
           if(!room.docs[path]) return Promise.reject({ code:"invalid_argument", message:"doc missing" });
           deepMerge(room.docs[path], patch);
-          putDoc(room, path, room.docs[path]);
+          return putDoc(room, path, room.docs[path]);
         });
       },
       delete: function(){
         return room.ready.then(function(){
           if(room.unavailable) return Promise.reject(unavailableError(room));
-          deleteDoc(room, path);
+          return deleteDoc(room, path);
         });
       },
       collection: function(sub){ return collRef(path + "/" + sub, secret); },
@@ -343,7 +412,7 @@ var SquadPulseRelay = (function(){
         var room = getRoom(codeHere, secret);
         return room.ready.then(function(){
           if(room.unavailable) return Promise.reject(unavailableError(room));
-          putDoc(room, path+"/"+id, data); return docRef(path+"/"+id, secret);
+          return putDoc(room, path+"/"+id, data).then(function(){ return docRef(path+"/"+id, secret); });
         });
       },
       orderBy: function(){ return this; }, where: function(){ return this; }, limit: function(){ return this; },
