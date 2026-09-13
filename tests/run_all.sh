@@ -69,6 +69,13 @@ cd "$(dirname "$0")/.."
 
 JOBS="${TEST_JOBS:-2}"
 
+case "$JOBS" in
+  ''|*[!0-9]*|0) echo "TEST_JOBS must be a positive integer" >&2; exit 2 ;;
+esac
+case "$SHARD_COUNT" in
+  ''|*[!0-9]*|0) echo "SHARD_COUNT must be a positive integer" >&2; exit 2 ;;
+esac
+
 if [ "$#" -gt 0 ]; then
   printf '%s\n' "$@" | xargs -n 1 -P "$JOBS" tests/_run_one.sh
   status=$?
@@ -82,8 +89,19 @@ fi
 
 status=0
 for shard in $(seq 0 $((SHARD_COUNT - 1))); do
-  mapfile -t files < <(ls tests/test_*.py | awk -v n="$SHARD_COUNT" -v i="$shard" 'NR % n == i')
+  files=()
+  file_index=0
+  for file in tests/test_*.py; do
+    [ -f "$file" ] || continue
+    if [ $((file_index % SHARD_COUNT)) -eq "$shard" ]; then
+      files[${#files[@]}]="$file"
+    fi
+    file_index=$((file_index + 1))
+  done
   echo "--- shard $shard/$SHARD_COUNT: ${#files[@]} file(s) ---"
+  if [ "${#files[@]}" -eq 0 ]; then
+    continue
+  fi
   printf '%s\n' "${files[@]}" | xargs -n 1 -P "$JOBS" tests/_run_one.sh
   shard_status=$?
   [ "$shard_status" -ne 0 ] && status="$shard_status"
