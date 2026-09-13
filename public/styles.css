@@ -45,6 +45,13 @@
   .title-block h1{ font-size:28px; font-weight:800; color:var(--text); }
   .title-block p{ margin:6px 0 0; color:var(--text-2); font-size:14.5px; max-width:60ch; line-height:1.5; }
   .title-block .model-badge{ display:inline-flex; align-items:center; gap:6px; margin-top:8px; font-size:11.5px; font-weight:600; color:var(--accent); background:var(--accent-soft); padding:3px 9px; border-radius:99px; }
+  /* A heading + small pill badge, e.g. the Admin panel's "Language Beta" --
+     flexbox `gap` instead of a directional margin (margin-left/-right) so
+     the spacing stays correct under dir="rtl" too, where a hardcoded
+     margin-left pushes the badge to the physically-wrong side and reads as
+     misaligned (see STATUS.md's session log). */
+  .heading-with-badge{ display:flex; align-items:center; gap:8px; }
+  .beta-badge{ font-size:11.5px; font-weight:600; color:var(--accent); background:var(--accent-soft); padding:3px 9px; border-radius:99px; }
   .actions{ display:flex; gap:8px; flex-wrap:wrap; }
 
   button{ font-family:inherit; cursor:pointer; }
