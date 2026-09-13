@@ -113,17 +113,28 @@ function deleteTemplate(id){
 }
 
 function loadTemplate(t){
+  // Story 5: a starter template's OWN dimension content (label/green/red,
+  // attribution) is board DATA, not UI chrome -- it isn't looked up via
+  // t(), so it's translated once here, at load time, from the template's
+  // own t.i18n table (see state.js's SPOTIFY_TEMPLATE) rather than through
+  // the Admin/Tribe/Squad i18n machinery. A later language switch does NOT
+  // retroactively re-translate already-loaded dimensions -- same as any
+  // other board content, this is a one-time snapshot into mutable state.
+  var locale = (state.ui && state.ui.locale) || "en";
+  var i18n = t.starter && t.i18n && t.i18n[locale];
+  var dims = (i18n && i18n.dimensions) ? localizedStarterDimensions(t.dimensions, i18n.dimensions) : t.dimensions;
+  var attribution = (i18n && i18n.attribution) || t.attribution || "";
   var newConfig = {
     unit: t.unit || state.config.unit,
     unitPlural: t.unitPlural || state.config.unitPlural,
     activeTemplateName: t.name,
-    attribution: t.attribution || ""
+    attribution: attribution
   };
   // reuse each dimension's saved key (falling back to a template-namespaced
   // slug of its label for templates saved before keys were tracked) --
   // loading the SAME template again later re-creates the SAME dimension
   // ids, so any ratings given while it was active are still there
-  var newDimSpecs = t.dimensions.map(function(d, i){
+  var newDimSpecs = dims.map(function(d, i){
     var key = d.key || slugify(t.id + "-" + d.label, t.id + "-dim-" + (i+1));
     var spec = { key:key, label:d.label, green:d.green||"", red:d.red||"", order:d.order||(i+1) };
     if(isStatementDimension(d)) spec.statements = d.statements;

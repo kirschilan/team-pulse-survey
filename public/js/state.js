@@ -54,6 +54,81 @@ var SPOTIFY_ATTRIBUTION = "Dimensions adapted from the Spotify Squad Health Chec
 
 var DEFAULT_CONFIG = { unit:"Squad", unitPlural:"Squads", activeTemplateName:"Spotify Squad Health Check", attribution: SPOTIFY_ATTRIBUTION };
 
+// Story 5: Hebrew translation of the Spotify starter template's own DATA
+// (dimension label/green/red, attribution) -- distinct from Stories 1-4's UI
+// CHROME translation (t()/data-i18n in locales/en.js+he.js). This content
+// isn't looked up through t(): it's plain strings copied into mutable board
+// data the moment a starter template is loaded (see templates.js's
+// loadTemplate()), so a translation table lives here, keyed by the SAME
+// dimension keys PLACEHOLDER_DIMENSIONS above uses -- never a positional
+// array, so a future reordering of PLACEHOLDER_DIMENSIONS can't silently
+// mismatch a translation to the wrong dimension.
+//
+// AI-TRANSLATED, PENDING HUMAN REVIEW, same as locales/he.js -- edit the
+// Hebrew text below directly when a phrase reads wrong. Only the Spotify
+// template is covered so far; Five Dysfunctions/Tuckman stay English until
+// their own stories translate them.
+var SPOTIFY_DIMENSIONS_HE = {
+  release:    { label:"קלות שחרור לפרודקשן",
+    green:"השחרור הוא שגרתי, בסיכון נמוך וללא דרמה.",
+    red:"שחרורים הם נדירים, מסוכנים, או מעוררי חשש." },
+  process:    { label:"תהליך עבודה מתאים",
+    green:"צורת העבודה שלנו מתאימה לנו, ואנחנו יכולים לכוונן אותה בעצמנו.",
+    red:"התהליך מרגיש כפוי, בירוקרטי, או לא תואם לאופן שבו אנחנו עובדים." },
+  techquality:{ label:"איכות טכנולוגית",
+    green:"אנחנו גאים בקוד ובשיטות העבודה ההנדסיות שלנו.",
+    red:"האיכות היא מקור מתמשך לכאב ולהאטה." },
+  value:      { label:"ערך",
+    green:"ברור שמה שאנחנו משחררים חשוב למשתמשים ולעסק.",
+    red:"אנחנו לא בטוחים שהעבודה שלנו באמת מקדמת משהו." },
+  speed:      { label:"מהירות",
+    green:"אנחנו מספקים דברים במהירות, בלי לקצר תהליכים.",
+    red:"ההתקדמות מרגישה איטית וכבדה." },
+  mission:    { label:"משימה",
+    green:"אנחנו יודעים לשם מה אנחנו קיימים ולאן אנחנו הולכים.",
+    red:"המשימה מעורפלת, או משתנה כל הזמן." },
+  fun:        { label:"כיף",
+    green:"אנחנו נהנים באמת לעבוד ביחד.",
+    red:"להגיע לעבודה מרגיש כמו התשה." },
+  learning:   { label:"למידה",
+    green:"אנחנו מתפתחים, מנסים דברים חדשים, ומשתפים את מה שאנחנו לומדים.",
+    red:"אנחנו קופאים על השמרים — אותם דפוסים, בלי זמן ללמוד." },
+  support:    { label:"תמיכה",
+    green:"אנחנו מקבלים את העזרה שאנחנו צריכים, בזמן שאנחנו צריכים אותה, מהארגון שסביבנו.",
+    red:"אנחנו לבד — חסומים, או מתעלמים מאיתנו." },
+  pawns:      { label:"שחקנים או כלים במשחק",
+    green:"אנחנו עוזרים להחליט מה לבנות ואיך.",
+    red:"אנחנו רק מבצעים באגלוג שמישהו אחר כתב." },
+  teamwork:   { label:"עבודת צוות",
+    green:"אנחנו מתפקדים כצוות אחד, לא כאוסף של יחידים.",
+    red:"אנחנו מפוצלים, מבודדים, או בקונפליקט גלוי." },
+  codebase:   { label:"בריאות בסיס הקוד",
+    green:"בסיס הקוד הוא משהו שאנחנו יכולים לשנות בבטחה ובביטחון.",
+    red:"כל שינוי מרגיש מסוכן, שביר, או מלא בהפתעות." }
+};
+
+var SPOTIFY_ATTRIBUTION_HE = "הממדים מותאמים ממודל Spotify Squad Health Check (הנריק קניברג ו-Spotify, דרך סקר ההערכה העצמית האג'ילי של בן לינדרס). הניקוד, המשקלים ודירוג ההשקעה כאן הם פרי פיתוחה של Dr. Agile.";
+
+// Pure function: given a base (English) dimensions array and a translation
+// table keyed by dimension key, returns a NEW array with label/green/red
+// swapped in per key -- per-FIELD English fallback (a translation entry
+// missing e.g. `red` keeps the English red, not a blank), same fallback
+// principle as t()'s own missing-key behavior. Returns `dims` unchanged
+// (same reference) when there's no translation table at all, so a call site
+// for a still-untranslated template/locale is a no-op, not a copy.
+function localizedStarterDimensions(dims, translations){
+  if(!translations) return dims;
+  return dims.map(function(d){
+    var tr = translations[d.key];
+    if(!tr) return d;
+    return Object.assign({}, d, {
+      label: tr.label || d.label,
+      green: tr.green || d.green,
+      red: tr.red || d.red
+    });
+  });
+}
+
 // ---------- starter templates (built in, not stored in the live "templates"
 // collection -- always offered, never deletable, and never cost a db write
 // just by existing). Each "scored" dimension below carries a bank of
@@ -214,7 +289,14 @@ var SPOTIFY_TEMPLATE = {
   attribution: SPOTIFY_ATTRIBUTION,
   dimensions: PLACEHOLDER_DIMENSIONS.map(function(d){
     return { key:d.key, label:d.label, green:d.green, red:d.red, order:d.order };
-  })
+  }),
+  // Story 5: locale -> translated content, consulted only by loadTemplate()
+  // at the moment this starter template is loaded (see templates.js). Not
+  // consulted for the fresh-board seed (PLACEHOLDER_DIMENSIONS assigned
+  // directly, always English) or the Templates-modal list/name (Story 8).
+  i18n: {
+    he: { attribution: SPOTIFY_ATTRIBUTION_HE, dimensions: SPOTIFY_DIMENSIONS_HE }
+  }
 };
 
 var STARTER_TEMPLATES = [ SPOTIFY_TEMPLATE, FIVE_DYSFUNCTIONS_TEMPLATE, TUCKMAN_TEMPLATE ];
@@ -294,3 +376,15 @@ state.coFacilitateSessionId = getQueryParam("cofacilitate");
     if(lang==="en" || lang==="he") state.ui.locale = lang;
   }catch(e){ /* localStorage unavailable -- fall back to defaults */ }
 })();
+
+// See i18n.js's/helpers.js's matching block for why this exists and why
+// it's safe: a no-op in the browser (`module` is undefined there),
+// unlocking direct `require()` from tests/unit/*.js in plain Node.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    PLACEHOLDER_DIMENSIONS: PLACEHOLDER_DIMENSIONS,
+    SPOTIFY_TEMPLATE: SPOTIFY_TEMPLATE,
+    STARTER_TEMPLATES: STARTER_TEMPLATES,
+    localizedStarterDimensions: localizedStarterDimensions
+  };
+}

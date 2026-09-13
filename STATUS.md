@@ -1123,3 +1123,42 @@ not just in this repo's own tests.
   `TEST_JOBS=1` (one `test_relay_board_path_sync.py` failure seen at `TEST_JOBS=2`, reproduced as
   this file's own documented CPU-contention flake -- passed clean standalone and at `TEST_JOBS=1`,
   unrelated to this change, no relay/board-sync file touched).
+- 2026-09-13 — **Story 5: translated the Spotify Squad Health Check starter template's own dimension
+  content into Hebrew (label/green/red per dimension, plus its attribution line).** This is different
+  from Stories 1-4's work: those translated UI CHROME (through `t()`/`data-i18n`, looked up live on
+  every render); a template's dimension content is board DATA -- plain strings copied into mutable
+  `state.dimensions` the moment a template is loaded, never looked up through `t()` again afterward.
+  New `SPOTIFY_DIMENSIONS_HE` + `SPOTIFY_ATTRIBUTION_HE` (`state.js`), AI-translated/pending human
+  review exactly like `locales/he.js`, keyed by the same stable dimension keys `PLACEHOLDER_DIMENSIONS`
+  already uses (never positional) so a future reordering can't silently mismatch a translation to the
+  wrong dimension. New pure `localizedStarterDimensions(dims, translations)` (`state.js`) merges a
+  translation table over a base dimensions array with per-FIELD English fallback (a translation
+  entry missing e.g. `red` keeps the English `red`, not a blank) -- same fallback principle as `t()`
+  itself. `SPOTIFY_TEMPLATE` now carries `i18n: { he: { attribution, dimensions } }`; `loadTemplate()`
+  (`templates.js`) consults it at load time under the currently-active locale and writes the
+  localized content instead of the template's own English fields. Deliberately scoped as a ONE-TIME
+  SNAPSHOT, not live re-translation: switching language after a template is already loaded does not
+  retroactively change already-written dimensions, same as any other board content today. Explicitly
+  OUT of scope (self-decided, called out here rather than assumed): the fresh-board first-boot seed
+  (`PLACEHOLDER_DIMENSIONS` assigned directly to `state.dimensions`, never through `loadTemplate()`)
+  stays English; the Templates-modal's own list/display-name chrome stays English (Story 8's job) --
+  verified explicitly by a test assertion that `activeTemplateName` stays "Spotify Squad Health Check"
+  even when Hebrew is active. Five Dysfunctions/Tuckman are untouched (their own future stories).
+  True test-first this time, including a correction mid-flight: wrote and watched fail
+  `tests/unit/test_template_locale.js` (6 tests: substitution, per-field English fallback, untouched
+  when a key has no entry, no-op when no table at all, DOD-style non-blank-per-key check, non-blank
+  distinct-from-English attribution) before writing `localizedStarterDimensions()` or the `i18n` data.
+  For the `loadTemplate()` wiring, the implementation was written before its Playwright test by
+  mistake (an ordering lapse caught immediately, not after the fact) -- corrected by stashing the
+  `templates.js` change, writing the new scenario in `test_starter_template_spotify.py`, running it
+  against the un-wired code to confirm it failed for the right reason (content still English), then
+  popping the stash and re-running to confirm it passed. That new scenario also proves the "one-time
+  snapshot, not live" scoping decision: after loading Spotify under Hebrew then switching back to
+  English, `dimensions/release` still holds the Hebrew content it was written with. Also added, this
+  session: a project-level `.claude/settings.json` `PreToolUse` hook (Edit/Write on
+  `public/js/*.js`/`public/local-store.js`/`relay/*.js`, excluding test files) that injects a
+  test-first reminder before any such edit -- makes the DOD's test-first policy a standing default
+  for this repo rather than something each session has to remember to invoke; confirmed firing live
+  during this same session's `state.js`/`templates.js` edits. Full suite verified: 51-test unit suite
+  and the full 34-file Playwright suite both green, run serially (`TEST_JOBS=1`) with zero regressions
+  and zero JS errors.

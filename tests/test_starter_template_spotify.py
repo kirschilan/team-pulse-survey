@@ -82,6 +82,48 @@ with sync_playwright() as p:
     assert len(session_doc["dimensions"]) == 12
     print("errors:", errors)
 
+    print("=== Story 5: loading Spotify while Hebrew is active writes Hebrew dimension content ===")
+    page.click('.view-btn[data-view="admin"]')
+    page.wait_for_timeout(100)
+    page.click('.lang-btn[data-lang="he"]')
+    page.wait_for_timeout(150)
+    page.click('#templatesBtn')
+    page.wait_for_timeout(150)
+    # switch away and back again so loadTemplate() actually re-writes
+    # dimensions/release under the now-active Hebrew locale
+    page.click('#tplList .tpl-row[data-id="starter-5dysfunctions"] [data-action="load"]')
+    page.wait_for_timeout(100)
+    page.click('#confirmOk')
+    page.wait_for_timeout(400)
+    page.click('#templatesBtn')
+    page.wait_for_timeout(150)
+    page.click('#tplList .tpl-row[data-id="starter-spotify"] [data-action="load"]')
+    page.wait_for_timeout(100)
+    page.click('#confirmOk')
+    page.wait_for_timeout(400)
+
+    release_doc_he = page.evaluate("window.__FAKE_STORE__['dimensions/release']")
+    print("release dimension content (Hebrew locale):", release_doc_he)
+    assert release_doc_he["label"] != "Easy to release"
+    assert release_doc_he["label"] and release_doc_he["green"] and release_doc_he["red"]
+    assert not release_doc_he.get("statements")
+
+    config_he = page.evaluate("window.__FAKE_STORE__['meta/config']")
+    english_attribution = page.evaluate("SPOTIFY_ATTRIBUTION")
+    print("attribution (Hebrew locale):", config_he.get("attribution"))
+    assert config_he.get("attribution") and config_he.get("attribution") != english_attribution
+    # the Templates-modal display name itself stays English -- that's Story 8's
+    # job, not this one's
+    assert config_he.get("activeTemplateName") == "Spotify Squad Health Check"
+
+    print("=== switching language back to English does NOT retroactively re-translate already-loaded dimensions ===")
+    page.click('.lang-btn[data-lang="en"]')
+    page.wait_for_timeout(150)
+    release_doc_after_switch = page.evaluate("window.__FAKE_STORE__['dimensions/release']")
+    print("release dimension content (after switching back to English):", release_doc_after_switch)
+    assert release_doc_after_switch["label"] == release_doc_he["label"]
+    print("errors:", errors)
+
     page.screenshot(path=str(test_output_path("shot_starter_spotify.png")), full_page=True)
     print("=== ALL ERRORS:", errors)
     browser.close()
