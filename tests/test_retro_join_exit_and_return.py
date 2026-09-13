@@ -49,7 +49,7 @@ with sync_playwright() as p:
     part.wait_for_timeout(100)
     part.fill("#joinCodeInput", sid)
     part.click("#joinCodeGo")
-    part.wait_for_timeout(400)
+    part.wait_for_selector(".direct-row")  # wait for the real signal, not a guessed delay
     assert part.eval_on_selector("#viewJoin", "el => el.hidden") is False
 
     print("=== RAINY DAY: mid-survey (nothing submitted yet), exit preserves the draft ===")

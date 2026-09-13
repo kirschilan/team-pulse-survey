@@ -114,7 +114,7 @@ try:
         assert b_join_input is not None, "the 'paste a team link' affordance should still exist for switching onto someone else's team"
         b.fill("#teamJoinInput", a_link)
         b.click("#teamJoinBtn")
-        b.wait_for_timeout(600)
+        b.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).some(i => i.value === 'Auto-synced squad')")
         b_link_after = b.eval_on_selector("#teamLinkInput", "el=>el.value")
         print("device B's link after joining A's team:", b_link_after)
         assert b_link_after == a_link

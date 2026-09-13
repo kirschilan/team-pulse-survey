@@ -89,7 +89,10 @@ try:
         b_errors = []
         b.on("pageerror", lambda e: b_errors.append(str(e)))
         b.goto(team_link, wait_until="domcontentloaded")
-        b.wait_for_timeout(600)
+        # real relay round trip -- wait for the actual hydrate result (the
+        # admin squad list is rebuilt by renderAll() regardless of which
+        # view is currently visible, so this doesn't need Admin open first)
+        b.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).some(i => i.value === 'New squad')")
         b.click('.view-btn[data-view="admin"]')
         b.wait_for_timeout(100)
 
@@ -114,7 +117,7 @@ try:
         # ============ device A reloads -- should hydrate B's newer state ============
         print("=== device A reloads, hydrates B's newer state on its next boot ===")
         a.reload(wait_until="domcontentloaded")
-        a.wait_for_timeout(700)
+        a.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).filter(i => i.value === 'New squad').length === 2")
         a.click('.view-btn[data-view="admin"]')
         a.wait_for_timeout(100)
         a_squad_names_after_reload = a.eval_on_selector_all("#adminSquadList input.admin-squad-name", "els=>els.map(e=>e.value)")

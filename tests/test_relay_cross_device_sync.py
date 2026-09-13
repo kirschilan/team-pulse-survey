@@ -111,7 +111,7 @@ try:
         team.wait_for_timeout(50)
         assert team.eval_on_selector('#stmtSubmitBtn', 'el=>el.disabled') == False
         team.click('#stmtSubmitBtn')
-        team.wait_for_timeout(500)
+        team.wait_for_selector('.personal-result .pill')
 
         print("=== participant sees their own personal results ===")
         pills = team.eval_on_selector_all('.personal-result .pill', 'els=>els.map(e=>e.textContent.trim())')
@@ -123,7 +123,7 @@ try:
         # the real submission that just came in over the relay ============
         print("=== facilitator flips to live reveal and sees the real submission ===")
         fac.click('.reveal-btn[data-reveal="live"]')
-        fac.wait_for_timeout(600)
+        fac.wait_for_function("() => Array.from(document.querySelectorAll('.live-dim-row')).some(el => el.textContent.includes('Red'))")
         row_texts = fac.eval_on_selector_all('.live-dim-row', 'els=>els.map(e=>e.textContent)')
         print("facilitator's live rows:", row_texts)
         assert len(row_texts) == len(row_labels)
@@ -134,7 +134,7 @@ try:
         fac.click('#finishSessionBtn')
         fac.wait_for_timeout(150)
         fac.click('#confirmOk')
-        fac.wait_for_timeout(500)
+        fac.wait_for_selector('#startSessionBtn')
         assert fac.query_selector('#startSessionBtn') is not None, "the session card should show 'start a new session' again once finished"
         print("errors:", fac_errors)
 
@@ -154,7 +154,7 @@ try:
         late_errors = []
         late.on("pageerror", lambda e: late_errors.append(str(e)))
         late.goto(INDEX_URL + "?session=" + code, wait_until="domcontentloaded")
-        late.wait_for_timeout(600)
+        late.wait_for_function("() => { var h = document.querySelector('#joinCard h2'); return h && h.textContent.indexOf('Connecting') === -1; }")
         late_heading = late.eval_on_selector('#joinCard h2', 'el=>el.textContent')
         print("late joiner heading:", late_heading)
         assert "ended" in late_heading.lower()
@@ -167,7 +167,7 @@ try:
         never_errors = []
         never.on("pageerror", lambda e: never_errors.append(str(e)))
         never.goto(INDEX_URL + "?session=NEVER01", wait_until="domcontentloaded")
-        never.wait_for_timeout(600)
+        never.wait_for_function("() => { var h = document.querySelector('#joinCard h2'); return h && h.textContent.indexOf('Connecting') === -1; }")
         never_heading = never.eval_on_selector('#joinCard h2', 'el=>el.textContent')
         print("never-existed code heading:", never_heading)
         assert "isn" in never_heading.lower() and "open" in never_heading.lower()

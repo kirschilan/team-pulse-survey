@@ -64,6 +64,19 @@ def cell_color(page, squad_id, dim_key):
     return None
 
 
+# Waits for a specific cell to leave the default "unscored" state -- the
+# real, causally-correct signal that a team-board push+live-subscribe
+# round trip landed, for the exact cell the next assertion is about to
+# check (not a generic "wait for everything to settle" guess). Only valid
+# where the test already expects that cell to become scored; a rainy-day
+# check expecting a cell to STAY unscored must keep using a plain wait.
+def wait_for_scored(page, squad_id, dim_key, timeout=5000):
+    page.wait_for_function(
+        '() => { var el = document.querySelector(\'.cell-btn[data-squad="%s"][data-dim="%s"]\'); return el && el.className.indexOf("unscored") === -1; }' % (squad_id, dim_key),
+        timeout=timeout,
+    )
+
+
 relay_env = dict(os.environ)
 relay_env["PORT"] = str(RELAY_PORT)
 relay_proc = subprocess.Popen(
@@ -119,7 +132,7 @@ try:
         b.wait_for_timeout(100)
         b.fill("#joinCodeInput", code1)
         b.click("#joinCodeGo")
-        b.wait_for_timeout(600)
+        b.wait_for_selector(".direct-row")  # real relay round trip -- wait for it, don't guess how long
         rows = b.query_selector_all(".direct-row")
         assert len(rows) > 0, "device B should see squad-1's real dimensions over the relay"
         for row in rows[:-1]:
@@ -156,7 +169,7 @@ try:
         b.click('.view-btn[data-view="squad"]')
         b.wait_for_timeout(200)
         b.click('.squad-pick-btn[data-id="squad-1"]')
-        b.wait_for_timeout(600)  # give the team-board push+live-subscribe round trip time
+        wait_for_scored(b, "squad-1", "release")  # real relay round trip -- wait for it, don't guess how long
         b_squad1_release = cell_color(b, "squad-1", "release")
         print("device B, squad-1/release (live, no second reload):", b_squad1_release)
         assert b_squad1_release == a_squad1_release, "device B should see the SAME finished result A just applied, live, via the shared team board -- this is the actual fix for the original divergence bug"
@@ -174,7 +187,7 @@ try:
         a.wait_for_timeout(100)
         a.fill("#joinCodeInput", code2)
         a.click("#joinCodeGo")
-        a.wait_for_timeout(600)
+        a.wait_for_selector(".direct-row")  # real relay round trip -- wait for it, don't guess how long
         rows2 = a.query_selector_all(".direct-row")
         assert len(rows2) > 0, "device A should see squad-2's real dimensions over the relay"
         for row in rows2[:-1]:
@@ -207,7 +220,7 @@ try:
         a.click('.view-btn[data-view="squad"]')
         a.wait_for_timeout(200)
         a.click('.squad-pick-btn[data-id="squad-2"]')
-        a.wait_for_timeout(600)
+        wait_for_scored(a, "squad-2", "release")  # real relay round trip -- wait for it, don't guess how long
         a_squad2_release = cell_color(a, "squad-2", "release")
         print("device A, squad-2/release (no reload):", a_squad2_release)
         assert a_squad2_release == b_squad2_release

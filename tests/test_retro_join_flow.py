@@ -221,7 +221,7 @@ with sync_playwright() as p:
     page3.wait_for_timeout(100)
     page3.fill('#joinCodeInput', "  " + sid.lower() + "  ")
     page3.click('#joinCodeGo')
-    page3.wait_for_timeout(500)
+    page3.wait_for_selector('#joinCard .direct-row')  # wait for the real signal, not a guessed delay
 
     print("join-code modal closed after submit:", page3.eval_on_selector('#joinCodeBackdrop', 'el => el.hidden'))
     assert page3.eval_on_selector('#joinCodeBackdrop', 'el => el.hidden') == True
@@ -251,7 +251,10 @@ with sync_playwright() as p:
     page4.wait_for_timeout(100)
     page4.fill('#joinCodeInput', "ZZZZZZ")
     page4.click('#joinCodeGo')
-    page4.wait_for_timeout(500)
+    # A bad code never gets a `.direct-row` to wait on -- the real signal
+    # here is the join card's own placeholder text finally changing away
+    # from "Connecting..." once the (not-found) lookup resolves.
+    page4.wait_for_function("() => { var h = document.querySelector('#joinCard h2'); return h && h.textContent.indexOf('Connecting') === -1; }")
     heading4 = page4.eval_on_selector('#joinCard h2', 'el => el.textContent')
     print("=== bad/nonexistent typed code ===")
     print("heading:", heading4)
@@ -264,7 +267,7 @@ with sync_playwright() as p:
     errors5 = []
     page5.on("pageerror", lambda e: errors5.append(str(e)))
     page5.goto("file://" + str(bad_out.resolve()) + "?session=does-not-exist")
-    page5.wait_for_timeout(500)
+    page5.wait_for_function("() => { var h = document.querySelector('#joinCard h2'); return h && h.textContent.indexOf('Connecting') === -1; }")
     heading5 = page5.eval_on_selector('#joinCard h2', 'el => el.textContent')
     print("=== bad/nonexistent session link ===")
     print("heading:", heading5)
