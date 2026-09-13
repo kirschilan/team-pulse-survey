@@ -246,17 +246,20 @@ with sync_playwright() as p:
     print("anchor spans directions:", anchor_dirs)
     assert anchor_dirs == ["rtl", "rtl"], "expected both green and red anchor spans to resolve rtl"
 
-    # NOTE: the join heading ("You're joining <Hebrew squad name>'s retro") is
-    # a real mixed-content case worth documenting, not a bug: dir="auto"
-    # resolves direction from the FIRST STRONG-DIRECTIONAL CHARACTER in the
-    # element, which here is the English "Y" -- so the heading as a whole
-    # stays ltr even though the embedded Hebrew squad name still displays
-    # correctly (right-to-left) within it, per the Unicode bidi algorithm.
-    # Asserting "rtl" here would be wrong; this print is a sanity check that
-    # this expected behavior hasn't silently changed to something worse
-    # (e.g. the Hebrew substring rendering reversed/mangled).
-    print("join heading (expected ltr -- mixed English-first content):", direction(pageP, 'h2[dir="auto"]'))
-    assert direction(pageP, 'h2[dir="auto"]') == "ltr"
+    # NOTE: Story 10 translated this heading (retro-join.js now builds it via
+    # t("join.joiningHeading", {squad: ...})), so it no longer carries its own
+    # dir="auto" -- the embedded Hebrew squad name is isolated by t()'s own
+    # bidi-isolate wrapping (see i18n.js) instead, and the heading's overall
+    # direction now just follows its container (#viewJoin, RTL-scoped as of
+    # Story 10). This test runs under the default English locale throughout
+    # (never switches languages), so #viewJoin never gets a "he" dir/lang
+    # applied -- it stays ltr by inheritance, same end result as before, via
+    # a different (now-correct-for-any-locale) mechanism. This print is a
+    # sanity check that the embedded Hebrew squad name still displays
+    # correctly (right-to-left) within an ltr-flowing heading, not reversed
+    # or mangled.
+    print("join heading (expected ltr -- English locale, container inherits):", direction(pageP, '#joinCard h2'))
+    assert direction(pageP, '#joinCard h2') == "ltr"
 
     pageP.click('.direct-row[data-dim="release"] .swatch.crit')
     pageP.click('.direct-row[data-dim="process"] .swatch.good')

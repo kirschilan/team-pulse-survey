@@ -3,9 +3,10 @@
 
 // ---------- multi-language support ----------
 // Story 1: Admin panel. Story 4: Tribe view, Squad view, and the shared
-// rating modal. Story 6: the app header/nav chrome. Still English-only:
-// every other modal (Edit dimensions, Templates, CSV import), and the
-// retro facilitator/join flow (their own future stories). RTL_SCOPED_CONTAINERS
+// rating modal. Story 6: the app header/nav chrome. Story 9: the Templates
+// modal. Story 10: the retro JOIN flow (participant screens + the "Join a
+// retro" code modal). Still English-only: Edit dimensions, CSV import, and
+// the retro FACILITATOR flow (their own future stories). RTL_SCOPED_CONTAINERS
 // below lists every container currently translated -- each gets its own
 // dir/lang flip; nothing else does, so a still-English screen never
 // visually breaks under an RTL layout it was never translated for. A
@@ -22,7 +23,7 @@ var LOCALES = { en: LOCALE_EN, he: LOCALE_HE };
 var DEFAULT_LOCALE = "en";
 var SUPPORTED_LOCALES = ["en", "he"];
 var LANG_STORAGE_KEY = "squadpulse:lang";
-var RTL_SCOPED_CONTAINERS = ["viewAdmin", "viewTribe", "viewSquad", "backdrop", "appHeader", "templatesBackdrop"];
+var RTL_SCOPED_CONTAINERS = ["viewAdmin", "viewTribe", "viewSquad", "backdrop", "appHeader", "templatesBackdrop", "viewJoin", "joinCodeBackdrop"];
 
 function t(key, vars){
   var loc = (state && state.ui && state.ui.locale) || DEFAULT_LOCALE;

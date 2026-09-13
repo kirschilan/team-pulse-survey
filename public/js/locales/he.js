@@ -149,7 +149,36 @@ var LOCALE_HE = {
   "ratingModal.cancel": "ביטול",
   "ratingModal.save": "שמירה",
   "ratingModal.greenLabel": "ירוק נראה כך:",
-  "ratingModal.redLabel": "אדום נראה כך:"
+  "ratingModal.redLabel": "אדום נראה כך:",
+
+  "join.codeModal.title": "הצטרפות לרטרו",
+  "join.codeModal.hint": "הזינו את קוד המפגש שקיבלתם מהסקראם מאסטר. עונים על סקר? הקישו הצטרפות. מנחים במשותף (תראו את התוצאות בזמן אמת ותוכלו גם לסיים את הרטרו)? הקישו הנחיה משותפת במקום.",
+  "join.codeModal.codePlaceholder": "לדוגמה 7K4QXB",
+  "join.codeModal.cancel": "ביטול",
+  "join.codeModal.coFacilitate": "הנחיה משותפת",
+  "join.codeModal.join": "הצטרפות",
+  "join.backButton": "← חזרה ל-Squad Pulse",
+  "join.diagSummary": "בעיה בהצטרפות? הקישו לאבחון",
+  "join.diagHint": "אם ההתחברות לא עובדת, העתיקו או צלמו מסך של מה שמופיע למטה ושלחו למי שמנחה את הרטרו.",
+  "join.connectingHeading": "מתחבר…",
+  "join.connectingHint": "רגע אחד בזמן שאנחנו מתחברים ללוח.",
+  "join.endedHeading": "הרטרו הזה הסתיים",
+  "join.endedHint": "המנחה סגר את המפגש. בקשו קישור חדש אם מתחיל מפגש נוסף.",
+  "join.unavailableHeading": "לא ניתן להתחבר לשרת הרטרו",
+  "join.unavailableHint": "המכשיר הזה לא הצליח להגיע לרילי. בדקו את החיבור, או שאלו את מי שמנחה את הרטרו אם הוא פעיל.",
+  "join.notOpenHeading": "מפגש הרטרו הזה אינו פתוח",
+  "join.notOpenHint": "בדקו את הקישור עם מי שמנחה את הרטרו — ייתכן שהוא כבר הסתיים, או שהקישור אינו עדכני.",
+  "join.thanksHeading": "תודה — הנה התוצאות שלכם",
+  "join.retroLabel": "רטרו: “{name}”.",
+  "join.joiningHeading": "אתם מצטרפים לרטרו של {squad}",
+  "join.formHint": "ענו בכנות — התשובות שלכם אנונימיות, ורק התוצאה המשולבת של הצוות שלכם מוצגת אי פעם.",
+  "join.noDimensionsHint": "לרטרו הזה עדיין אין ממדים מוגדרים.",
+  "join.scale.rarely": "לעיתים רחוקות",
+  "join.scale.sometimes": "לפעמים",
+  "join.scale.usually": "לרוב",
+  "join.squadHealthCheckHeading": "בדיקת בריאות הצוות",
+  "join.submitButton": "שליחה",
+  "join.submittingButton": "שולח…"
 };
 
 if (typeof module !== "undefined" && module.exports) {

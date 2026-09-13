@@ -156,7 +156,43 @@ var LOCALE_EN = {
   "ratingModal.cancel": "Cancel",
   "ratingModal.save": "Save",
   "ratingModal.greenLabel": "Green looks like:",
-  "ratingModal.redLabel": "Red looks like:"
+  "ratingModal.redLabel": "Red looks like:",
+
+  // Story 10: the retro JOIN flow (participant-facing screens) -- the
+  // "Join a retro" code-entry modal, the join screen's connecting/ended/
+  // unreachable/not-open states, the survey form chrome, and the personal
+  // result screen. Dimension content itself (label/green/red/statement
+  // text) stays untranslated by the same principle Story 9 applied to
+  // template names: it's the admin's own authored content, snapshotted
+  // onto the session at start time, not app chrome.
+  "join.codeModal.title": "Join a retro",
+  "join.codeModal.hint": "Enter the session code your Scrum Master shared. Answering a survey? Tap Join. Co-facilitating (you'll see the live results and can finish the retro too)? Tap Co-facilitate instead.",
+  "join.codeModal.codePlaceholder": "e.g. 7K4QXB",
+  "join.codeModal.cancel": "Cancel",
+  "join.codeModal.coFacilitate": "Co-facilitate",
+  "join.codeModal.join": "Join",
+  "join.backButton": "← Back to Squad Pulse",
+  "join.diagSummary": "Trouble joining? Tap for diagnostics",
+  "join.diagHint": "If this isn't connecting, copy or screenshot what appears below and send it to whoever's running the retro.",
+  "join.connectingHeading": "Connecting…",
+  "join.connectingHint": "Hang tight while we connect to the board.",
+  "join.endedHeading": "This retro has ended",
+  "join.endedHint": "The facilitator closed this session. Ask them for a new link if another one is starting.",
+  "join.unavailableHeading": "Can't connect to the retro server",
+  "join.unavailableHint": "This device never reached the relay. Check your connection, or ask whoever's running the retro if it's up.",
+  "join.notOpenHeading": "This retro session isn't open",
+  "join.notOpenHint": "Check the link with whoever is running the retro — it may have already ended, or the link may be out of date.",
+  "join.thanksHeading": "Thanks — here's your results",
+  "join.retroLabel": "Retro: “{name}”.",
+  "join.joiningHeading": "You're joining {squad}'s retro",
+  "join.formHint": "Answer honestly — your answers are anonymous, and only your squad's combined result is ever shown.",
+  "join.noDimensionsHint": "This retro doesn't have any dimensions set up yet.",
+  "join.scale.rarely": "Rarely",
+  "join.scale.sometimes": "Sometimes",
+  "join.scale.usually": "Usually",
+  "join.squadHealthCheckHeading": "Squad health check",
+  "join.submitButton": "Submit",
+  "join.submittingButton": "Submitting…"
 };
 
 if (typeof module !== "undefined" && module.exports) {

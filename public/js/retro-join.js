@@ -114,7 +114,7 @@ document.getElementById("joinCodeInput").addEventListener("keydown", function(e)
 // the score badge is simply omitted for those.
 function renderPersonalResultHtml(dim, result){
   var band = result.band;
-  var bandWord = band==="good" ? "Green" : band==="warn" ? "Yellow" : "Red";
+  var bandWord = colorWordLocalized(band);
   var msg = band==="good" ? dim.green : dim.red;
   var strategies = dim.strategies || [];
   var showStrategies = band!=="good" && strategies.length;
@@ -154,7 +154,7 @@ function renderJoinScreen(){
   var el = document.getElementById("joinCard");
   if(!el) return;
   if(!state.live){
-    el.innerHTML = '<h2>Connecting&hellip;</h2><p class="hint">Hang tight while we connect to the board.</p>';
+    el.innerHTML = '<h2>'+esc(t("join.connectingHeading"))+'</h2><p class="hint">'+esc(t("join.connectingHint"))+'</p>';
     return;
   }
   var sess = state.joinSession;
@@ -170,19 +170,19 @@ function renderJoinScreen(){
   // lifetime.
   if(sess && sess.status === "closed"){
     el.innerHTML =
-      '<h2>This retro has ended</h2>' +
-      '<p class="hint">The facilitator closed this session. Ask them for a new link if another one is starting.</p>';
+      '<h2>'+esc(t("join.endedHeading"))+'</h2>' +
+      '<p class="hint">'+esc(t("join.endedHint"))+'</p>';
     return;
   }
   if(!sess || sess.status !== "open"){
     if(state.joinUnavailable){
       el.innerHTML =
-        '<h2>Can&rsquo;t connect to the retro server</h2>' +
-        '<p class="hint">This device never reached the relay. Check your connection, or ask whoever&rsquo;s running the retro if it&rsquo;s up.</p>';
+        '<h2>'+esc(t("join.unavailableHeading"))+'</h2>' +
+        '<p class="hint">'+esc(t("join.unavailableHint"))+'</p>';
     } else {
       el.innerHTML =
-        '<h2>This retro session isn&rsquo;t open</h2>' +
-        '<p class="hint">Check the link with whoever is running the retro &mdash; it may have already ended, or the link may be out of date.</p>';
+        '<h2>'+esc(t("join.notOpenHeading"))+'</h2>' +
+        '<p class="hint">'+esc(t("join.notOpenHint"))+'</p>';
     }
     return;
   }
@@ -201,8 +201,8 @@ function renderJoinScreen(){
 
   if(alreadySubmitted){
     el.innerHTML =
-      '<h2 dir="auto">Thanks &mdash; here&rsquo;s your results</h2>' +
-      '<p class="hint">Retro: &ldquo;'+esc(sess.templateName||"Custom")+'&rdquo;.</p>' +
+      '<h2>'+esc(t("join.thanksHeading"))+'</h2>' +
+      '<p class="hint">'+esc(t("join.retroLabel", {name: sess.templateName||"Custom"}))+'</p>' +
       dims.map(function(d){ return renderPersonalResultHtml(d, state.joinSubmittedResults[d.key]); }).join("");
     return;
   }
@@ -213,43 +213,43 @@ function renderJoinScreen(){
       '<div class="stmt-list">' + flatStatements.map(function(item){
         return '<div class="stmt-row" data-dim="'+esc(item.dim.key)+'" data-idx="'+item.idx+'"><div class="stmt-text" dir="auto">'+esc(item.text)+'</div>' +
           '<div class="scale-btns">' +
-            '<button type="button" class="scale-btn" data-value="1">Rarely</button>' +
-            '<button type="button" class="scale-btn" data-value="2">Sometimes</button>' +
-            '<button type="button" class="scale-btn" data-value="3">Usually</button>' +
+            '<button type="button" class="scale-btn" data-value="1">'+esc(t("join.scale.rarely"))+'</button>' +
+            '<button type="button" class="scale-btn" data-value="2">'+esc(t("join.scale.sometimes"))+'</button>' +
+            '<button type="button" class="scale-btn" data-value="3">'+esc(t("join.scale.usually"))+'</button>' +
           '</div></div>';
       }).join("") + '</div>' : "";
     var directIntroHtml = (stmtDims.length && directDims.length) ?
-      '<div class="field-label" style="margin-top:18px;">Squad health check</div>' : "";
+      '<div class="field-label" style="margin-top:18px;">'+esc(t("join.squadHealthCheckHeading"))+'</div>' : "";
     var directListHtml = directDims.length ?
       directIntroHtml + '<div class="direct-list">' + directDims.map(function(dim){
         var anchorsHtml = (dim.green || dim.red) ?
           '<p class="hint" style="margin:0 0 10px;">' +
-            (dim.green ? '<b>Green:</b> <span dir="auto">'+esc(dim.green)+'</span> ' : '') +
-            (dim.red ? '<b>Red:</b> <span dir="auto">'+esc(dim.red)+'</span>' : '') +
+            (dim.green ? '<b>'+esc(t("tribe.legend.greenLabel"))+'</b> <span dir="auto">'+esc(dim.green)+'</span> ' : '') +
+            (dim.red ? '<b>'+esc(t("tribe.legend.redLabel"))+'</b> <span dir="auto">'+esc(dim.red)+'</span>' : '') +
           '</p>' : "";
         return '<div class="direct-row" data-dim="'+esc(dim.key)+'">' +
           '<div class="stmt-text" dir="auto">'+esc(dim.label)+'</div>' +
           anchorsHtml +
           '<div class="swatches">' +
-            '<button class="swatch good" data-color="good" type="button" title="Green"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 13l4 4 10-10"/></svg></button>' +
-            '<button class="swatch warn" data-color="warn" type="button" title="Yellow"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 12h12"/></svg></button>' +
-            '<button class="swatch crit" data-color="crit" type="button" title="Red"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
+            '<button class="swatch good" data-color="good" type="button" title="'+esc(t("common.color.good"))+'"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 13l4 4 10-10"/></svg></button>' +
+            '<button class="swatch warn" data-color="warn" type="button" title="'+esc(t("common.color.warn"))+'"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 12h12"/></svg></button>' +
+            '<button class="swatch crit" data-color="crit" type="button" title="'+esc(t("common.color.crit"))+'"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
           '</div>' +
         '</div>';
       }).join("") + '</div>' : "";
     el.innerHTML =
-      '<h2 dir="auto">You&rsquo;re joining '+esc(sess.squadName||"the squad")+'&rsquo;s retro</h2>' +
-      '<p class="hint">Retro: &ldquo;'+esc(sess.templateName||"Custom")+'&rdquo;. Answer honestly &mdash; your answers are anonymous, and only your squad&rsquo;s combined result is ever shown.</p>' +
+      '<h2>'+esc(t("join.joiningHeading", {squad: sess.squadName||"the squad"}))+'</h2>' +
+      '<p class="hint">'+esc(t("join.retroLabel", {name: sess.templateName||"Custom"}))+' '+esc(t("join.formHint"))+'</p>' +
       '<div id="stmtForm">' + statementListHtml + directListHtml + '</div>' +
-      '<button class="btn primary" id="stmtSubmitBtn" type="button" disabled>Submit</button>';
+      '<button class="btn primary" id="stmtSubmitBtn" type="button" disabled>'+esc(t("join.submitButton"))+'</button>';
     bindStatementForm(stmtDims, directDims);
     return;
   }
 
   // template has no dimensions at all -- nothing for anyone to rate
   el.innerHTML =
-    '<h2 dir="auto">You&rsquo;re joining '+esc(sess.squadName||"the squad")+'&rsquo;s retro</h2>' +
-    '<p class="hint">This retro doesn&rsquo;t have any dimensions set up yet.</p>';
+    '<h2>'+esc(t("join.joiningHeading", {squad: sess.squadName||"the squad"}))+'</h2>' +
+    '<p class="hint">'+esc(t("join.noDimensionsHint"))+'</p>';
 }
 
 // Wires up both flavors of retro answer at once: the 1/2/3 scale buttons
@@ -338,7 +338,7 @@ function bindStatementForm(stmtDims, directDims){
 
   submitBtn.addEventListener("click", function(){
     submitBtn.disabled = true;
-    submitBtn.textContent = "Submitting…";
+    submitBtn.textContent = t("join.submittingButton");
     var results = {};
     var payload = { answers:{}, submittedAt: nowIso() };
     stmtDims.forEach(function(dim){
@@ -362,7 +362,7 @@ function bindStatementForm(stmtDims, directDims){
         .catch(function(err){
           diag("Submit answer failed: " + (err && err.code ? err.code : String(err)));
           submitBtn.disabled = false;
-          submitBtn.textContent = "Submit";
+          submitBtn.textContent = t("join.submitButton");
         });
     }, afterSubmit);
   });
