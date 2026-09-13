@@ -1,5 +1,8 @@
 # Unit tests
 
+See `docs/DefinitionOfDone.md` for the standing testing policy; this file is
+the mechanics of this one tier.
+
 Plain Node tests (`node:test` + `node:assert/strict` -- ships with Node,
 nothing to install) for the app's pure logic: consolidation/scoring math
 (`helpers.js`), CSV parsing/column-matching/import-planning (`csv.js`), and

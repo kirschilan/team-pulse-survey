@@ -4,6 +4,11 @@ One-page entry point for picking this project up cold. Update the session log at
 whenever you finish a chunk of work — this is the one place "what's outstanding" lives; the other
 docs in `docs/` are reference material this file points to, not duplicates of it.
 
+Before calling any change done, check it against **`docs/DefinitionOfDone.md`** — the standing
+quality bar (testing, multi-language support, delivery workflow) that applies regardless of which
+feature or story a change belongs to. This file's own "Decisions locked in" below is a different
+thing: specific architecture/product choices already made, not the bar every change clears.
+
 ## What's real right now
 
 - `public/` is a working static site — `index.html` + `styles.css` + `vendor/qrcode.js` +
@@ -1057,3 +1062,23 @@ not just in this repo's own tests.
   `#viewAdmin` flips to rtl while `<html>` doesn't, Tribe view is unaffected, the choice survives a
   reload via the real `localStorage` key, and switching back to English fully restores everything.
   Full 33-file Playwright + 45-test unit suite passing.
+- 2026-09-13 — Fixed the Admin panel's "Language / Beta" heading badge misalignment under Hebrew
+  (reported after the Story 2 push): a hardcoded `margin-left` plus `.model-badge`'s `margin-top`
+  (meant for that class's other, header context) don't survive a `dir="rtl"` flip -- replaced with
+  a `.heading-with-badge`/`.beta-badge` flex-row-plus-`gap` layout, direction-agnostic by
+  construction. Merged a human correction to `locales/he.js`'s Squads hint pushed directly to the
+  branch -- exactly the git-native correction workflow Story 2 was built for.
+- 2026-09-13 — **Multi-language support, Story 3: formalized the Definition of Done.** New
+  `docs/DefinitionOfDone.md` is the standing quality bar every change clears -- Testing (points to
+  the `tdd` skill for the how), Multi-language support (every i18n-supported screen's strings go
+  through `t()`, every locale carries every key -- enforced by `test_i18n.js`'s parity check --
+  `dir="auto"` never shares a container with a hardcoded label, no hardcoded directional CSS
+  `margin-left`/`-right` near text ANYWHERE in the app, not just translated screens, since the cost
+  of doing it right from the start is near zero and the alternative is re-discovering the exact
+  badge-alignment bug above on every future screen), and Delivery workflow (branch/`main` discipline,
+  session-log entries). Deliberately distinct from, and cross-referencing rather than duplicating,
+  `STATUS.md`'s "Decisions locked in" (specific architecture/product choices, not a standing bar)
+  and the `tdd` skill (the how-to for this doc's Testing section). New `CLAUDE.md` (didn't exist
+  before) and updates to `README.md`, this file, `tests/README.md`, `tests/unit/README.md`, and the
+  `tdd` skill all point to `docs/DefinitionOfDone.md` as the answer to "is this done," rather than
+  leaving that judgment implicit or scattered.
