@@ -76,11 +76,17 @@ try:
         assert checks["sessionIsBoard"] is False
 
         print("=== device A writes an encrypted board doc via the real db shim ===")
+        # No wait after this: db.doc(...).set()'s promise now resolves only
+        # once the relay has actually acked the write (see
+        # relay-client.js's sendTracked()/relay/server.js's {op:"ack"}), so
+        # the `await` above is itself the real completion signal -- a fixed
+        # sleep guessing "surely long enough" used to stand in here and was
+        # the actual source of a real flake under parallel CPU load (see
+        # tests/test_relay_write_acknowledgment.py and STATUS.md).
         a.evaluate("""async () => {
           const db = await window.claude.use("db");
           await db.doc("boards/TEAM01/config").set({ unit: "Tribe", updatedAt: "2026-09-12T00:00:00.000Z" });
         }""")
-        a.wait_for_timeout(300)
         print("errors so far:", a_errors)
 
         # ============ device B: an independently-seeded context joins the
@@ -121,6 +127,14 @@ try:
         assert session_untouched["exists"] is False
 
         print("=== a doc() call can pass a SEPARATE secret, decoupling the routing id from the encryption key ===")
+        # This is the exact write+read pair that used to race under
+        # parallel load (see tests/test_relay_write_acknowledgment.py): the
+        # `await` below now only returns once the relay has acked the
+        # write, so by the time this call returns the write is already
+        # durably applied server-side -- right_page/wrong_page's own
+        # wait_for_timeout(200) further down is ordinary page-bootstrap
+        # settling for THEIR OWN load, not a "give the write time to land"
+        # guess, and stays regardless of when it's opened.
         a.evaluate("""async () => {
           const db = await window.claude.use("db");
           await db.doc("boards/ROUTINGONLY", "the-real-secret").set({ hello: "with a secret" });
