@@ -1248,3 +1248,28 @@ not just in this repo's own tests.
   legitimately stay open since the pointer never moved), then genuinely move the pointer away and
   confirm it hides -- not orphaned by whatever render happened while it was open. Full suite verified
   green alongside the Story 5 correction above (same session, same full-suite run).
+- 2026-09-13 — **Two tech-debt follow-ups from the product owner reviewing the two fixes above.**
+  1. *Why didn't a test catch the missing Hebrew dimension text?* Two real, distinct gaps, not one
+     "buggy test": `test_main_screen_language.py` (Story 4) asserted dimension text STAYS English
+     under Hebrew (`#statHotspot`/`.entry-row .entry-label` == "Easy to release") -- correct for the
+     code as designed at the time (Story 4's own deliberate, but ultimately wrong, scope decision),
+     so that test wasn't lying, it was locking in a decision that needed reversing later, which is
+     exactly what the correction above did. Separately, this session's OWN first Story 5 test only
+     ever exercised the "explicitly reload the template via the Templates modal" path (matching the
+     wrong one-time-snapshot design) -- it never tested the actual real-world path (the untouched
+     DEFAULT board, just flip the language switch), which is exactly where the bug lived. A test that
+     only validates its own implementation's assumption instead of the real acceptance criterion
+     catches nothing. Both gaps are closed by the rewritten tests in the correction commit above,
+     verified still passing here (55-test unit + 34-file Playwright, serial).
+  2. *Is the Tribe grid's mouse-hover state under-tested?* The dimension-header tooltip is the ONLY
+     JS-driven hover interaction anywhere in the Tribe/Squad grids (`.cell-btn:hover`'s
+     `filter:brightness(1.08)` is pure decorative CSS, no JS state to test) -- and it already had
+     hover/leave + keyboard focus/blur coverage, plus the re-render-race regression test added
+     alongside the delegation fix above. But one real path had zero coverage even after that fix
+     landed: moving the pointer DIRECTLY from one header to an ADJACENT one (no neutral "away"
+     position first) -- the most common real usage (scanning across columns), and the one path that
+     specifically exercises the delegated `mouseout` handler's `relatedTarget`/`.contains()` check
+     the delegation fix introduced. New scenario in `test_tooltip_busy_overlay_and_csv_key.py`: hover
+     "release", hover "process" directly (no gap), confirm the tooltip updates to "Suitable process"
+     (not stuck on the old content), then confirm a genuine leave afterward still hides it. Full suite
+     verified green (55-test unit + 34-file Playwright, serial `TEST_JOBS=1`).

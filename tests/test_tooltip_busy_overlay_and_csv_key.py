@@ -101,6 +101,38 @@ with sync_playwright() as p:
     assert tip_hidden_after_leaving == True
     print("errors:", errors)
 
+    # ---- gap closed here: moving the pointer DIRECTLY from one header to an
+    # ADJACENT one -- no neutral "away" position in between -- is the most
+    # common real scanning-across-columns usage pattern, and it's the one
+    # path that specifically exercises the delegated mouseout handler's
+    # relatedTarget/.contains() check added by the delegation fix above (see
+    # render.js's bindGridHeaderTooltips replacement). That check had zero
+    # coverage even after the fix landed: every existing scenario either
+    # moved the mouse all the way to a neutral corner or used keyboard focus,
+    # neither of which ever calls mouseout with another .dim-th-label as
+    # relatedTarget.
+    print("=== tooltip updates correctly when the pointer moves directly from one header to an adjacent one ===")
+    # re-query -- the previous scenario's live dimension edit re-rendered the
+    # header, detaching the earlier `label` handle from the DOM
+    release_label = page.query_selector('.dim-th-label[data-dim-key="release"]')
+    process_label = page.query_selector('.dim-th-label[data-dim-key="process"]')
+    release_label.hover()
+    page.wait_for_timeout(100)
+    print("hovering release -- title:", page.eval_on_selector('#dimTooltip .tip-title', 'el=>el.textContent'))
+    assert page.eval_on_selector('#dimTooltip', 'el=>el.hidden') == False
+    process_label.hover()
+    page.wait_for_timeout(100)
+    tip_title_after_adjacent_move = page.eval_on_selector('#dimTooltip .tip-title', 'el=>el.textContent')
+    print("moved directly to process (no neutral gap) -- title:", tip_title_after_adjacent_move)
+    assert page.eval_on_selector('#dimTooltip', 'el=>el.hidden') == False
+    assert tip_title_after_adjacent_move == "Suitable process", "should show the NEW header's content, not stay stuck on the old one"
+    page.mouse.move(5, 5)
+    page.wait_for_timeout(100)
+    tip_hidden_after_adjacent_leave = page.eval_on_selector('#dimTooltip', 'el=>el.hidden')
+    print("tooltip hidden after finally leaving:", tip_hidden_after_adjacent_leave)
+    assert tip_hidden_after_adjacent_leave == True
+    print("errors:", errors)
+
     # ============ Bug 2: busy overlay during template switch ============
     print("=== busy overlay: template switch ===")
     page.click('.view-btn[data-view="admin"]')
