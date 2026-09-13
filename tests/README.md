@@ -1,5 +1,9 @@
 # Regression suite
 
+See `docs/DefinitionOfDone.md` for the standing policy this suite exists to
+satisfy (full suite green, zero JS errors, before any change is done); this
+file is the mechanics.
+
 Two tiers:
 
 - **`tests/unit/`** — plain Node (`node:test`, nothing to install) tests of

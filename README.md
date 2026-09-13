@@ -20,7 +20,11 @@ squad's own ratings.
 
 See **`STATUS.md`** for current state, locked-in decisions, what's deliberately
 not built yet, and the session log — that's the one place "what's outstanding"
-lives, kept up to date as work lands. Short version: this app originated as a
+lives, kept up to date as work lands. See **`docs/DefinitionOfDone.md`** for
+the standing quality bar (testing, multi-language support, delivery workflow)
+every change clears before it's called done.
+
+Short version: this app originated as a
 prototype running inside a Claude Artifact's `db` capability and has been
 migrated to run standalone. The board (squads, dimensions, templates) stays in
 the browser's own `localStorage` via `public/local-store.js`, same as always —
@@ -51,6 +55,7 @@ relay/             The one server this app has -- a small WebSocket relay for li
                    sessions only (see relay/README.md); everything else stays client-side
 tests/             Playwright + Python regression suite (see tests/README.md)
 docs/
+  DefinitionOfDone.md         The standing quality bar every change clears -- start here
   facilitated-retro-spec.md   Feature spec + history for the retro-session work
   standalone-plan.md          Architecture plan for the standalone/embedded version
   refactoring-report.md       Prioritized code-quality backlog (SOLID gaps, complexity, naming)
@@ -99,10 +104,11 @@ Two intended uses, both covered:
 
 ## Testing
 
-See `tests/README.md`. Two tiers: fast, dependency-free Node unit tests for
-pure logic (`tests/unit/`), and a Playwright suite for everything that needs
-a real browser (`tests/test_*.py`). Every change is expected to pass both
-with zero JavaScript errors before it ships. `relay/` has its own
+See `tests/README.md`, and `docs/DefinitionOfDone.md` for the standing
+policy this section satisfies. Two tiers: fast, dependency-free Node unit
+tests for pure logic (`tests/unit/`), and a Playwright suite for everything
+that needs a real browser (`tests/test_*.py`). Every change is expected to
+pass both with zero JavaScript errors before it ships. `relay/` has its own
 `npm test` (see `relay/README.md`); `tests/test_relay_cross_device_sync.py`
 runs the relay for real against two independent browser contexts as part of
 the main suite.
