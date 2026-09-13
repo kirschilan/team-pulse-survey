@@ -82,46 +82,53 @@ with sync_playwright() as p:
     assert len(session_doc["dimensions"]) == 12
     print("errors:", errors)
 
-    print("=== Story 5: loading Spotify while Hebrew is active writes Hebrew dimension content ===")
+    print("=== Story 5: switching to Hebrew live-translates the Spotify template's dimension content ===")
+    print("(no explicit template reload -- fixes a real gap: the DEFAULT board never went through")
+    print(" loadTemplate() at all, so an earlier load-time-only translation never applied to it)")
     page.click('.view-btn[data-view="admin"]')
     page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="he"]')
     page.wait_for_timeout(150)
-    page.click('#templatesBtn')
-    page.wait_for_timeout(150)
-    # switch away and back again so loadTemplate() actually re-writes
-    # dimensions/release under the now-active Hebrew locale
-    page.click('#tplList .tpl-row[data-id="starter-5dysfunctions"] [data-action="load"]')
-    page.wait_for_timeout(100)
-    page.click('#confirmOk')
-    page.wait_for_timeout(400)
-    page.click('#templatesBtn')
-    page.wait_for_timeout(150)
-    page.click('#tplList .tpl-row[data-id="starter-spotify"] [data-action="load"]')
-    page.wait_for_timeout(100)
-    page.click('#confirmOk')
-    page.wait_for_timeout(400)
 
+    # stored data stays English always -- localization is a render-time concern
+    # (state.js's localizedDimText()/localizedAttribution()), never baked into
+    # the dimension docs or config themselves
     release_doc_he = page.evaluate("window.__FAKE_STORE__['dimensions/release']")
-    print("release dimension content (Hebrew locale):", release_doc_he)
-    assert release_doc_he["label"] != "Easy to release"
-    assert release_doc_he["label"] and release_doc_he["green"] and release_doc_he["red"]
-    assert not release_doc_he.get("statements")
-
     config_he = page.evaluate("window.__FAKE_STORE__['meta/config']")
     english_attribution = page.evaluate("SPOTIFY_ATTRIBUTION")
-    print("attribution (Hebrew locale):", config_he.get("attribution"))
-    assert config_he.get("attribution") and config_he.get("attribution") != english_attribution
+    print("stored release dimension content under Hebrew (should stay English):", release_doc_he)
+    assert release_doc_he["label"] == "Easy to release"
+    assert config_he.get("attribution") == english_attribution
+
+    page.click('.view-btn[data-view="tribe"]')
+    page.wait_for_timeout(150)
+    page.click('#legendSummary')
+    page.wait_for_timeout(150)
+    release_label_he = page.eval_on_selector('.legend-item .lh', 'el=>el.textContent')
+    release_green_he = page.eval_on_selector('.legend-item p:nth-of-type(1) span[dir="auto"]', 'el=>el.textContent')
+    release_red_he = page.eval_on_selector('.legend-item p:nth-of-type(2) span[dir="auto"]', 'el=>el.textContent')
+    attribution_he = page.eval_on_selector('#legendAttrib', 'el=>el.textContent')
+    print("Tribe legend under Hebrew -- label/green/red/attribution:", release_label_he, release_green_he, release_red_he, attribution_he)
+    assert release_label_he.strip() and release_label_he != "Easy to release"
+    assert release_green_he != "Releasing is routine, low-risk, and low-drama."
+    assert release_red_he != "Releases are rare, risky, or dreaded events."
+    assert attribution_he.strip() and attribution_he != english_attribution
     # the Templates-modal display name itself stays English -- that's Story 8's
     # job, not this one's
     assert config_he.get("activeTemplateName") == "Spotify Squad Health Check"
 
-    print("=== switching language back to English does NOT retroactively re-translate already-loaded dimensions ===")
+    print("=== switching back to English immediately restores English display (live both ways) ===")
+    page.click('.view-btn[data-view="admin"]')
+    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="en"]')
     page.wait_for_timeout(150)
-    release_doc_after_switch = page.evaluate("window.__FAKE_STORE__['dimensions/release']")
-    print("release dimension content (after switching back to English):", release_doc_after_switch)
-    assert release_doc_after_switch["label"] == release_doc_he["label"]
+    page.click('.view-btn[data-view="tribe"]')
+    page.wait_for_timeout(150)
+    release_label_en = page.eval_on_selector('.legend-item .lh', 'el=>el.textContent')
+    attribution_en = page.eval_on_selector('#legendAttrib', 'el=>el.textContent')
+    print("Tribe legend restored to English:", release_label_en, attribution_en)
+    assert release_label_en == "Easy to release"
+    assert attribution_en == english_attribution
     print("errors:", errors)
 
     page.screenshot(path=str(test_output_path("shot_starter_spotify.png")), full_page=True)

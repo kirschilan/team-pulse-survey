@@ -80,10 +80,10 @@ with sync_playwright() as p:
     print("first rank-row breakdown:", repr(breakdown))
     assert breakdown.startswith(f"{LRI}") and "אדום" in breakdown  # אדום
 
-    print("=== Tribe view: hotspot value (dimension label = template data, stays English) ===")
+    print("=== Tribe view: hotspot value (dimension label = template data -- Story 5 fix: localizes live too) ===")
     hotspot_val = page.eval_on_selector('#statHotspot', 'el=>el.textContent')
     print("statHotspot (release rated crit above):", hotspot_val)
-    assert hotspot_val == "Easy to release"
+    assert hotspot_val == "קלות שחרור לפרודקשן"
     hotspot_sub = page.eval_on_selector('#statHotspotSub', 'el=>el.textContent')
     print("statHotspotSub:", repr(hotspot_sub))
     assert hotspot_sub == f"{LRI}1{PDI} מתוך {LRI}2 squads{PDI} סימנו את זה באדום"
@@ -110,10 +110,12 @@ with sync_playwright() as p:
     print("hotspots hint (squad name interpolated):", repr(hotspots_hint))
     assert hotspots_hint == f"היכן {LRI}Squad 1{PDI} מסומן אדום או צהוב כרגע."
 
-    # entry-list dimension content stays English (template data -- Stories 5-7)
+    # entry-list dimension content: Spotify template content localizes live
+    # (Story 5); Five Dysfunctions/Tuckman still stay English (their own
+    # future stories)
     entry_label = page.eval_on_selector('.entry-row .entry-label', 'el=>el.textContent')
-    print("entry-row dimension label (template data, should stay English):", entry_label)
-    assert entry_label == "Easy to release"
+    print("entry-row dimension label (Spotify template content, should be Hebrew):", entry_label)
+    assert entry_label == "קלות שחרור לפרודקשן"
 
     # ================= Rating modal =================
     page.click('#squadDetail .cell-btn[data-squad="squad-1"][data-dim="process"]')

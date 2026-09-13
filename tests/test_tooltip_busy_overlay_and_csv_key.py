@@ -66,6 +66,41 @@ with sync_playwright() as p:
     print("tooltip hidden after blur:", page.eval_on_selector('#dimTooltip', 'el=>el.hidden'))
     print("errors:", errors)
 
+    # ---- real bug, reported from usage: the tooltip could get stuck open
+    # (with no live listener able to hide it) if a renderGrid() rebuild
+    # happened while the mouse was hovering a header -- renderGrid()
+    # replaces the whole <thead> via one innerHTML write, and an earlier
+    # version bound mouseenter/mouseleave freshly per-node on every render,
+    # so a rebuild mid-hover could destroy the very listener that would
+    # hide it. Fixed by delegating to the STABLE .table-scroll wrapper
+    # (never itself replaced) instead of re-binding per .dim-th-label node
+    # on every render, plus an unconditional hideDimTooltip() at the top of
+    # renderGrid() as defense in depth. Covered here across a re-render
+    # that happens while genuinely still hovering (a live "remote"
+    # dimension edit via window.__NOTIFY__, exactly the kind of re-render
+    # this collaborative board does constantly): the tooltip may legitimately
+    # stay open with refreshed content while the pointer never actually
+    # moved, but once the pointer genuinely leaves afterward it must hide --
+    # not orphaned by whatever rebuild happened while it was still open.
+    print("=== tooltip survives a re-render that happens mid-hover, and still hides on a genuine leave afterward ===")
+    label.hover()
+    page.wait_for_timeout(100)
+    assert page.eval_on_selector('#dimTooltip', 'el=>el.hidden') == False
+    page.evaluate("""
+      window.__FAKE_STORE__['dimensions/release'].green = 'green release (edited remotely)';
+      window.__NOTIFY__('dimensions');
+    """)
+    page.wait_for_timeout(150)
+    print("tooltip content refreshed after a re-render fires while still hovering:",
+          page.eval_on_selector('#dimTooltip', 'el=>el.innerHTML'))
+    assert "green release (edited remotely)" in page.eval_on_selector('#dimTooltip', 'el=>el.innerHTML')
+    page.mouse.move(5, 5)
+    page.wait_for_timeout(150)
+    tip_hidden_after_leaving = page.eval_on_selector('#dimTooltip', 'el=>el.hidden')
+    print("tooltip hidden after genuinely leaving, post-re-render (should be True, not stuck open):", tip_hidden_after_leaving)
+    assert tip_hidden_after_leaving == True
+    print("errors:", errors)
+
     # ============ Bug 2: busy overlay during template switch ============
     print("=== busy overlay: template switch ===")
     page.click('.view-btn[data-view="admin"]')

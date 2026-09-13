@@ -104,7 +104,7 @@ function renderSquadDetailHtml(sq){
   var hotspotHtml = hotspots.length
     ? hotspots.map(function(d){
         var cell = sq.dimensions[d.key];
-        return '<div class="hotspot-row"><div class="hd"><span class="dim" dir="auto">'+esc(d.label)+'</span>' +
+        return '<div class="hotspot-row"><div class="hd"><span class="dim" dir="auto">'+esc(localizedDimText(d, "label"))+'</span>' +
           '<span class="cnt">'+esc(cell.color==="crit"?t("common.color.crit"):t("common.color.warn"))+'</span></div></div>';
       }).join("")
     : '<p class="hint" style="margin:0;">'+esc(t("squad.hotspots.empty"))+'</p>';
@@ -117,12 +117,12 @@ function renderSquadDetailHtml(sq){
     var showTrend = trend==="up" || trend==="down";
     return '<div class="entry-row">' +
       '<div class="entry-info">' +
-        '<div class="entry-label" dir="auto">'+esc(d.label)+'</div>' +
-        '<div class="entry-desc" dir="auto"><span class="tip-dot good"></span><span>'+esc(d.green||"")+'</span></div>' +
-        '<div class="entry-desc" dir="auto"><span class="tip-dot crit"></span><span>'+esc(d.red||"")+'</span></div>' +
+        '<div class="entry-label" dir="auto">'+esc(localizedDimText(d, "label"))+'</div>' +
+        '<div class="entry-desc" dir="auto"><span class="tip-dot good"></span><span>'+esc(localizedDimText(d, "green")||"")+'</span></div>' +
+        '<div class="entry-desc" dir="auto"><span class="tip-dot crit"></span><span>'+esc(localizedDimText(d, "red")||"")+'</span></div>' +
       '</div>' +
       '<button class="cell-btn '+color+'" data-squad="'+esc(sq.id)+'" data-dim="'+esc(d.key)+'" type="button" ' +
-        'aria-label="'+esc(d.label)+': '+esc(colorWordLocalized(color)+trendWordLocalized(trend, true))+'">' +
+        'aria-label="'+esc(localizedDimText(d, "label"))+': '+esc(colorWordLocalized(color)+trendWordLocalized(trend, true))+'">' +
         markIcon(color) +
         (showTrend ? '<span class="trend-badge '+trend+'" title="'+esc(trendWordLocalized(trend))+'">'+trendIcon(trend)+'</span>' : '') +
         (hasNote ? '<span class="note-dot" title="'+esc(t("common.hasNoteTitle"))+'"></span>' : '') +

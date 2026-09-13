@@ -435,6 +435,29 @@ the right secret would otherwise mask the check). `tests/unit/test_board_sync.js
 `parseTeamSecretInput()`/`teamLinkFor()` instead of the retired `normalizeTeamCode()`. Full 25-file
 Playwright + 38-test unit suite passing.
 
+## Multi-language rollout backlog
+
+The product owner is driving Hebrew/RTL support in one story at a time on this branch (see the
+Session log's "Multi-language support, Story N" entries for what each one actually did). This table
+is the persisted list — it previously only existed in conversation, which made "what's left" a
+recall exercise instead of something anyone could just read.
+
+| # | Story | Status |
+|---|---|---|
+| 1 | Hardened Hebrew/RTL test coverage (foundation, no user-visible change) | **DONE** (2026-09-13) |
+| 2 | i18n infrastructure (`t()`, `setLocale()`, `locales/en.js`+`he.js`) + Admin panel translated | **DONE** (2026-09-13) |
+| 3 | Formalized the Definition of Done (`docs/DefinitionOfDone.md`) | **DONE** (2026-09-13) |
+| 4 | Tribe view, Squad view, and the shared rating modal's UI chrome translated | **DONE** (2026-09-13) |
+| 5 | Spotify Squad Health Check template's dimension content (label/green/red/attribution) translated, live at render time | **DONE** (2026-09-13) |
+| 6 | Application header/nav chrome: `h1` "Squad Pulse", the tagline, the model-name badge, "Live — synced across viewers", the "Join a retro" button, and the Tribe view/Squad view/Admin switcher — currently untranslated and not scoped to any prior story (flagged when reviewing a screenshot of it) | Not started |
+| 7 | Tuckman's Team Development Stages template's dimension content translated | Not started |
+| 8 | The Five Dysfunctions of a Team template's dimension content translated | Not started |
+| 9 | Templates modal's own chrome (list labels, "Load"/"Delete" buttons, save-as-template form) — the template NAMES themselves (e.g. "Spotify Squad Health Check") stay English by design, same call already made for Story 5 | Not started |
+| 10 | Retro join flow (participant-facing screens) | Not started |
+| 11 | Retro facilitation flow (facilitator-facing screens, session cards, overrides) | Not started |
+| 12 | Dimension detail and Edit Dimensions modal (Admin) | Not started |
+| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass | Not started |
+
 ## Deliberately not built yet (and why)
 
 | Not built | Why it's cut for now | What would trigger building it |
@@ -1144,6 +1167,9 @@ not just in this repo's own tests.
   stays English; the Templates-modal's own list/display-name chrome stays English (Story 8's job) --
   verified explicitly by a test assertion that `activeTemplateName` stays "Spotify Squad Health Check"
   even when Hebrew is active. Five Dysfunctions/Tuckman are untouched (their own future stories).
+  **(Superseded the same day — see the correction entry right below: the ONE-TIME SNAPSHOT design
+  described in this paragraph turned out to be wrong. Kept here rather than rewritten, so the record
+  of what was tried and why it didn't hold up stays honest.)**
   True test-first this time, including a correction mid-flight: wrote and watched fail
   `tests/unit/test_template_locale.js` (6 tests: substitution, per-field English fallback, untouched
   when a key has no entry, no-op when no table at all, DOD-style non-blank-per-key check, non-blank
@@ -1152,13 +1178,73 @@ not just in this repo's own tests.
   mistake (an ordering lapse caught immediately, not after the fact) -- corrected by stashing the
   `templates.js` change, writing the new scenario in `test_starter_template_spotify.py`, running it
   against the un-wired code to confirm it failed for the right reason (content still English), then
-  popping the stash and re-running to confirm it passed. That new scenario also proves the "one-time
-  snapshot, not live" scoping decision: after loading Spotify under Hebrew then switching back to
-  English, `dimensions/release` still holds the Hebrew content it was written with. Also added, this
-  session: a project-level `.claude/settings.json` `PreToolUse` hook (Edit/Write on
-  `public/js/*.js`/`public/local-store.js`/`relay/*.js`, excluding test files) that injects a
-  test-first reminder before any such edit -- makes the DOD's test-first policy a standing default
-  for this repo rather than something each session has to remember to invoke; confirmed firing live
-  during this same session's `state.js`/`templates.js` edits. Full suite verified: 51-test unit suite
-  and the full 34-file Playwright suite both green, run serially (`TEST_JOBS=1`) with zero regressions
-  and zero JS errors.
+  popping the stash and re-running to confirm it passed. **(This specific scenario -- and the
+  "one-time snapshot" claim it proved -- no longer reflects the real behavior; see the correction
+  entry below. Left as-is for the honest record of the ordering-lapse correction it does still
+  describe accurately.)** Also added, this session: a project-level `.claude/settings.json`
+  `PreToolUse` hook (Edit/Write on `public/js/*.js`/`public/local-store.js`/`relay/*.js`, excluding
+  test files) that injects a test-first reminder before any such edit -- makes the DOD's test-first
+  policy a standing default for this repo rather than something each session has to remember to
+  invoke; confirmed firing live during this same session's `state.js`/`templates.js` edits. Full
+  suite verified: 51-test unit suite and the full 34-file Playwright suite both green, run serially
+  (`TEST_JOBS=1`) with zero regressions and zero JS errors.
+- 2026-09-13 — **Correction to the Story 5 entry above, from real-usage feedback the same day: the
+  "one-time snapshot at load time" design was wrong.** The product owner tried it on the actual
+  running app and found Hebrew dimension content never appeared at all: the DEFAULT board (the one
+  every fresh session actually has) never goes through `loadTemplate()` -- it's seeded directly into
+  `state.dimensions` -- so the load-time snapshot never had anything to trigger it, and switching the
+  language on the default board did nothing to the dimension text. The fix isn't a missing
+  `DEFAULT_CONFIG_HE` (the product owner's own initial guess at the cause) -- it's a different
+  architecture entirely: dimension label/green/red and the board's `attribution` are now localized
+  LIVE, at RENDER time, the same philosophy `i18n.js`'s `t()` already uses for UI chrome, rather than
+  ever being baked into stored data. `loadTemplate()` (`templates.js`) reverted to always writing
+  plain English (removing the locale-awareness added earlier the same day); `state.js` replaced the
+  now-unused `localizedStarterDimensions()` with two render-time helpers -- `localizedDimText(dim,
+  field)` and `localizedAttribution(attribution)` -- both of which refuse to translate a field an
+  admin customized away from the Spotify template's own English default (exact-string match against
+  `PLACEHOLDER_DIMENSIONS`/`SPOTIFY_ATTRIBUTION`), so a hand-edited dimension is never silently
+  overwritten by a translation the admin didn't write. Wired into every DOM render site that displays
+  a dimension's label/green/red or the attribution: `render.js` (Tribe stats hotspot, hotspot list,
+  grid column headers + cell aria-labels, legend, header tooltip), `squads.js` (Squad view hotspot
+  row, entry-list label/green/red/aria-label), and `modals.js` (the shared rating modal). Deliberately
+  left untouched: `dimensions.js`'s Edit Dimensions list (must keep showing/editing the raw English
+  value -- localizing an editable form field would silently rewrite an admin's custom text as
+  translated text the moment they saved), `csv.js`'s export (re-import matching keys off the raw
+  English label), and `retro-facilitator.js`/`retro-join.js` (the retro flow stays English-only until
+  its own future stories, same precedent already set for `colorWordLocalized()`/`trendWordLocalized()`
+  in Story 4). Two of Story 4's own existing test assertions were asserting the OLD, now-intentionally-
+  wrong behavior (`test_main_screen_language.py`: `#statHotspot` and `.entry-row .entry-label` stay
+  "Easy to release" under Hebrew) -- updated to expect the Hebrew text, per the DOD's standing rule
+  that an assertion asserting old behavior gets updated, not preserved, when the behavior change is
+  deliberate. `test_starter_template_spotify.py`'s Hebrew scenario rewritten end to end: proves the
+  underlying dimension docs and `meta/config` stay English always (single source of truth), that the
+  Tribe legend's label/green/red/attribution display in Hebrew immediately after just flipping the
+  language switch (no template reload at all), and that switching back to English immediately restores
+  English display -- live both directions, not a one-time bake-in. True test-first throughout:
+  `tests/unit/test_template_locale.js` rewritten for `localizedDimText()`/`localizedAttribution()` and
+  watched fail (undefined exports) before implementing; the Playwright scenario was written against
+  the reverted (pre-fix) `templates.js` and watched fail for the right reason (stored English, no
+  Hebrew in the DOM) before the render-site wiring went in. Full 55-test unit suite and full 34-file
+  Playwright suite green, serial (`TEST_JOBS=1`), zero regressions.
+- 2026-09-13 — **Fixed a real bug, reported from usage: the Tribe grid's dimension-header hover
+  tooltip could get stuck open.** Root cause identified by code review: `renderGrid()` rebuilds the
+  whole `<thead>` via one `innerHTML` write on every render (a teammate's live edit, a rating save, a
+  language switch, ...), and the tooltip's mouseenter/mouseleave/focus/blur listeners were bound
+  fresh, per `.dim-th-label` node, on every render (`bindGridHeaderTooltips()`) -- a listener bound to
+  a node that a later render destroys can never fire again, so a re-render happening while a tooltip
+  was open could orphan it with nothing left able to hide it. (Synthetic reproduction of the exact
+  "re-render while hovering" race in headless Chromium didn't itself produce a stuck-forever state --
+  this browser recomputes hover and re-fires the events on the replacement node at the same pointer
+  position, which happened to self-heal the specific sequence tried -- so the precise trigger the
+  product owner hit in real usage wasn't nailed down 1:1. Fixed the underlying fragility either way,
+  since relying on that recompute behavior at all was never the intent.) Fix: delegated the tooltip's
+  event handling to `.table-scroll` (the STABLE wrapper around `#gridTable` that renderGrid() never
+  itself replaces) via `mouseover`/`mouseout` (with a `relatedTarget` check) and `focusin`/`focusout`,
+  bound exactly once at load, instead of re-binding per-node on every render -- removes the whole
+  failure class regardless of exact trigger. `renderGrid()` also now calls `hideDimTooltip()`
+  unconditionally before every rebuild as defense in depth. New Playwright coverage in
+  `test_tooltip_busy_overlay_and_csv_key.py`: hover to open the tooltip, fire a live "remote"
+  dimension edit (`window.__NOTIFY__`) while still hovering (content refreshes correctly, tooltip may
+  legitimately stay open since the pointer never moved), then genuinely move the pointer away and
+  confirm it hides -- not orphaned by whatever render happened while it was open. Full suite verified
+  green alongside the Story 5 correction above (same session, same full-suite run).

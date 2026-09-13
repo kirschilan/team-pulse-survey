@@ -109,24 +109,45 @@ var SPOTIFY_DIMENSIONS_HE = {
 
 var SPOTIFY_ATTRIBUTION_HE = "הממדים מותאמים ממודל Spotify Squad Health Check (הנריק קניברג ו-Spotify, דרך סקר ההערכה העצמית האג'ילי של בן לינדרס). הניקוד, המשקלים ודירוג ההשקעה כאן הם פרי פיתוחה של Dr. Agile.";
 
-// Pure function: given a base (English) dimensions array and a translation
-// table keyed by dimension key, returns a NEW array with label/green/red
-// swapped in per key -- per-FIELD English fallback (a translation entry
-// missing e.g. `red` keeps the English red, not a blank), same fallback
-// principle as t()'s own missing-key behavior. Returns `dims` unchanged
-// (same reference) when there's no translation table at all, so a call site
-// for a still-untranslated template/locale is a no-op, not a copy.
-function localizedStarterDimensions(dims, translations){
-  if(!translations) return dims;
-  return dims.map(function(d){
-    var tr = translations[d.key];
-    if(!tr) return d;
-    return Object.assign({}, d, {
-      label: tr.label || d.label,
-      green: tr.green || d.green,
-      red: tr.red || d.red
-    });
-  });
+// Story 5 (corrected after real-usage feedback -- see STATUS.md): dimension
+// label/green/red and the board's attribution are localized LIVE, at render
+// time, same philosophy as i18n.js's t() -- looked up fresh on every render,
+// never baked into stored data. An earlier version of this translated once,
+// at the moment a starter template was explicitly (re-)loaded via the
+// Templates modal -- which meant the DEFAULT board (never manually
+// reloaded) stayed English forever even after switching the language
+// switcher to Hebrew, since nothing ever re-ran that one-time snapshot.
+// This version fixes that: any render site can call these two helpers
+// directly instead of reading `d.label`/`d.green`/`d.red`/`config.attribution`
+// off the dimension/config object, and they always reflect the CURRENT
+// locale.
+//
+// Both helpers refuse to translate a dimension/attribution the admin has
+// customized away from the Spotify template's own English default (checked
+// by exact string match against PLACEHOLDER_DIMENSIONS/SPOTIFY_ATTRIBUTION)
+// -- a hand-edited dimension is the admin's own content and must never be
+// silently swapped for a translation they didn't write. Checked per FIELD
+// (not per dimension), so customizing only `label` still lets `green`/`red`
+// localize normally.
+function localizedDimText(dim, field){
+  var value = dim[field];
+  var locale = (state.ui && state.ui.locale) || "en";
+  if(locale === "en") return value;
+  if(state.config.activeTemplateName !== SPOTIFY_TEMPLATE.name) return value;
+  var base = PLACEHOLDER_DIMENSIONS.find(function(p){ return p.key === dim.key; });
+  if(!base || base[field] !== value) return value;
+  var table = SPOTIFY_TEMPLATE.i18n[locale] && SPOTIFY_TEMPLATE.i18n[locale].dimensions;
+  var tr = table && table[dim.key];
+  return (tr && tr[field]) || value;
+}
+
+function localizedAttribution(attribution){
+  var locale = (state.ui && state.ui.locale) || "en";
+  if(locale === "en") return attribution;
+  if(state.config.activeTemplateName !== SPOTIFY_TEMPLATE.name) return attribution;
+  if(attribution !== SPOTIFY_ATTRIBUTION) return attribution;
+  var tr = SPOTIFY_TEMPLATE.i18n[locale];
+  return (tr && tr.attribution) || attribution;
 }
 
 // ---------- starter templates (built in, not stored in the live "templates"
@@ -384,7 +405,10 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     PLACEHOLDER_DIMENSIONS: PLACEHOLDER_DIMENSIONS,
     SPOTIFY_TEMPLATE: SPOTIFY_TEMPLATE,
+    SPOTIFY_ATTRIBUTION: SPOTIFY_ATTRIBUTION,
     STARTER_TEMPLATES: STARTER_TEMPLATES,
-    localizedStarterDimensions: localizedStarterDimensions
+    localizedDimText: localizedDimText,
+    localizedAttribution: localizedAttribution,
+    state: state
   };
 }
