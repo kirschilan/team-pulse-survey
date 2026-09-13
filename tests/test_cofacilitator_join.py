@@ -51,6 +51,17 @@ def cell_color(page, squad_id, dim_key):
     return None
 
 
+# Waits for a specific cell to leave the default "unscored" state -- the
+# real, causally-correct signal that a team-board push+live-subscribe
+# round trip landed, for the exact cell the next assertion is about to
+# check (not a generic "wait for everything to settle" guess).
+def wait_for_scored(page, squad_id, dim_key, timeout=5000):
+    page.wait_for_function(
+        '() => { var el = document.querySelector(\'.cell-btn[data-squad="%s"][data-dim="%s"]\'); return el && el.className.indexOf("unscored") === -1; }' % (squad_id, dim_key),
+        timeout=timeout,
+    )
+
+
 relay_env = dict(os.environ)
 relay_env["PORT"] = str(RELAY_PORT)
 relay_proc = subprocess.Popen(
@@ -127,7 +138,7 @@ try:
         c.wait_for_timeout(100)
         c.fill("#joinCodeInput", code)
         c.click("#joinCodeGo")
-        c.wait_for_timeout(600)
+        c.wait_for_selector(".direct-row")  # real relay round trip -- wait for it, don't guess how long
         rows = c.query_selector_all(".direct-row")
         assert len(rows) > 0
         for row in rows[:-1]:
@@ -153,7 +164,7 @@ try:
         b.wait_for_timeout(100)
         b.fill("#joinCodeInput", "ZZZZZZ")
         b.click("#coFacilitateGo")
-        b.wait_for_timeout(500)
+        b.wait_for_selector("#confirmBackdrop", state="visible")  # real relay round trip -- wait for it, don't guess how long
         error_shown = b.query_selector("#confirmBackdrop") is not None and b.eval_on_selector("#confirmBackdrop", "el=>!el.hidden")
         print("error dialog shown for a bad code:", error_shown)
         assert error_shown
@@ -167,7 +178,7 @@ try:
         b.wait_for_timeout(100)
         b.fill("#joinCodeInput", code)
         b.click("#coFacilitateGo")
-        b.wait_for_timeout(600)
+        b.wait_for_selector(".session-card")  # real relay round trip -- wait for it, don't guess how long
 
         print("device B should be on the normal board, Squad view, squad-1 selected -- NOT the participant join screen")
         assert b.eval_on_selector("#viewJoin", "el=>el.hidden") is True
@@ -191,13 +202,13 @@ try:
         b.click("#finishSessionBtn")
         b.wait_for_timeout(150)
         b.click("#confirmOk")
-        b.wait_for_timeout(500)
+        wait_for_scored(b, "squad-1", "release")
         b_release = cell_color(b, "squad-1", "release")
         print("device B's own squad-1/release after finishing:", b_release)
         assert b_release in ("good", "warn", "crit")
 
         print("=== the ORIGINATING facilitator (device A) sees the co-facilitator's finish, live, via the shared team board ===")
-        a.wait_for_timeout(700)
+        wait_for_scored(a, "squad-1", "release")  # real relay round trip -- wait for it, don't guess how long
         a_release = cell_color(a, "squad-1", "release")
         print("device A's squad-1/release (never clicked finish itself):", a_release)
         assert a_release == b_release, "a co-facilitator's finish must reach the session's originating device too, via team sync"

@@ -32,7 +32,10 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(INDEX_URL)
-    page.wait_for_timeout(500)
+    # #syncText starts as the static "Connecting..." placeholder until
+    # db.js's setSyncStatus() resolves it one way or the other -- wait for
+    # that real transition instead of a guessed delay
+    page.wait_for_function("() => !document.getElementById('syncText').textContent.includes('Connecting')")
 
     print("=== first load: local-store.js resolves the db capability and seeds a board ===")
     sync_text = page.eval_on_selector("#syncText", "el=>el.textContent")
@@ -60,7 +63,10 @@ with sync_playwright() as p:
 
     print("=== reload: rating persists ===")
     page.reload()
-    page.wait_for_timeout(600)
+    # .squad-pick-btn is rendered from state.squads, not static HTML -- its
+    # existence is the real signal that post-reload boot (db.js's squads
+    # listener) has fired at least once, not a guessed delay
+    page.wait_for_selector('.squad-pick-btn[data-id="squad-1"]', state="attached")
     page.click('.view-btn[data-view="squad"]')
     page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
@@ -77,7 +83,7 @@ with sync_playwright() as p:
     errors2 = []
     page2.on("pageerror", lambda e: errors2.append(str(e)))
     page2.goto(INDEX_URL)
-    page2.wait_for_timeout(500)
+    page2.wait_for_selector('.squad-pick-btn[data-id="squad-1"]', state="attached")
     page2.click('.view-btn[data-view="squad"]')
     page2.wait_for_timeout(100)
     page2.click('.squad-pick-btn[data-id="squad-1"]')
@@ -114,7 +120,7 @@ with sync_playwright() as p:
     errors3 = []
     page3.on("pageerror", lambda e: errors3.append(str(e)))
     page3.goto(INDEX_URL)
-    page3.wait_for_timeout(500)
+    page3.wait_for_function("() => !document.getElementById('syncText').textContent.includes('Connecting')")
     claude_use_src = page3.evaluate("window.claude.use.toString()")
     print("window.claude.use still the injected stub:", "Promise.resolve(null)" in claude_use_src)
     assert "Promise.resolve(null)" in claude_use_src

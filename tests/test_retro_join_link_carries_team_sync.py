@@ -112,7 +112,9 @@ try:
         b_errors = []
         b.on("pageerror", lambda e: b_errors.append(str(e)))
         b.goto(join_link, wait_until="domcontentloaded")
-        b.wait_for_timeout(600)
+        # real relay round trip (hydrate) -- wait for the actual board
+        # content this test is about to check, not a guessed delay
+        b.wait_for_function("() => { var s = state.squads.find(x=>x.id==='squad-1'); return s && s.name === 'Renamed By A'; }")
 
         print("=== device B never opened the team link, but ended up on device A's team anyway ===")
         b_secret = b.evaluate("localStorage.getItem('squadpulse:teamSecret')")
@@ -150,7 +152,7 @@ try:
         b.evaluate("""() => {
           return window.claude.use('db').then(db => db.collection('squads').doc('squad-2').update({ name: 'Renamed By B' }));
         }""")
-        a.wait_for_timeout(700)
+        a.wait_for_function("() => { var s = state.squads.find(x=>x.id==='squad-2'); return s && s.name === 'Renamed By B'; }")  # real relay round trip -- wait for it, don't guess how long
         a_squad2_name = a.evaluate("(state.squads.find(s=>s.id==='squad-2')||{}).name")
         print("device A's squad-2 name after device B's rename:", a_squad2_name)
         assert a_squad2_name == "Renamed By B", "a change from the join-link device should reach the facilitator too, live"

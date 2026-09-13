@@ -94,23 +94,28 @@ history and STATUS.md's session log.
 **Run the suite with `tests/run_all.sh`, not a serial loop.** Every file is
 fully independent by construction — its own unique `build_page()` /
 `write_plain_index()` output filename, and its own hardcoded relay port
-where a relay-backed file spawns one (verified, 2026-09-13 perf pass: no
-two files in the suite share either) — so running them as separate
-processes at the same time is safe with zero test changes. `run_all.sh`
-defaults to 2 at a time; measured on a 4-core machine, that ran the full
-30-file suite with zero failures in ~75s, against ~170s run serially (a
-plain `for f in tests/test_*.py; do python3 "$f"; done` loop) — a ~2.3x
-wall-clock win for free. Pushing concurrency to 4 (one worker per core, no
-headroom) cut it further (~41s) but produced a real, reproducible flake in
-a timing-sensitive relay test purely from CPU contention (an element read
-right after a genuine WebSocket round trip occasionally hadn't rendered
-yet) — passing standalone every time, only failing under a fully-saturated
-CPU. 2 is the concurrency this repo has actually verified safe; raise it
+where a relay-backed file spawns one (verified: no two files in the suite
+share either) — so running them as separate processes at the same time is
+safe with zero test changes. `run_all.sh` dispatches through
+`tests/_run_one.sh` via `xargs -n 1 -P`, not `xargs -I{} sh -c '...'` — the
+latter is a known-broken combination on macOS/BSD's `xargs` (fails with
+"command line cannot be assembled, too long" even for a single short
+input; see `run_all.sh`'s own comment). `run_all.sh` defaults to 2 workers
+at a time; measured on a 4-core machine, that ran the full suite with zero
+failures in a bit over a third of the serial time (a plain
+`for f in tests/test_*.py; do python3 "$f"; done` loop). Pushing
+concurrency to 4 (one worker per core, no headroom) cut it further but
+produced a real, reproducible flake in a timing-sensitive relay test
+purely from CPU contention (an element read right after a genuine
+WebSocket round trip occasionally hadn't rendered yet) — passing
+standalone every time, only failing under a fully-saturated CPU. 2 is the
+concurrency this repo has actually verified safe; raise it
 (`TEST_JOBS=N tests/run_all.sh`) only after checking your own machine has
 the headroom, and re-running enough times to trust it. CI shards the suite
 further still — see `.github/workflows/tests.yml`'s `playwright` job's own
 comments for why that's a matrix of separate runners, not just a bigger
-`TEST_JOBS`.
+`TEST_JOBS`. (Exact current file count: `ls tests/test_*.py | wc -l` —
+deliberately not hardcoded here, since it drifts as the suite grows.)
 
 If a specific file still feels slow, `time python3 tests/test_whatever.py`
 it directly — the fake-store files should mostly run in the 2-6s range

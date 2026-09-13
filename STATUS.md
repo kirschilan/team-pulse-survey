@@ -20,10 +20,11 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 - Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-13) — see
   `tests/README.md`. **`tests/unit/`**: 3 plain-Node files (`node:test`, nothing to install) for
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
-  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 31 Playwright files
-  (named for the feature/flow each one covers) for everything that needs a real browser, running in
-  around 2 minutes total after two 2026-09-12 perf passes (see the session log below) — zero JS errors on
-  the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
+  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: one Playwright file
+  per feature/flow (`ls tests/test_*.py | wc -l` for the current count — deliberately not
+  hardcoded here) for everything that needs a real browser, run via `tests/run_all.sh`'s parallel
+  workers after three 2026-09-12/13 perf passes (see the session log below) — zero JS errors on the
+  last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
   + `tests/fixtures/build_page.py`) standing in for the real backend, for speed and determinism; a
   handful deliberately bypass it because they exist specifically to test what it stands in for —
   `test_local_store.py` (the real `localStorage` board), `test_relay_cross_device_sync.py` (the real
@@ -924,6 +925,73 @@ not just in this repo's own tests.
   `test_uncaught_error_diagnostics.py` verify the REAL clipboard content (not just "didn't throw"),
   which needed granting the test's browser context `clipboard-write`/`clipboard-read` permissions
   Playwright doesn't have by default. Full 31-file Playwright + 38-test unit suite passing.
+- 2026-09-13 — **Test-runner portability fix, plus a second wait-condition pass.** `tests/run_all.sh`
+  failed on macOS with `xargs: command line cannot be assembled, too long` -- even for a single,
+  short test file, which ruled out an actual argument-length overflow. Root cause: `xargs -I{} sh
+  -c '<inline script>'` combined with `-P` (parallel) is a known-broken combination on BSD/macOS's
+  `xargs` specifically; it worked fine on this machine's Linux/GNU findutils, which doesn't share
+  the limitation, and would have kept looking "fine" here indefinitely without a macOS test.
+  Fixed by extracting the per-file run/report logic into its own file, `tests/_run_one.sh`, and
+  dispatching to it with `xargs -n 1 -P "$JOBS" tests/_run_one.sh` -- no `-I`, no inline script for
+  xargs to reconstruct, which is the standard macOS-safe parallel-xargs idiom and behaves
+  identically on GNU findutils. Verified: one explicit file, two explicit files, the full suite, and
+  intentional failures (a missing file, a genuinely failing assertion) all propagate a real nonzero
+  exit with useful per-file output, no false success. (Could not literally run this on macOS from
+  this session's environment -- the fix is evidence-based on BSD xargs's documented `-I`+`-P`
+  limitation and the exact error text matching, not directly re-verified on that OS; flagging this
+  honestly rather than claiming a test that didn't happen.)
+
+  Re-audited `wait_for_timeout` across the suite rather than assuming the prior pass's "leave the
+  other ~400 alone" conclusion was still complete -- it wasn't: the SAME pattern fixed last time in
+  one relay file (a fixed sleep guessing a real relay round trip's duration, right before reading
+  what that round trip produces) turned out to still exist, unconverted, in several sibling
+  files -- `test_board_sync_finish_retro_convergence.py`, `test_cofacilitator_join.py`,
+  `test_relay_cross_device_sync.py`, `test_board_sync_hydrate_on_boot.py`,
+  `test_board_sync_live_subscribe.py`, `test_board_sync_default_on.py`,
+  `test_retro_join_link_carries_team_sync.py`. Converted each to `page.wait_for_selector(...)` or
+  `page.wait_for_function(...)` on the SPECIFIC result the very next assertion checks (a cell
+  leaving "unscored", a squad name matching the expected rename, `.direct-row` appearing, a join
+  screen's heading changing away from its "Connecting..." placeholder) -- not a generic "wait for
+  everything to settle" guess, which the prior pass correctly identified as unsafe. Two `cell_color`
+  helper files gained a matching `wait_for_scored(page, squad, dim)` used only where the test
+  already expects that exact cell to become scored. Also converted a few `fake_store`-backed
+  boot-wait sites in `test_local_store.py`/`test_retro_join_flow.py`/`test_retro_join_exit_and_return.py`
+  where a real, non-guessed boot marker existed (`.squad-pick-btn` is rendered from `state.squads`,
+  not static HTML; `#syncText` transitions away from its literal "Connecting..." placeholder).
+  Left the deliberate rainy-day "make sure X did NOT arrive" waits, the relay backoff-timing test's
+  own `wait_for_timeout(1800)` (verifying a specific point in the retry schedule, which IS the
+  point of that test), and the Copy-diagnostics fade timer's wait (a known, deterministic 1500ms
+  constant, not a guess) exactly as they were -- none of those have a "did the work finish" signal
+  to wait on, because either nothing is supposed to happen, or the wait itself IS the thing under
+  test.
+
+  One of the `.squad-pick-btn` boot-marker conversions initially SEEMED safe (passed 3 clean runs
+  in `test_local_store.py`) but was actually a lucky pass, not a correct fix: `wait_for_selector()`
+  defaults to requiring the element `state="visible"`, and `.squad-pick-btn` lives inside whichever
+  of Tribe/Squad view is currently hidden -- `test_local_store.py` happened to already be on Squad
+  view before its reload, so the element stayed visible throughout, but the same conversion in
+  `test_board_sync_finish_retro_convergence.py` (reloading from a context where Tribe was the
+  active view) hung for the full 30s default timeout and failed for real. Fixed by adding
+  `state="attached"` everywhere this boot marker is used, which only requires the element to exist
+  in the DOM -- the actual "has this render happened" signal intended, regardless of which view is
+  currently shown. A reminder that a passing run isn't proof a wait-condition change is correct;
+  re-verifying is what caught this before it shipped.
+
+  Measured before/after on this machine: serial suite runtime ~158.7s → ~142.1s from this session's
+  wait-condition changes (on top of the four files already fixed last session); combined with the
+  parallel runner, full suite (unit + relay + all Playwright files) now completes in ~72-73s at the
+  default `TEST_JOBS=2`, vs. serial's ~142s -- essentially unchanged ratio from before (parallelism
+  was always the bigger lever than trimming individual waits), but both numbers dropped together.
+  Slowest single file post-fix: `test_board_sync_finish_retro_convergence.py` at ~11.3s (two full
+  rounds of a real 3-device relay scenario -- genuine work, not waiting). No Playwright file was
+  removed or weakened,
+  no relay/crypto/localStorage integration behavior changed, and `fake_store.html`'s architecture
+  was not touched -- re-examined the prior pass's "do not change" list specifically for this task
+  and found no evidence to override any of it. Fixed a stale "30-file"/"30 Playwright files" count
+  in `tests/README.md`'s Performance section (a live, current-facts section, unlike this dated log)
+  by rewording to avoid hardcoding a count that will keep drifting, rather than just bumping the
+  number to 31. Full unit + relay + 31-file Playwright suite passing, including repeated runs of
+  every modified file.
 - 2026-09-13 — **Multi-language support, Story 1: hardened Hebrew/RTL test coverage.** First step
   of the product owner's multi-language roadmap (Hebrew UI, persisted language switcher, a
   translate-everything DOD, human-correctable translations) -- this step is test-only, no new
