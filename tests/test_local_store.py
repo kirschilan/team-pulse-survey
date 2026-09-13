@@ -66,7 +66,7 @@ with sync_playwright() as p:
     # .squad-pick-btn is rendered from state.squads, not static HTML -- its
     # existence is the real signal that post-reload boot (db.js's squads
     # listener) has fired at least once, not a guessed delay
-    page.wait_for_selector('.squad-pick-btn[data-id="squad-1"]')
+    page.wait_for_selector('.squad-pick-btn[data-id="squad-1"]', state="attached")
     page.click('.view-btn[data-view="squad"]')
     page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
@@ -83,7 +83,7 @@ with sync_playwright() as p:
     errors2 = []
     page2.on("pageerror", lambda e: errors2.append(str(e)))
     page2.goto(INDEX_URL)
-    page2.wait_for_selector('.squad-pick-btn[data-id="squad-1"]')
+    page2.wait_for_selector('.squad-pick-btn[data-id="squad-1"]', state="attached")
     page2.click('.view-btn[data-view="squad"]')
     page2.wait_for_timeout(100)
     page2.click('.squad-pick-btn[data-id="squad-1"]')

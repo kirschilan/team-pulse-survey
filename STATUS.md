@@ -963,12 +963,28 @@ not just in this repo's own tests.
   point of that test), and the Copy-diagnostics fade timer's wait (a known, deterministic 1500ms
   constant, not a guess) exactly as they were -- none of those have a "did the work finish" signal
   to wait on, because either nothing is supposed to happen, or the wait itself IS the thing under
-  test. Measured before/after on this machine: serial suite runtime ~158.7s → ~142.1s from the
-  wait-condition changes alone (the four files fixed last session plus this session's individually
-  measured ~1-1.5s-per-file drops); combined with the parallel runner, full suite (unit + relay +
-  all Playwright files) now completes in ~72s at the default `TEST_JOBS=2`, vs. serial's ~142s --
-  essentially unchanged ratio from before (parallelism was always the bigger lever than trimming
-  individual waits), but both numbers dropped together. No Playwright file was removed or weakened,
+  test.
+
+  One of the `.squad-pick-btn` boot-marker conversions initially SEEMED safe (passed 3 clean runs
+  in `test_local_store.py`) but was actually a lucky pass, not a correct fix: `wait_for_selector()`
+  defaults to requiring the element `state="visible"`, and `.squad-pick-btn` lives inside whichever
+  of Tribe/Squad view is currently hidden -- `test_local_store.py` happened to already be on Squad
+  view before its reload, so the element stayed visible throughout, but the same conversion in
+  `test_board_sync_finish_retro_convergence.py` (reloading from a context where Tribe was the
+  active view) hung for the full 30s default timeout and failed for real. Fixed by adding
+  `state="attached"` everywhere this boot marker is used, which only requires the element to exist
+  in the DOM -- the actual "has this render happened" signal intended, regardless of which view is
+  currently shown. A reminder that a passing run isn't proof a wait-condition change is correct;
+  re-verifying is what caught this before it shipped.
+
+  Measured before/after on this machine: serial suite runtime ~158.7s → ~142.1s from this session's
+  wait-condition changes (on top of the four files already fixed last session); combined with the
+  parallel runner, full suite (unit + relay + all Playwright files) now completes in ~72-73s at the
+  default `TEST_JOBS=2`, vs. serial's ~142s -- essentially unchanged ratio from before (parallelism
+  was always the bigger lever than trimming individual waits), but both numbers dropped together.
+  Slowest single file post-fix: `test_board_sync_finish_retro_convergence.py` at ~11.3s (two full
+  rounds of a real 3-device relay scenario -- genuine work, not waiting). No Playwright file was
+  removed or weakened,
   no relay/crypto/localStorage integration behavior changed, and `fake_store.html`'s architecture
   was not touched -- re-examined the prior pass's "do not change" list specifically for this task
   and found no evidence to override any of it. Fixed a stale "30-file"/"30 Playwright files" count

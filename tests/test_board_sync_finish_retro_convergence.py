@@ -150,7 +150,9 @@ try:
         # page"). Team sync survives this since the secret is in localStorage,
         # not the URL that just got left behind.
         b.goto(INDEX_URL, wait_until="domcontentloaded")
-        b.wait_for_timeout(500)
+        # .squad-pick-btn is rendered from state.squads, not static HTML --
+        # its existence is the real post-reload boot marker, not a guess
+        b.wait_for_selector('.squad-pick-btn[data-id="squad-1"]', state="attached")
 
         a.click('.reveal-btn[data-reveal="live"]')
         a.wait_for_timeout(400)
@@ -202,7 +204,7 @@ try:
         # leave join mode the same way a real user would today: navigate
         # back to the plain URL. Team sync survives it (localStorage).
         a.goto(INDEX_URL, wait_until="domcontentloaded")
-        a.wait_for_timeout(500)
+        a.wait_for_selector('.squad-pick-btn[data-id="squad-1"]', state="attached")  # real post-reload boot marker, not a guess
 
         b.click('.reveal-btn[data-reveal="live"]')
         b.wait_for_timeout(400)
