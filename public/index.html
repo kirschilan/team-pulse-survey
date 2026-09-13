@@ -166,8 +166,9 @@
     <details class="legend" id="diagPanel" style="margin-top:14px;">
       <summary>Diagnostics (temporary — for troubleshooting save issues) <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
       <div style="padding:0 18px 16px;">
-        <p class="hint" style="margin:0 0 8px;">If saving isn't working, open this, try rating a cell, then screenshot what appears below.</p>
+        <p class="hint" style="margin:0 0 8px;">If saving isn't working, open this, try rating a cell, then copy or screenshot what appears below.</p>
         <pre id="diagLog" class="mono diag-log" style="margin:0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:11px;line-height:1.6;max-height:160px;overflow:auto;white-space:pre-wrap;">(no activity yet)</pre>
+        <button class="btn ghost copy-diag-btn" type="button" data-diag-target="diagLog" style="margin-top:8px;">Copy diagnostics</button>
       </div>
     </details>
   </section>
@@ -192,8 +193,9 @@
     <details class="legend" id="joinDiagPanel" style="margin-top:14px;">
       <summary>Trouble joining? Tap for diagnostics <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
       <div style="padding:0 18px 16px;">
-        <p class="hint" style="margin:0 0 8px;">If this isn't connecting, screenshot what appears below and send it to whoever's running the retro.</p>
+        <p class="hint" style="margin:0 0 8px;">If this isn't connecting, copy or screenshot what appears below and send it to whoever's running the retro.</p>
         <pre id="joinDiagLog" class="mono diag-log" style="margin:0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:11px;line-height:1.6;max-height:160px;overflow:auto;white-space:pre-wrap;">(no activity yet)</pre>
+        <button class="btn ghost copy-diag-btn" type="button" data-diag-target="joinDiagLog" style="margin-top:8px;">Copy diagnostics</button>
       </div>
     </details>
   </section>

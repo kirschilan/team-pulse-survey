@@ -20,7 +20,7 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 - Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-13) — see
   `tests/README.md`. **`tests/unit/`**: 3 plain-Node files (`node:test`, nothing to install) for
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
-  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 30 Playwright files
+  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 31 Playwright files
   (named for the feature/flow each one covers) for everything that needs a real browser, running in
   around 2 minutes total after two 2026-09-12 perf passes (see the session log below) — zero JS errors on
   the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
@@ -885,3 +885,42 @@ not just in this repo's own tests.
   math), so none were removed. Full 30-file Playwright + 38-test unit suite passing with zero
   regressions throughout, including three consecutive clean runs of the suite's most timing-
   sensitive file after the wait-condition changes.
+- 2026-09-13 — **Real bug report, three devices (Mac facilitator, iPhone + iPad participants),
+  fixed.** Diagnostics from all three showed different board-sync room ids -- three unrelated
+  teams -- even though a retro was shared between them: iPhone and iPad had each joined only the
+  retro session's OWN participant join link, never the facilitator's separate team link, so a
+  finished retro (and, separately, a squad rename tried on one device) never reached the others in
+  either direction. Root cause and fix are exactly what the product owner proposed: unify the two
+  mechanisms, matching the Excalidraw "one link, one shared document" model this repo's docs
+  already reference, rather than requiring a second, separate team-link step. `joinUrlFor()` (and
+  `coFacilitateUrlFor()`, same gap) now appends the facilitator's own current team secret as
+  `&team=<secret>` whenever they have one connected (the default per step 7); `board-sync.js`'s
+  existing `autoConnectFromLink()` already applies a `?team=` param generically and runs before the
+  default-bootstrap step, so no other production code needed to change. A facilitator who
+  explicitly stopped syncing produces a plain, session-only link exactly like before this fix --
+  the join link never forces a team onto anyone. New `tests/test_retro_join_link_carries_team_sync.py`
+  proves both directions over the real relay (a device that only ever opens the join link ends up
+  team-synced and sees the facilitator's real board; the reverse also reaches the facilitator live)
+  plus the rainy day above. A separate reported bug ("Starting retro session" stuck on iPhone/iPad
+  while Mac worked fine) is very likely explained by the same diagnostics -- both mobile devices
+  show repeated relay disconnect/reconnect cycles roughly every 30-90s (absent on Mac), consistent
+  with a mobile network's NAT dropping an idle WebSocket with no application-level keep-alive to
+  prevent it (`relay/server.js` has no ping/pong). Not fixed this round -- flagged as a follow-up
+  (a server-side heartbeat, and/or a client-side connection-attempt timeout in `relay-client.js`'s
+  `connectRoom()` so a hung initial connect can't block a brand-new session's `.set()` forever) --
+  since it's a distinct, separately-scoped resilience improvement to the wire protocol rather than
+  a one-line fix, and wasn't confirmed as an infinite hang (only a real, repeated slowdown) in the
+  captured diagnostics.
+- 2026-09-13 — Two small UI fixes from the same bug report. (1) The session card's "Close session"
+  button sits right next to "Finish retro & apply results" and was reported as easy to mistake for
+  also saving results -- renamed it and both confirm-dialog OK labels that lead to the same
+  `closeSession()` action to "Close session without applying results" / "Close without applying
+  results". Text-only; the action itself is unchanged. Regression assertion added to
+  `test_retro_join_flow.py`. (2) Added a one-click "Copy diagnostics" button to both diagnostics
+  panels (Admin view and the participant join screen) -- `diag()`'s own selection-preserving logic
+  already existed because a fast-moving log made manual select-and-copy fiddly; a button sidesteps
+  that entirely by reading the log's current text at click time. Falls back to a hidden-textarea +
+  `execCommand("copy")` if the Clipboard API isn't available. New assertions in
+  `test_uncaught_error_diagnostics.py` verify the REAL clipboard content (not just "didn't throw"),
+  which needed granting the test's browser context `clipboard-write`/`clipboard-read` permissions
+  Playwright doesn't have by default. Full 31-file Playwright + 38-test unit suite passing.
