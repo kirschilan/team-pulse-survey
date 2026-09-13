@@ -169,8 +169,8 @@ function renderLegend(){
   var html = dims.map(function(d){
     return '<div class="legend-item">' +
       '<div class="lh" dir="auto"><span class="dot"></span>'+esc(d.label)+'</div>' +
-      '<p dir="auto"><b>Green:</b> '+esc(d.green)+'</p>' +
-      '<p dir="auto"><b>Red:</b> '+esc(d.red)+'</p>' +
+      '<p><b>Green:</b> <span dir="auto">'+esc(d.green)+'</span></p>' +
+      '<p><b>Red:</b> <span dir="auto">'+esc(d.red)+'</span></p>' +
     '</div>';
   }).join("");
   document.getElementById("legendGrid").innerHTML = html || '<p class="hint" style="margin:0;">No dimensions defined yet.</p>';

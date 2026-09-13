@@ -168,7 +168,8 @@ references.)
 | File | Covers |
 |---|---|
 | `test_dimension_and_template_admin.py` | Rating a cell; Admin's dimension manager (rename/add/reorder/delete); saving and reloading a custom template |
-| `test_template_switching_and_csv_import.py` | Switching templates preserves each one's own dimension set and squad ratings underneath; RTL (`dir=auto`) fields; a basic CSV import |
+| `test_template_switching_and_csv_import.py` | Switching templates preserves each one's own dimension set and squad ratings underneath; a basic CSV import |
+| `test_hebrew_rtl_coverage.py` | Real Hebrew content resolves `dir="auto"` to actual rtl (not just the attribute's presence) across every such surface in the app -- admin's dimension manager and squad list, Squad view, the rating modal, Tribe view's grid/legend/tooltip/hotspots, Templates, and the retro facilitator/join flow -- each paired with an English control; a Dimension-Key-based CSV re-import after a dimension's Hebrew label is edited again |
 | `test_csv_import_column_matching.py` | CSV export/import round-tripping through renamed headers, reordered columns, and a template-mismatch warning |
 | `test_tooltip_busy_overlay_and_csv_key.py` | Grid header hover/focus tooltip; the busy overlay during template switches and CSV import; the CSV "Dimension Key" column surviving a dimension rename |
 | `test_view_navigation_and_squad_admin.py` | Tribe view's read-only grid; Squad view rating and its "hotspots" panel; Admin squad CRUD; view/squad selection persisting across reload |

@@ -924,3 +924,27 @@ not just in this repo's own tests.
   `test_uncaught_error_diagnostics.py` verify the REAL clipboard content (not just "didn't throw"),
   which needed granting the test's browser context `clipboard-write`/`clipboard-read` permissions
   Playwright doesn't have by default. Full 31-file Playwright + 38-test unit suite passing.
+- 2026-09-13 — **Multi-language support, Story 1: hardened Hebrew/RTL test coverage.** First step
+  of the product owner's multi-language roadmap (Hebrew UI, persisted language switcher, a
+  translate-everything DOD, human-correctable translations) -- this step is test-only, no new
+  feature. The one existing RTL check (in `test_template_switching_and_csv_import.py`) only
+  confirmed `dir="auto"` was present in markup on 3 of the ~35 such locations across the app, never
+  that real Hebrew content actually resolves to rtl. New `tests/test_hebrew_rtl_coverage.py` types
+  or seeds real Hebrew (paired with an English control on a sibling element, so an always-rtl false
+  positive would be caught) across every `dir="auto"` surface: admin's dimension manager and squad
+  list, Squad view, the rating modal, Tribe view's grid/legend/header-tooltip/hotspots, Templates,
+  the retro facilitator card and join/direct-rating flow, plus a CSV export/re-import proving
+  `csv.js`'s Dimension Key column (not the label text) is really what survives a dimension being
+  re-translated after export, per that file's own header comment. Writing it for real (not just
+  re-confirming the attribute exists) found two genuine bugs, now fixed: `render.js`'s Tribe-view
+  legend and `retro-join.js`'s direct-rating green/red anchor line both put `dir="auto"` on a `<p>`
+  shared with a hardcoded English "Green:"/"Red:" bold prefix -- per the HTML auto-directionality
+  algorithm (first strong character in tree order), that prefix's leading "G"/"R" forced the whole
+  line ltr even when the translatable content behind it was pure Hebrew, silently defeating RTL for
+  exactly the content this feature exists to support. Fixed by moving `dir="auto"` onto a `<span>`
+  wrapping just the translatable content, leaving the English label outside it (`index.html`'s
+  matching modal fields already did this correctly, which is how they passed while these two
+  didn't). Old narrow sanity check removed as superseded. Full 32-file Playwright + 38-test unit
+  suite passing (one `test_relay_board_path_sync.py` failure seen under `run_all.sh -P2` reproduced
+  as this file's own documented CPU-contention flake -- passed clean standalone, unrelated to this
+  change, no relay/board-sync file touched).
