@@ -86,6 +86,23 @@ function submitJoinCode(){
   joinSessionByCode(raw);
 }
 document.getElementById("joinCodeGo").addEventListener("click", submitJoinCode);
+
+// Story 10: same modal, same code, different verb -- "Co-facilitate"
+// attaches this device to the session (coFacilitateSessionByCode(), in
+// retro-facilitator.js) instead of entering the participant join screen.
+function submitCoFacilitateCode(){
+  var raw = document.getElementById("joinCodeInput").value.trim().toUpperCase().replace(/\s+/g,"");
+  if(!raw) return;
+  closeJoinCodeModal();
+  coFacilitateSessionByCode(raw).catch(function(err){
+    openConfirm(
+      "Couldn’t co-facilitate that session",
+      (err && err.message) ? err.message : "Something went wrong reaching the relay. Check the diagnostic log below for details.",
+      function(){}, "OK"
+    );
+  });
+}
+document.getElementById("coFacilitateGo").addEventListener("click", submitCoFacilitateCode);
 document.getElementById("joinCodeInput").addEventListener("keydown", function(e){
   if(e.key==="Enter") submitJoinCode();
 });

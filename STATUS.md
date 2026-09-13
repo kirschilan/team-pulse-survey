@@ -20,7 +20,7 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 - Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-12) — see
   `tests/README.md`. **`tests/unit/`**: 3 plain-Node files (`node:test`, nothing to install) for
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
-  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 27 Playwright files
+  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 29 Playwright files
   (named for the feature/flow each one covers) for everything that needs a real browser, running in
   around 2 minutes total after two 2026-09-12 perf passes (see the session log below) — zero JS errors on
   the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
@@ -257,9 +257,40 @@ resetting it; a device that never joined anything never shows the "back to my re
 all). Passed on the very first real run once the buttons existed — no surprises this time, unlike
 step 6's hydrate-freezing bug.
 
-Story 10, still not built: a co-facilitator join path via code/link (payoff of steps 5–6 plus a
-facilitator-role join flow — a second device getting the FACILITATOR's view of an open session,
-not just the participant join screen).
+Story 10 (**DONE, 2026-09-12**): a co-facilitator join path via code/link. Turned out to need very
+little new mechanism, same story as step 6: `openSessionForSquad()` never checked WHO started a
+session, only whether `state.sessions` has a matching open one — and `state.sessions` is
+reconstructed from whatever codes this device's relay-client.js has ever "remembered"
+(`rememberCode()`), regardless of role. So `retro-facilitator.js`'s new
+`coFacilitateSessionByCode(code)` just reads `sessions/<code>` once (enough to make `getRoom()`
+remember the code and connect); the moment that snapshot arrives, the SAME broad `sessions`
+listener every non-join-mode device already runs picks it up, and Squad view renders the identical
+facilitator card (live tally, reveal, override, finish) a device that started the session sees —
+no separate rendering path needed. Reachable two ways, both wired: a NEW "Co-facilitate" button in
+the existing join-code modal (typed code), and a genuinely separate link/QR
+(`?cofacilitate=<code>`, `coFacilitateUrlFor()`) shown on the session card next to the existing
+participant join link — opening it boots the normal app (never join mode) and attaches
+automatically. Written test-first: `tests/test_cofacilitator_join.py` proves the real three-device
+shape (originating facilitator + a participant who answers + a co-facilitator who never started
+the session) — the co-facilitator sees the live tally, finishes the retro, and that finish reaches
+the ORIGINATING facilitator's device too, live, via team sync (story 6). Also checks the actual
+link/QR (not just the typed code) and a device opening it directly. Rainy day: co-facilitating
+with a wrong/nonexistent code shows a clear error, not a crash. Passed cleanly on the first real
+run, both happy-path and rainy-day, once the wiring existed.
+
+Story 11 (**DONE/VERIFIED, 2026-09-12**): as all users, we want our data encrypted so no one else
+but we who have the link/code can see it. Already true by construction (retro sessions: code-
+derived AES-256-GCM key, locked decision; boards: a separate high-entropy link/QR secret, see the
+"Security fix" above) — every prior test proved it INDIRECTLY, by showing a wrong key fails to
+decrypt. New `tests/test_encryption_no_plaintext_on_wire.py` proves the literal claim directly
+instead: it captures every real WebSocket frame a browser sends/receives (Playwright's
+`page.on("websocket")` + `framesent`/`framereceived`) while renaming a squad to a distinctive,
+impossible-to-coincidentally-reproduce plaintext string and saving an equally distinctive
+sprint-experiment note, for both a team board and a retro session, and asserts neither string EVER
+appears in a raw frame — only base64 ciphertext (with a sanity check that the capture really did
+see encrypted `ct` fields, so the assertion isn't vacuously passing over an empty capture). Passed
+cleanly on the first run — no gap found, no new production code needed, just a real proof where
+only an inference existed before.
 
 ### Security fix (2026-09-12): typed team codes replaced with a high-entropy link/QR secret
 

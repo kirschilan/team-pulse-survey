@@ -296,10 +296,13 @@
 <div class="backdrop" id="joinCodeBackdrop" hidden>
   <div class="modal" role="dialog" aria-modal="true">
     <h3>Join a retro</h3>
-    <p class="hint">Enter the session code your Scrum Master shared.</p>
+    <p class="hint">Enter the session code your Scrum Master shared. Answering a survey? Tap
+      Join. Co-facilitating (you'll see the live results and can finish the retro too)? Tap
+      Co-facilitate instead.</p>
     <input type="text" id="joinCodeInput" class="join-code-input" placeholder="e.g. 7K4QXB" maxlength="40" autocapitalize="characters" autocomplete="off" spellcheck="false">
     <div class="modal-actions">
       <button class="btn ghost" id="joinCodeCancel" type="button">Cancel</button>
+      <button class="btn ghost" id="coFacilitateGo" type="button">Co-facilitate</button>
       <button class="btn primary" id="joinCodeGo" type="button">Join</button>
     </div>
   </div>

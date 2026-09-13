@@ -273,6 +273,13 @@ function getQueryParam(name){
   try{ return new URLSearchParams(window.location.search).get(name); }catch(e){ return null; }
 }
 state.joinSessionId = getQueryParam("session");
+// Story 10: a co-facilitator link (?cofacilitate=<code>) is a completely
+// different join shape from a participant's (?session=<id>) -- it boots
+// the NORMAL Tribe/Squad/Admin app (never join mode) and just attaches
+// this device to an already-open session by code, landing on Squad view
+// for that session's squad -- see retro-facilitator.js's
+// coFacilitateSessionByCode(), called once from db.js's initDb().
+state.coFacilitateSessionId = getQueryParam("cofacilitate");
 (function loadUiPrefs(){
   try{
     var v = localStorage.getItem("squadpulse:view");

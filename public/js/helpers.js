@@ -54,6 +54,13 @@ function isJoinMode(){ return !!state.joinSessionId; }
 function joinUrlFor(sessionId){
   return window.location.origin + window.location.pathname + "?session=" + encodeURIComponent(sessionId);
 }
+// Story 10: a SEPARATE link from joinUrlFor() above -- opening this one
+// attaches a device as a co-facilitator (full facilitator view) rather
+// than the participant join screen. See state.js's coFacilitateSessionId
+// and retro-facilitator.js's coFacilitateSessionByCode().
+function coFacilitateUrlFor(sessionId){
+  return window.location.origin + window.location.pathname + "?cofacilitate=" + encodeURIComponent(sessionId);
+}
 function slugify(s, fallback){
   var slug = String(s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
   return slug || fallback;

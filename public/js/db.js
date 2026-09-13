@@ -113,5 +113,15 @@ async function initDb(){
       pushBoardSnapshotIfConnected();
     }, function(err){ diag("Config snapshot listener error: " + (err && err.code ? err.code : String(err))); });
 
+    // Story 10: a co-facilitator link (?cofacilitate=<code>) attaches this
+    // device to an already-open session once everything above is wired up
+    // (squads/dimensions listeners registered, so Squad view has real data
+    // to show the moment coFacilitateSessionByCode() selects the squad).
+    if(state.coFacilitateSessionId){
+      coFacilitateSessionByCode(state.coFacilitateSessionId).catch(function(err){
+        diag("Co-facilitate attach failed: " + (err && err.message ? err.message : String(err)));
+      });
+    }
+
   }catch(e){ diag("initDb threw: " + (e && e.message ? e.message : String(e))); setSyncStatus(false); }
 }
