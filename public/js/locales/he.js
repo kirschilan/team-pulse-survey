@@ -38,7 +38,7 @@ var LOCALE_HE = {
   "admin.teamSync.join": "הצטרפות",
 
   "admin.squads.heading": "צוותים",
-  "admin.squads.hint": "הוסיפו, שנו שם או הסירו צוותים. הדירוגים שייכים לצוות, לא לשם — שינוי שם בטוח לביצוע.",
+  "admin.squads.hint": "הוסיפו, שנו שם או הסירו צוותים. הדירוגים שייכים לצוות, לא לשם הצוות — שינוי שם בטוח לביצוע ואינו משפיע על הנתונים.",
   "admin.squads.addButton": "+ הוספת {unit}",
   "admin.squads.nameAriaLabel": "שם {unit}",
   "admin.squads.removeTitle": "הסרת {unit}",
