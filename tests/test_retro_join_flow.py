@@ -86,6 +86,12 @@ with sync_playwright() as p:
     page.wait_for_timeout(150)
     print("squad-1 still shows in-progress session:", page.query_selector('#closeSessionBtn') is not None)
     assert page.query_selector('#closeSessionBtn') is not None
+    # The label must make clear this does NOT save/apply any results --
+    # it sits right next to "Finish retro & apply results", and a bare
+    # "Close session" was reported as easy to mistake for the same thing.
+    close_btn_label = page.eval_on_selector('#closeSessionBtn', 'el=>el.textContent')
+    print("close button label (must clarify no results are applied):", close_btn_label)
+    assert "without applying" in close_btn_label
 
     # ---- close the session ----
     page.click('#closeSessionBtn')

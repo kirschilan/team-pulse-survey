@@ -267,7 +267,7 @@ function renderSessionCardHtml(sq){
       '</div>' +
     '</details>' +
     finishHtml +
-    '<button class="btn danger" id="closeSessionBtn" type="button" style="margin-top:'+(finishHtml?"8px":"14px")+';">Close session</button>' +
+    '<button class="btn danger" id="closeSessionBtn" type="button" style="margin-top:'+(finishHtml?"8px":"14px")+';">Close session without applying results</button>' +
   '</div>';
 }
 
@@ -314,7 +314,7 @@ function bindSessionCardEvents(sq){
       "Close this retro session?",
       "Ends the session for everyone with the link. This does not change any of " + sq.name + "’s existing ratings.",
       function(){ closeSession(sess.id); },
-      "Close session"
+      "Close without applying results"
     );
   });
 
@@ -390,7 +390,7 @@ function bindSessionCardEvents(sq){
         "Finish this retro?",
         "No submissions or overrides yet, so " + sq.name + "’s ratings won’t change. This just closes the session.",
         function(){ closeSession(sess.id); },
-        "Close session"
+        "Close without applying results"
       );
       return;
     }
