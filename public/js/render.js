@@ -13,9 +13,7 @@ function renderAll(){
 }
 
 function renderHeader(){
-  document.getElementById("tagline").textContent =
-    "A fast, visual health snapshot across your " + unitPluralLower() +
-    " — so you can see at a glance where things are strong and where to invest next.";
+  document.getElementById("tagline").textContent = t("header.tagline", { unitPlural: unitPluralLower() });
   var badge = document.getElementById("modelBadge");
   if(state.config.activeTemplateName){
     badge.hidden = false;

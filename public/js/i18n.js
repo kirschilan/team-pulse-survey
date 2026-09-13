@@ -3,15 +3,15 @@
 
 // ---------- multi-language support ----------
 // Story 1: Admin panel. Story 4: Tribe view, Squad view, and the shared
-// rating modal. Still English-only: every other modal (Edit dimensions,
-// Templates, CSV import), and the retro facilitator/join flow (their own
-// future stories). RTL_SCOPED_CONTAINERS below lists every container
-// currently translated -- each gets its own dir/lang flip; nothing else
-// does, so a still-English screen never visually breaks under an RTL
-// layout it was never translated for. A still-English WIDGET embedded
-// inside a translated container (e.g. the retro session card inside
-// #viewSquad) sets its own dir="ltr" on its root to opt back out -- see
-// retro-facilitator.js's renderSessionCardHtml().
+// rating modal. Story 6: the app header/nav chrome. Still English-only:
+// every other modal (Edit dimensions, Templates, CSV import), and the
+// retro facilitator/join flow (their own future stories). RTL_SCOPED_CONTAINERS
+// below lists every container currently translated -- each gets its own
+// dir/lang flip; nothing else does, so a still-English screen never
+// visually breaks under an RTL layout it was never translated for. A
+// still-English WIDGET embedded inside a translated container (e.g. the
+// retro session card inside #viewSquad) sets its own dir="ltr" on its root
+// to opt back out -- see retro-facilitator.js's renderSessionCardHtml().
 //
 // LOCALE_EN (locales/en.js) is the source of truth for every key; LOCALE_HE
 // (locales/he.js) is what a human corrects when a phrase reads wrong -- see
@@ -22,7 +22,7 @@ var LOCALES = { en: LOCALE_EN, he: LOCALE_HE };
 var DEFAULT_LOCALE = "en";
 var SUPPORTED_LOCALES = ["en", "he"];
 var LANG_STORAGE_KEY = "squadpulse:lang";
-var RTL_SCOPED_CONTAINERS = ["viewAdmin", "viewTribe", "viewSquad", "backdrop"];
+var RTL_SCOPED_CONTAINERS = ["viewAdmin", "viewTribe", "viewSquad", "backdrop", "appHeader", "templatesBackdrop"];
 
 function t(key, vars){
   var loc = (state && state.ui && state.ui.locale) || DEFAULT_LOCALE;

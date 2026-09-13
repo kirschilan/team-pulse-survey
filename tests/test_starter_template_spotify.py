@@ -13,6 +13,16 @@ from fixtures.build_page import build_page, test_output_path
 
 out_path = build_page(out_name="_test_starter_spotify.html")
 
+
+def strip_bidi(s):
+    # Story 9 routed the Templates modal's row meta line (dimension count,
+    # unit) through t(), which wraps every interpolated value in Unicode
+    # bidi isolate marks (U+2066 LRI / U+2069 PDI) -- see i18n.js/STATUS.md.
+    # Invisible and harmless, but present in .textContent, so substring
+    # checks here strip them rather than matching against plain ASCII.
+    return s.replace("⁦", "").replace("⁩", "")
+
+
 with sync_playwright() as p:
     browser = p.chromium.launch()
     page = browser.new_page(viewport={"width":1280,"height":1000})
@@ -34,7 +44,7 @@ with sync_playwright() as p:
     assert has_delete is None
     meta = page.eval_on_selector('#tplList .tpl-row[data-id="starter-spotify"] .tmeta', 'el=>el.textContent')
     print("meta line:", meta)
-    assert "12 dimension" in meta
+    assert "12 dimension" in strip_bidi(meta)
 
     print("=== switch away to Five Dysfunctions, then load Spotify back ===")
     page.click('#tplList .tpl-row[data-id="starter-5dysfunctions"] [data-action="load"]')

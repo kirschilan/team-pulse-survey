@@ -97,8 +97,12 @@ with sync_playwright() as p:
     print("=== rest of the app is untouched by the Admin-only switch ===")
     page.click('.view-btn[data-view="tribe"]')
     page.wait_for_timeout(150)
+    # Story 6 made the header an i18n-supported screen (h1 IS routed through
+    # t() now), but "header.appName" is a deliberate brand-name pass-through
+    # -- same literal value in every locale -- so this stays "Squad Pulse"
+    # under Hebrew too, not because the header is untranslated.
     tribe_heading = page.eval_on_selector('h1', 'el => el.textContent')
-    print("Tribe view h1 (should still be English):", tribe_heading)
+    print("Tribe view h1 (brand name, same in every locale):", tribe_heading)
     assert tribe_heading == "Squad Pulse"
     page.click('.view-btn[data-view="admin"]')
     page.wait_for_timeout(150)

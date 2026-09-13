@@ -12,20 +12,20 @@
 
 <div class="wrap">
 
-  <header class="top">
+  <header class="top" id="appHeader">
     <div class="title-block">
-      <h1>Squad Pulse</h1>
+      <h1 data-i18n="header.appName">Squad Pulse</h1>
       <p id="tagline">A fast, visual health snapshot across your squads &mdash; so you can see at a glance where things are strong and where to invest next.</p>
       <span class="model-badge" id="modelBadge" hidden></span>
     </div>
     <div class="actions">
-      <span class="sync-note" id="syncNote"><span class="sync-dot" id="syncDot"></span><span id="syncText">Connecting&hellip;</span></span>
-      <button class="btn ghost" id="joinCodeBtn" type="button">Join a retro</button>
-      <button class="btn ghost" id="backToRetroBtn" type="button" hidden>&larr; Back to my retro</button>
+      <span class="sync-note" id="syncNote"><span class="sync-dot" id="syncDot"></span><span id="syncText" data-i18n="header.syncConnecting">Connecting&hellip;</span></span>
+      <button class="btn ghost" id="joinCodeBtn" type="button" data-i18n="header.joinRetro">Join a retro</button>
+      <button class="btn ghost" id="backToRetroBtn" type="button" hidden data-i18n="header.backToRetro">&larr; Back to my retro</button>
       <div class="view-switch" role="tablist" aria-label="View">
-        <button class="view-btn" data-view="tribe" type="button" role="tab">Tribe view</button>
-        <button class="view-btn" data-view="squad" type="button" role="tab">Squad view</button>
-        <button class="view-btn" data-view="admin" type="button" role="tab">Admin</button>
+        <button class="view-btn" data-view="tribe" type="button" role="tab" data-i18n="header.viewTribe">Tribe view</button>
+        <button class="view-btn" data-view="squad" type="button" role="tab" data-i18n="header.viewSquad">Squad view</button>
+        <button class="view-btn" data-view="admin" type="button" role="tab" data-i18n="header.viewAdmin">Admin</button>
       </div>
     </div>
   </header>
@@ -270,15 +270,15 @@
 <!-- ---------- templates modal ---------- -->
 <div class="backdrop" id="templatesBackdrop" hidden>
   <div class="modal wide" role="dialog" aria-modal="true">
-    <h3>Survey templates</h3>
-    <p class="hint">Swap in a ready-made set of dimensions, or save your current setup so you (or a teammate) can reuse it later.</p>
+    <h3 data-i18n="templates.title">Survey templates</h3>
+    <p class="hint" data-i18n="templates.hint">Swap in a ready-made set of dimensions, or save your current setup so you (or a teammate) can reuse it later.</p>
     <div class="tpl-list" id="tplList"></div>
     <div class="tpl-save-row">
-      <input type="text" id="tplNameInput" placeholder="Name this setup, e.g. &quot;My team's checklist&quot;" maxlength="80" dir="auto">
-      <button class="btn" id="tplSaveBtn" type="button">Save current as template</button>
+      <input type="text" id="tplNameInput" data-i18n-placeholder="templates.namePlaceholder" placeholder="Name this setup, e.g. &quot;My team's checklist&quot;" maxlength="80" dir="auto">
+      <button class="btn" id="tplSaveBtn" type="button" data-i18n="templates.saveButton">Save current as template</button>
     </div>
     <div class="modal-actions">
-      <button class="btn ghost" id="tplCloseBtn" type="button">Close</button>
+      <button class="btn ghost" id="tplCloseBtn" type="button" data-i18n="templates.closeButton">Close</button>
     </div>
   </div>
 </div>

@@ -123,20 +123,32 @@ var SPOTIFY_ATTRIBUTION_HE = "הממדים מותאמים ממודל Spotify Squ
 // locale.
 //
 // Both helpers refuse to translate a dimension/attribution the admin has
-// customized away from the Spotify template's own English default (checked
-// by exact string match against PLACEHOLDER_DIMENSIONS/SPOTIFY_ATTRIBUTION)
-// -- a hand-edited dimension is the admin's own content and must never be
+// customized away from ITS OWN TEMPLATE's English default (checked by exact
+// string match against that template's own `dimensions`/`attribution`) --
+// a hand-edited dimension is the admin's own content and must never be
 // silently swapped for a translation they didn't write. Checked per FIELD
 // (not per dimension), so customizing only `label` still lets `green`/`red`
 // localize normally.
+//
+// Generalized (Stories 6-9) from an earlier version hardcoded to
+// SPOTIFY_TEMPLATE alone: looks up whichever STARTER_TEMPLATES entry is
+// currently active BY NAME and uses THAT template's own `.i18n` table, so
+// any starter template that declares one (Tuckman, Five Dysfunctions, ...)
+// gets the exact same live-render-time translation for free -- no
+// per-template special-casing needed here or at any render call site.
+function activeStarterTemplate(){
+  return STARTER_TEMPLATES.find(function(t){ return t.name === state.config.activeTemplateName; });
+}
+
 function localizedDimText(dim, field){
   var value = dim[field];
   var locale = (state.ui && state.ui.locale) || "en";
   if(locale === "en") return value;
-  if(state.config.activeTemplateName !== SPOTIFY_TEMPLATE.name) return value;
-  var base = PLACEHOLDER_DIMENSIONS.find(function(p){ return p.key === dim.key; });
+  var tpl = activeStarterTemplate();
+  if(!tpl || !tpl.i18n) return value;
+  var base = tpl.dimensions.find(function(p){ return p.key === dim.key; });
   if(!base || base[field] !== value) return value;
-  var table = SPOTIFY_TEMPLATE.i18n[locale] && SPOTIFY_TEMPLATE.i18n[locale].dimensions;
+  var table = tpl.i18n[locale] && tpl.i18n[locale].dimensions;
   var tr = table && table[dim.key];
   return (tr && tr[field]) || value;
 }
@@ -144,9 +156,10 @@ function localizedDimText(dim, field){
 function localizedAttribution(attribution){
   var locale = (state.ui && state.ui.locale) || "en";
   if(locale === "en") return attribution;
-  if(state.config.activeTemplateName !== SPOTIFY_TEMPLATE.name) return attribution;
-  if(attribution !== SPOTIFY_ATTRIBUTION) return attribution;
-  var tr = SPOTIFY_TEMPLATE.i18n[locale];
+  var tpl = activeStarterTemplate();
+  if(!tpl || !tpl.i18n) return attribution;
+  if(attribution !== tpl.attribution) return attribution;
+  var tr = tpl.i18n[locale];
   return (tr && tr.attribution) || attribution;
 }
 
@@ -159,6 +172,29 @@ function localizedAttribution(attribution){
 // swatches). A later change teaches the rating flow to render these
 // statements as a mini 1/2/3 survey and compute the color from the sum
 // instead; the data is here now so that flow has something to load.
+//
+// Story 8: Hebrew translation of this template's own dimension content,
+// same shape/status as SPOTIFY_DIMENSIONS_HE/TUCKMAN_DIMENSIONS_HE above --
+// only label/green/red (not .statements/.strategies).
+var FIVE_DYSFUNCTIONS_DIMENSIONS_HE = {
+  trust:          { label:"היעדר אמון",
+    green:"אנחנו פגיעים זה כלפי זה — מודים בטעויות ובחולשות, ומבקשים עזרה, בלי פחד.",
+    red:"אנחנו נשארים סגורים; הודאה בחולשה מרגישה לא בטוחה, ולכן אמון אמיתי אף פעם לא ממש נוצר." },
+  conflict:       { label:"פחד מקונפליקט",
+    green:"אנחנו מנהלים דיון ישיר ונלהב על רעיונות — חילוקי דעות הם דבר נורמלי ופרודוקטיבי.",
+    red:"אנחנו נמנעים מחיכוך כדי לשמור על שקט, כך שחילוקי דעות אמיתיים נשארים מתחת לפני השטח (הרמוניה מדומה)." },
+  commitment:     { label:"היעדר מחויבות",
+    green:"אנחנו יוצאים מהחלטות עם בהירות ומחויבות, גם אחרי ויכוח אמיתי — \"לחלוק דעה ולהתחייב\".",
+    red:"החלטות נשארות מעורפלות או מוסכמות רק בחלקן, כך שהצוות חוזר ודן בהן שוב מאוחר יותר (תחושת חוסר בהירות)." },
+  accountability: { label:"הימנעות מאחריותיות",
+    green:"אנחנו דורשים אחריותיות זה מזה באופן ישיר, גם כשזה לא נוח.",
+    red:"אנחנו סובלים סטנדרטים נמוכים במקום להעיר אחד לשני." },
+  results:        { label:"התעלמות מתוצאות",
+    green:"אנחנו נשארים ממוקדים בתוצאות המשותפות של הצוות, מעל מעמד אישי או אגו.",
+    red:"מטרות אישיות או אגו תופסים בשקט עדיפות על פני התוצאות המשותפות של הצוות." }
+};
+var FIVE_DYSFUNCTIONS_ATTRIBUTION_HE = "מותאם מהערכת \"חמשת התפקודים הלקויים של צוות\" מאת פטריק לנציוני (The Table Group). טווחי הניקוד 8–9 / 6–7 / 3–5 לקוחים מההערכה המקורית; איחוד תשובות של כמה חברי צוות לדירוג לוח אחד, וההחלפה הידנית של המנחה, הם פרי פיתוחה של Dr. Agile.";
+
 var FIVE_DYSFUNCTIONS_TEMPLATE = {
   id: "starter-5dysfunctions",
   starter: true,
@@ -216,7 +252,10 @@ var FIVE_DYSFUNCTIONS_TEMPLATE = {
         "Team members are slow to seek credit for their own contributions, but quick to point out those of others."
       ],
       strategies:[ "Keep the team focused on tangible group goals.", "Reward individuals based on team goals and collective success." ] }
-  ]
+  ],
+  i18n: {
+    he: { attribution: FIVE_DYSFUNCTIONS_ATTRIBUTION_HE, dimensions: FIVE_DYSFUNCTIONS_DIMENSIONS_HE }
+  }
 };
 
 // Tuckman's stages of group development (forming/storming/norming/
@@ -231,6 +270,31 @@ var FIVE_DYSFUNCTIONS_TEMPLATE = {
 // that reading (green = "prominent," not "good news") rather than
 // reinterpreting Tuckman as if one stage were objectively better than
 // another -- the green/red anchor text on each dimension spells this out.
+//
+// Story 7: Hebrew translation of this template's own dimension content,
+// same shape and same AI-translated/pending-human-review status as
+// SPOTIFY_DIMENSIONS_HE above -- only label/green/red are translated (not
+// .statements/.strategies: nothing reads those yet, see the comment on
+// FIVE_DYSFUNCTIONS_TEMPLATE below for why).
+var TUCKMAN_DIMENSIONS_HE = {
+  forming:    { label:"התהוות",
+    green:"השלב הזה בולט כרגע — הצוות עדיין מתמצא, המטרות עשויות להיות לא ברורות, וחברי הצוות נשענים על המנהיג לכיוון.",
+    red:"שלב ההתהוות לא בולט במיוחד כרגע — ייתכן שהצוות כבר עבר את ההתמצאות הראשונית, או שהוא עדיין בתהליך ההתבססות." },
+  storming:   { label:"התססה",
+    green:"השלב הזה בולט כרגע — חילוקי דעות עולים לפני השטח, ניכרת התנגדות מסוימת למשימה, ומתח או אג'נדות אישיות מתחילים להופיע.",
+    red:"שלב ההתססה לא בולט במיוחד כרגע — קונפליקט והתנגדות לא שולטים כרגע." },
+  norming:    { label:"התכנסות",
+    green:"השלב הזה בולט כרגע — הצוות הסכים על נורמות משותפות, התפקידים ברורים, ותמיכה הדדית מתפתחת.",
+    red:"שלב ההתכנסות לא בולט במיוחד כרגע — נורמות משותפות ובהירות תפקידים עשויות עדיין להיות בתהליך התבססות." },
+  performing: { label:"ביצוע",
+    green:"השלב הזה בולט כרגע — הצוות פועל בגמישות ובתלות הדדית, עם אנרגיה ממוקדת בתוצאות ופרודוקטיביות גבוהה.",
+    red:"שלב הביצוע לא בולט במיוחד כרגע — הצוות לא פועל ברמת הגמישות והמיקוד בתוצאות הזו." },
+  adjourning: { label:"התפזרות",
+    green:"השלב הזה בולט כרגע — הצוות מהרהר במה שהשיג ולמד, ומכיר בתרומתו של כל אחד ככל שהדברים מסתיימים או משתנים.",
+    red:"שלב ההתפזרות לא בולט במיוחד כרגע — הצוות לא נמצא ברגע של סיום או מעבר." }
+};
+var TUCKMAN_ATTRIBUTION_HE = "מותאם משלבי ההתפתחות הקבוצתית של ברוס טאקמן (התהוות, התססה, התכנסות, ביצוע, התפזרות). טווחי הניקוד 10–12 / 8–9 / 4–7 לקוחים מההערכה המקורית; איחוד תשובות של כמה חברי צוות לדירוג לוח אחד, וההחלפה הידנית של המנחה, הם פרי פיתוחה של Dr. Agile.";
+
 var TUCKMAN_TEMPLATE = {
   id: "starter-tuckman",
   starter: true,
@@ -293,7 +357,10 @@ var TUCKMAN_TEMPLATE = {
         "We are taking time to celebrate successes and plan for what comes next."
       ],
       strategies:[ "Conduct retrospectives and harvest lessons learned.", "Acknowledge individual and collective contributions.", "Recognize emotions and the value of relationships.", "Plan intentional closures and transitions." ] }
-  ]
+  ],
+  i18n: {
+    he: { attribution: TUCKMAN_ATTRIBUTION_HE, dimensions: TUCKMAN_DIMENSIONS_HE }
+  }
 };
 
 // The board's own default dimension set (PLACEHOLDER_DIMENSIONS above) was
@@ -405,6 +472,8 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     PLACEHOLDER_DIMENSIONS: PLACEHOLDER_DIMENSIONS,
     SPOTIFY_TEMPLATE: SPOTIFY_TEMPLATE,
+    FIVE_DYSFUNCTIONS_TEMPLATE: FIVE_DYSFUNCTIONS_TEMPLATE,
+    TUCKMAN_TEMPLATE: TUCKMAN_TEMPLATE,
     SPOTIFY_ATTRIBUTION: SPOTIFY_ATTRIBUTION,
     STARTER_TEMPLATES: STARTER_TEMPLATES,
     localizedDimText: localizedDimText,

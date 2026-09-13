@@ -14,6 +14,43 @@
 // sentence -- translating the unit label itself is a separate, deeper
 // feature this story doesn't attempt.
 var LOCALE_HE = {
+  // Story 6: the app header/nav chrome. "header.appName" is a deliberate
+  // brand-name pass-through -- kept as the same Latin-script text as
+  // English (common practice for a product/brand name even in an RTL UI)
+  // rather than translated.
+  "header.appName": "Squad Pulse",
+  "header.tagline": "תמונת מצב בריאותית ויזואלית ומהירה על ה{unitPlural} שלכם — כדי לראות במבט אחד היכן המצב טוב והיכן כדאי להשקיע קודם.",
+  "header.syncConnecting": "מתחבר…",
+  "header.syncLive": "פעיל — מסונכרן בין הצופים",
+  "header.syncPreviewOnly": "תצוגה מקדימה בלבד — לא מחובר",
+  "header.joinRetro": "הצטרפות לרטרו",
+  "header.backToRetro": "← חזרה לרטרו שלי",
+  "header.viewTribe": "תצוגת שבט",
+  "header.viewSquad": "תצוגת צוות",
+  "header.viewAdmin": "ניהול",
+
+  "templates.title": "תבניות סקר",
+  "templates.hint": "החליפו לסט מוכן מראש של ממדים, או שמרו את ההגדרה הנוכחית שלכם כדי שתוכלו (או חבר צוות) לעשות בה שימוש חוזר מאוחר יותר.",
+  "templates.starterHeading": "תבניות מוכנות מראש",
+  "templates.ownHeading": "התבניות שלכם",
+  "templates.emptyOwnHint": "עדיין אין תבניות שמורות — הגדירו את הממדים כרצונכם, ואז שמרו את ההגדרה הנוכחית כתבנית למטה.",
+  "templates.namePlaceholder": "תנו שם להגדרה הזו, למשל “הרשימה של הצוות שלי”",
+  "templates.saveButton": "שמירת ההגדרה הנוכחית כתבנית",
+  "templates.closeButton": "סגירה",
+  "templates.loadButton": "טעינה",
+  "templates.deleteTitle": "מחיקת תבנית",
+  "templates.meta.dimensionsOne": "ממד 1",
+  "templates.meta.dimensionsMany": "{count} ממדים",
+  "templates.meta.rates": " · מדרג {unit}",
+  "templates.meta.scoredFromStatements": " · {count} מדורגים על סמך היגדים",
+  "templates.confirmLoadTitle": "לטעון את “{name}”?",
+  "templates.confirmLoadMessage": "פעולה זו תחליף את {oldCount} הממדים הנוכחיים שלכם ב-{newCount} הממדים של {name}. דירוגים המשויכים לממדים שלא עוברים יוסתרו, לא יימחקו.",
+  "templates.confirmLoadButton": "טעינת תבנית",
+  "templates.confirmDeleteTitle": "למחוק את “{name}”?",
+  "templates.confirmDeleteMessage": "פעולה זו מסירה את התבנית השמורה. היא לא תשפיע על הממדים או הדירוגים הנוכחיים שלכם.",
+  "templates.confirmDeleteButton": "מחיקה",
+  "templates.switchingBusy": "עובר אל “{name}”…",
+
   "admin.language.heading": "שפה",
   "admin.language.betaBadge": "בטא",
   "admin.language.hint": "בחרו את שפת מסך הניהול. חלקים נוספים באפליקציה יתווספו בהמשך ככל שכיסוי התרגום יגדל.",

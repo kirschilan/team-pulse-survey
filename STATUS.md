@@ -449,10 +449,10 @@ recall exercise instead of something anyone could just read.
 | 3 | Formalized the Definition of Done (`docs/DefinitionOfDone.md`) | **DONE** (2026-09-13) |
 | 4 | Tribe view, Squad view, and the shared rating modal's UI chrome translated | **DONE** (2026-09-13) |
 | 5 | Spotify Squad Health Check template's dimension content (label/green/red/attribution) translated, live at render time | **DONE** (2026-09-13) |
-| 6 | Application header/nav chrome: `h1` "Squad Pulse", the tagline, the model-name badge, "Live — synced across viewers", the "Join a retro" button, and the Tribe view/Squad view/Admin switcher — currently untranslated and not scoped to any prior story (flagged when reviewing a screenshot of it) | Not started |
-| 7 | Tuckman's Team Development Stages template's dimension content translated | Not started |
-| 8 | The Five Dysfunctions of a Team template's dimension content translated | Not started |
-| 9 | Templates modal's own chrome (list labels, "Load"/"Delete" buttons, save-as-template form) — the template NAMES themselves (e.g. "Spotify Squad Health Check") stay English by design, same call already made for Story 5 | Not started |
+| 6 | Application header/nav chrome: `h1` "Squad Pulse", the tagline, the model-name badge, "Live — synced across viewers", the "Join a retro" button, and the Tribe view/Squad view/Admin switcher — currently untranslated and not scoped to any prior story (flagged when reviewing a screenshot of it) | **DONE** (2026-09-13) |
+| 7 | Tuckman's Team Development Stages template's dimension content translated | **DONE** (2026-09-13) |
+| 8 | The Five Dysfunctions of a Team template's dimension content translated | **DONE** (2026-09-13) |
+| 9 | Templates modal's own chrome (list labels, "Load"/"Delete" buttons, save-as-template form) — the template NAMES themselves (e.g. "Spotify Squad Health Check") stay English by design, same call already made for Story 5 | **DONE** (2026-09-13) |
 | 10 | Retro join flow (participant-facing screens) | Not started |
 | 11 | Retro facilitation flow (facilitator-facing screens, session cards, overrides) | Not started |
 | 12 | Dimension detail and Edit Dimensions modal (Admin) | Not started |
@@ -1273,3 +1273,57 @@ not just in this repo's own tests.
      "release", hover "process" directly (no gap), confirm the tooltip updates to "Suitable process"
      (not stuck on the old content), then confirm a genuine leave afterward still hides it. Full suite
      verified green (55-test unit + 34-file Playwright, serial `TEST_JOBS=1`).
+- 2026-09-13 — **Multi-language rollout Stories 6-9: app header/nav chrome, Tuckman + Five
+  Dysfunctions template content, and the Templates modal's own chrome.**
+  - **Story 6 (header/nav):** new `#appHeader` id on `<header class="top">`, added to
+    `RTL_SCOPED_CONTAINERS`. New `header.*` locale keys for the tagline (now `t()`-driven instead of
+    hardcoded string concatenation in `render.js`'s `renderHeader()`), the sync-status text
+    (`db.js`'s `setSyncStatus()`), "Join a retro"/"← Back to my retro", and the Tribe/Squad/Admin
+    view-switch buttons. `header.appName` ("Squad Pulse") is a deliberate BRAND-NAME PASS-THROUGH --
+    same literal value in every locale, still routed through `t()` so it satisfies "every string on
+    an i18n-supported screen goes through `t()`" mechanically without translating a proper noun; the
+    model badge (a TEMPLATE's own display name) is correctly untouched (Story 9's territory, not
+    this one's). New `tests/test_header_language.py`.
+  - **Stories 7-8 (Tuckman / Five Dysfunctions dimension content):** required generalizing Story 5's
+    `localizedDimText()`/`localizedAttribution()` FIRST -- they were hardcoded to `SPOTIFY_TEMPLATE`
+    specifically. New `activeStarterTemplate()` (`state.js`) looks up whichever `STARTER_TEMPLATES`
+    entry is active BY NAME and uses THAT template's own `.i18n` table, so any starter template that
+    declares one gets live-render-time translation for free, no per-template special-casing at any
+    render call site. Proven with a throwaway synthetic template in
+    `tests/unit/test_template_locale.js` BEFORE writing the generalization (watched fail), and the
+    old Spotify-specific tests rewritten to run generically across every `STARTER_TEMPLATES` entry
+    that declares `.i18n` (Tuckman/Five Dysfunctions join the DOD-parity checks automatically the
+    moment they declare one -- no test-code changes needed per template going forward). New
+    `TUCKMAN_DIMENSIONS_HE`/`TUCKMAN_ATTRIBUTION_HE` and
+    `FIVE_DYSFUNCTIONS_DIMENSIONS_HE`/`FIVE_DYSFUNCTIONS_ATTRIBUTION_HE` (`state.js`), same
+    AI-translated/pending-human-review status and label/green/red-only scope as Spotify's (not
+    `.statements`/`.strategies` -- nothing outside the retro statement-survey flow reads those, and
+    that flow stays English by design, see below). New scenarios appended to
+    `tests/test_scored_template_tuckman.py`/`tests/test_scored_template_five_dysfunctions.py`:
+    switching to Hebrew shows Hebrew content in the Tribe legend live (no reload), stored dimension
+    docs stay English always, and -- for Tuckman, which that file already has a live retro session
+    running -- the ALREADY-STARTED session's participant-facing results stay English, since the retro
+    flow itself is still untranslated (its own future story), same precedent Story 5 established.
+  - **Story 9 (Templates modal chrome):** new `templates.*` locale keys for the modal's title/hint,
+    "Starter templates"/"Your templates" headings, Load/Delete buttons and their confirm dialogs, the
+    save-as-template row, Close, the busy-overlay "Switching to..." message, and the per-row meta
+    line (dimension count/unit/scored-count, now correctly bidi-isolated via `t()`'s interpolation --
+    fixed one existing test, `test_starter_template_spotify.py`, whose exact-substring assertion on
+    that line predated the isolate marks, same category of fix the DOD already documents). Template
+    NAMES and a starter template's own dimension content stay untouched, per the same "admin's own
+    content, not app chrome" principle as a manually customized dimension. `templatesBackdrop` added
+    to `RTL_SCOPED_CONTAINERS`. **Real bug caught before it shipped, not after:** `templates.js`
+    named its template-object parameter/local variable `t` throughout (`templateRowHtml(t, opts)`,
+    `loadTemplate(t)`, a `var t = findAnyTemplateById(id)` inside `renderTemplateList()`) -- which
+    SHADOWS the global `t()` translation function for the rest of that scope. Calling `t("some.key")`
+    inside a scope where `t` had been reassigned to a template object would have thrown a TypeError
+    at runtime the moment Hebrew was active and that code path ran. Caught while writing this
+    story's own i18n wiring, before ever running it, by recognizing the naming collision -- fixed by
+    renaming every template-object reference in the file to `tpl` (verified via `grep` that no `t`
+    binding remains anywhere in `templates.js` besides the explanatory comment). New
+    `tests/test_templates_language.py`.
+  - All four stories' Playwright tests were written and watched fail for the right reason before
+    their implementation landed, per this repo's test-first policy. Full suite verified: 65-test unit
+    suite and the full 36-file Playwright suite (2 new files this session), run entirely serially
+    (`TEST_JOBS=1`, no parallelization, per explicit instruction), zero regressions after one real
+    fix along the way (the bidi-isolate assertion above).

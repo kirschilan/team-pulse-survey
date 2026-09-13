@@ -15,6 +15,49 @@
 // itself translated here; that's a separate, deeper feature this story
 // doesn't attempt.
 var LOCALE_EN = {
+  // Story 6: the app header/nav chrome, outside every view container. The
+  // app NAME itself is a deliberate brand-name pass-through -- same literal
+  // value in every locale (see locales/he.js's header comment) -- still
+  // routed through t() so it satisfies "every string on an i18n-supported
+  // screen goes through t()" mechanically without producing an awkward
+  // literal translation of a proper noun.
+  "header.appName": "Squad Pulse",
+  "header.tagline": "A fast, visual health snapshot across your {unitPlural} — so you can see at a glance where things are strong and where to invest next.",
+  "header.syncConnecting": "Connecting…",
+  "header.syncLive": "Live — synced across viewers",
+  "header.syncPreviewOnly": "Preview only — not connected",
+  "header.joinRetro": "Join a retro",
+  "header.backToRetro": "← Back to my retro",
+  "header.viewTribe": "Tribe view",
+  "header.viewSquad": "Squad view",
+  "header.viewAdmin": "Admin",
+
+  // Story 9: the Templates modal's own chrome. The template NAMES
+  // themselves and a starter template's own dimension content (Stories
+  // 5/7/8) are NOT covered here -- a template's name and a saved custom
+  // template's dimension text are the admin's own content, not app chrome.
+  "templates.title": "Survey templates",
+  "templates.hint": "Swap in a ready-made set of dimensions, or save your current setup so you (or a teammate) can reuse it later.",
+  "templates.starterHeading": "Starter templates",
+  "templates.ownHeading": "Your templates",
+  "templates.emptyOwnHint": "No saved templates yet — set up your dimensions the way you want, then save the current setup as a template below.",
+  "templates.namePlaceholder": "Name this setup, e.g. “My team's checklist”",
+  "templates.saveButton": "Save current as template",
+  "templates.closeButton": "Close",
+  "templates.loadButton": "Load",
+  "templates.deleteTitle": "Delete template",
+  "templates.meta.dimensionsOne": "1 dimension",
+  "templates.meta.dimensionsMany": "{count} dimensions",
+  "templates.meta.rates": " · rates {unit}",
+  "templates.meta.scoredFromStatements": " · {count} scored from statements",
+  "templates.confirmLoadTitle": "Load “{name}”?",
+  "templates.confirmLoadMessage": "This replaces your current {oldCount} dimension(s) with {name}'s {newCount}. Ratings tied to dimensions that don't carry over will be hidden, not deleted.",
+  "templates.confirmLoadButton": "Load template",
+  "templates.confirmDeleteTitle": "Delete “{name}”?",
+  "templates.confirmDeleteMessage": "This removes the saved template. It won't affect your current dimensions or ratings.",
+  "templates.confirmDeleteButton": "Delete",
+  "templates.switchingBusy": "Switching to “{name}”…",
+
   "admin.language.heading": "Language",
   "admin.language.betaBadge": "Beta",
   "admin.language.hint": "Choose the language for the Admin panel. More of the app will follow as translation coverage grows.",

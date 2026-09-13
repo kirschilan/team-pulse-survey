@@ -4,7 +4,7 @@
 // ---------- live sync ----------
 function setSyncStatus(live){
   document.getElementById("syncDot").classList.toggle("off", !live);
-  document.getElementById("syncText").textContent = live ? "Live — synced across viewers" : "Preview only — not connected";
+  document.getElementById("syncText").textContent = live ? t("header.syncLive") : t("header.syncPreviewOnly");
 }
 
 async function initDb(){

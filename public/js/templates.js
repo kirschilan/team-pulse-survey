@@ -20,50 +20,57 @@ document.getElementById("templatesBtn").addEventListener("click", openTemplates)
 document.getElementById("tplCloseBtn").addEventListener("click", closeTemplates);
 templatesBackdrop.addEventListener("click", function(e){ if(e.target===templatesBackdrop) closeTemplates(); });
 
-function templateRowHtml(t, opts){
-  var scoredCount = (t.dimensions||[]).filter(isStatementDimension).length;
-  var meta = t.dimensions.length+' dimension'+(t.dimensions.length===1?"":"s")+(t.unit?(' &middot; rates '+esc(t.unitPlural||t.unit)):"") +
-    (scoredCount ? (' &middot; '+scoredCount+' scored from statements') : "");
-  return '<div class="tpl-row" data-id="'+esc(t.id)+'">' +
+// NOTE: the template object parameter is named `tpl`, not `t`, throughout
+// this file -- `t` is the global translation function (i18n.js), and a
+// local `var t = <template>` would shadow it for the rest of that scope,
+// silently turning any `t("some.key")` call inside into "call this template
+// object as a function" (a TypeError at runtime). Real risk introduced by
+// Story 9's i18n wiring below, not a style preference.
+function templateRowHtml(tpl, opts){
+  var scoredCount = (tpl.dimensions||[]).filter(isStatementDimension).length;
+  var meta = (tpl.dimensions.length===1 ? t("templates.meta.dimensionsOne") : t("templates.meta.dimensionsMany", {count: tpl.dimensions.length})) +
+    (tpl.unit ? t("templates.meta.rates", {unit: tpl.unitPlural||tpl.unit}) : "") +
+    (scoredCount ? t("templates.meta.scoredFromStatements", {count: scoredCount}) : "");
+  return '<div class="tpl-row" data-id="'+esc(tpl.id)+'">' +
     '<div class="tinfo">' +
-      '<div class="tname" dir="auto">'+esc(t.name)+'</div>' +
+      '<div class="tname" dir="auto">'+esc(tpl.name)+'</div>' +
       '<div class="tmeta">'+meta+'</div>' +
     '</div>' +
-    '<button class="btn" data-action="load" type="button">Load</button>' +
+    '<button class="btn" data-action="load" type="button">'+esc(t("templates.loadButton"))+'</button>' +
     (opts && opts.deletable === false ? "" :
-      '<button class="icon-btn danger" data-action="delete" title="Delete template" type="button">' +
+      '<button class="icon-btn danger" data-action="delete" title="'+esc(t("templates.deleteTitle"))+'" type="button">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0-1 13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7"/></svg></button>') +
   '</div>';
 }
 
 function renderTemplateList(){
-  var starterHtml = STARTER_TEMPLATES.map(function(t){ return templateRowHtml(t, { deletable:false }); }).join("");
-  var ownHtml = state.templates.map(function(t){ return templateRowHtml(t); }).join("");
+  var starterHtml = STARTER_TEMPLATES.map(function(tpl){ return templateRowHtml(tpl, { deletable:false }); }).join("");
+  var ownHtml = state.templates.map(function(tpl){ return templateRowHtml(tpl); }).join("");
   var html =
-    '<div class="field-label" style="margin-top:0;">Starter templates</div>' +
+    '<div class="field-label" style="margin-top:0;">'+esc(t("templates.starterHeading"))+'</div>' +
     starterHtml +
-    '<div class="field-label">Your templates</div>' +
-    (ownHtml || '<p class="hint" style="margin:0;">No saved templates yet — set up your dimensions the way you want, then “Save current as template” below.</p>');
+    '<div class="field-label">'+esc(t("templates.ownHeading"))+'</div>' +
+    (ownHtml || '<p class="hint" style="margin:0;">'+esc(t("templates.emptyOwnHint"))+'</p>');
   document.getElementById("tplList").innerHTML = html;
   document.querySelectorAll("#tplList .tpl-row").forEach(function(row){
     var id = row.getAttribute("data-id");
-    var t = findAnyTemplateById(id);
-    if(!t) return;
+    var tpl = findAnyTemplateById(id);
+    if(!tpl) return;
     row.querySelector('[data-action="load"]').addEventListener("click", function(){
       openConfirm(
-        "Load “" + t.name + "”?",
-        "This replaces your current " + state.dimensions.length + " dimension(s) with " + t.name + "’s " + t.dimensions.length + ". Ratings tied to dimensions that don't carry over will be hidden, not deleted.",
-        function(){ loadTemplate(t); },
-        "Load template"
+        t("templates.confirmLoadTitle", {name: tpl.name}),
+        t("templates.confirmLoadMessage", {oldCount: state.dimensions.length, name: tpl.name, newCount: tpl.dimensions.length}),
+        function(){ loadTemplate(tpl); },
+        t("templates.confirmLoadButton")
       );
     });
     var delBtn = row.querySelector('[data-action="delete"]');
     if(delBtn) delBtn.addEventListener("click", function(){
       openConfirm(
-        "Delete “" + t.name + "”?",
-        "This removes the saved template. It won't affect your current dimensions or ratings.",
-        function(){ deleteTemplate(t.id); },
-        "Delete"
+        t("templates.confirmDeleteTitle", {name: tpl.name}),
+        t("templates.confirmDeleteMessage"),
+        function(){ deleteTemplate(tpl.id); },
+        t("templates.confirmDeleteButton")
       );
     });
   });
@@ -105,14 +112,14 @@ function saveCurrentAsTemplate(name){
 }
 
 function deleteTemplate(id){
-  state.templates = state.templates.filter(function(t){ return t.id!==id; });
+  state.templates = state.templates.filter(function(tpl){ return tpl.id!==id; });
   renderTemplateList();
   syncLiveIfConnected(function(){
     return state.db.collection("templates").doc(id).delete();
   }, "Delete template " + id);
 }
 
-function loadTemplate(t){
+function loadTemplate(tpl){
   // Stored dimension/config content is ALWAYS the template's own English
   // (Story 5: for the Spotify starter template, PLACEHOLDER_DIMENSIONS'
   // canonical text either way -- localizing it for a non-English locale is
@@ -124,17 +131,17 @@ function loadTemplate(t){
   // Templates modal, and lets those helpers reliably tell "still the
   // template's own text" apart from "an admin customized this."
   var newConfig = {
-    unit: t.unit || state.config.unit,
-    unitPlural: t.unitPlural || state.config.unitPlural,
-    activeTemplateName: t.name,
-    attribution: t.attribution || ""
+    unit: tpl.unit || state.config.unit,
+    unitPlural: tpl.unitPlural || state.config.unitPlural,
+    activeTemplateName: tpl.name,
+    attribution: tpl.attribution || ""
   };
   // reuse each dimension's saved key (falling back to a template-namespaced
   // slug of its label for templates saved before keys were tracked) --
   // loading the SAME template again later re-creates the SAME dimension
   // ids, so any ratings given while it was active are still there
-  var newDimSpecs = t.dimensions.map(function(d, i){
-    var key = d.key || slugify(t.id + "-" + d.label, t.id + "-dim-" + (i+1));
+  var newDimSpecs = tpl.dimensions.map(function(d, i){
+    var key = d.key || slugify(tpl.id + "-" + d.label, tpl.id + "-dim-" + (i+1));
     var spec = { key:key, label:d.label, green:d.green||"", red:d.red||"", order:d.order||(i+1) };
     if(isStatementDimension(d)) spec.statements = d.statements;
     if(d.scoreBands) spec.scoreBands = d.scoreBands;
@@ -143,8 +150,8 @@ function loadTemplate(t){
   });
 
   if(state.live && state.db){
-    showBusy('Switching to “' + t.name + '”…');
-    diag("Loading template '" + t.name + "': removing " + state.dimensions.length + " current dimension(s)...");
+    showBusy(t("templates.switchingBusy", {name: tpl.name}));
+    diag("Loading template '" + tpl.name + "': removing " + state.dimensions.length + " current dimension(s)...");
     var oldKeys = state.dimensions.map(function(d){ return d.key; });
     var newKeys = {}; newDimSpecs.forEach(function(d){ newKeys[d.key] = true; });
     // only delete old dimensions that the incoming set doesn't reuse --
@@ -152,7 +159,7 @@ function loadTemplate(t){
     var toDelete = oldKeys.filter(function(k){ return !newKeys[k]; });
     Promise.all(toDelete.map(function(k){ return state.db.collection("dimensions").doc(k).delete(); }))
       .then(function(){
-        diag("Writing " + newDimSpecs.length + " dimension(s) for '" + t.name + "'...");
+        diag("Writing " + newDimSpecs.length + " dimension(s) for '" + tpl.name + "'...");
         return Promise.all(newDimSpecs.map(function(d){
           var payload = { label:d.label, green:d.green, red:d.red, order:d.order, updatedAt: nowIso() };
           // statements/scoreBands/strategies are optional content used by the
@@ -168,7 +175,7 @@ function loadTemplate(t){
         return state.db.doc("meta/config").set(Object.assign({}, newConfig, { updatedAt: nowIso() }));
       })
       .then(function(){
-        diag("Template '" + t.name + "' loaded successfully.");
+        diag("Template '" + tpl.name + "' loaded successfully.");
         hideBusy();
         closeDimManager();
         closeTemplates();
