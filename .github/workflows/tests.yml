@@ -39,7 +39,11 @@ jobs:
       # `shard - count` wherever it's referenced. A plain job-level env
       # var sidesteps that entirely. Bump this (and extend the `shard`
       # list below to match) if the suite grows enough to want
-      # finer-grained sharding later.
+      # finer-grained sharding later. tests/run_all.sh's own default
+      # (no-args) invocation shards locally using the same count and the
+      # same split logic, as a local copy of this value, not read from it
+      # (no shared source of truth between a workflow file and a bash
+      # script) -- if this number changes, check that one too.
       SHARD_COUNT: 3
     strategy:
       fail-fast: false

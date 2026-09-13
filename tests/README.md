@@ -105,21 +105,34 @@ safe with zero test changes. `run_all.sh` dispatches through
 latter is a known-broken combination on macOS/BSD's `xargs` (fails with
 "command line cannot be assembled, too long" even for a single short
 input; see `run_all.sh`'s own comment). `run_all.sh` defaults to 2 workers
-at a time; measured on a 4-core machine, that ran the full suite with zero
-failures in a bit over a third of the serial time (a plain
-`for f in tests/test_*.py; do python3 "$f"; done` loop). Pushing
+at a time; measured on a 4-core machine early on (~30 files), that ran the
+full suite with zero failures in a bit over a third of the serial time (a
+plain `for f in tests/test_*.py; do python3 "$f"; done` loop). Pushing
 concurrency to 4 (one worker per core, no headroom) cut it further but
-produced a real, reproducible flake in a timing-sensitive relay test
-purely from CPU contention (an element read right after a genuine
-WebSocket round trip occasionally hadn't rendered yet) — passing
-standalone every time, only failing under a fully-saturated CPU. 2 is the
-concurrency this repo has actually verified safe; raise it
-(`TEST_JOBS=N tests/run_all.sh`) only after checking your own machine has
-the headroom, and re-running enough times to trust it. CI shards the suite
-further still — see `.github/workflows/tests.yml`'s `playwright` job's own
-comments for why that's a matrix of separate runners, not just a bigger
-`TEST_JOBS`. (Exact current file count: `ls tests/test_*.py | wc -l` —
-deliberately not hardcoded here, since it drifts as the suite grows.)
+produced a real, reproducible flake purely from CPU contention — passing
+standalone every time, only failing under a fully-saturated CPU.
+
+That "2 is safe" number was never re-measured as the suite kept growing,
+and it stopped holding: by 35 files, a single unsharded `TEST_JOBS=2` batch
+over the WHOLE suite started failing reproducibly (same class of CPU/CDP
+contention crash, confirmed unrelated to any specific test's code via a
+git-stash comparison against the pre-change version). What kept working at
+any size tried: splitting the suite into groups of ~12 files first, THEN
+running each group at `TEST_JOBS=2` — exactly what CI's own 3-way shard
+already does. So `run_all.sh`'s default (no-args) invocation now shards
+itself the same way locally before running anything, rather than handing
+the whole discovered file list to one `xargs` batch — see its own comment
+for the exact reasoning and the `SHARD_COUNT` env var. An explicit file
+list (`run_all.sh tests/test_a.py tests/test_b.py`, which is what CI's own
+per-shard job passes) is never re-sharded, only default discovery is.
+Practical effect: "the full suite passes locally" and "CI is green" are now
+the same claim, checked the same way, instead of two configurations that
+can silently drift apart as the suite grows — which is exactly what
+happened here. Raise `TEST_JOBS` or `SHARD_COUNT` only after checking your
+own machine has the headroom, and re-running enough times to trust it.
+(Exact current file count: `ls tests/test_*.py | wc -l` — deliberately not
+hardcoded here, since it drifts as the suite grows, which is the whole
+lesson of this section.)
 
 If a specific file still feels slow, `time python3 tests/test_whatever.py`
 it directly — the fake-store files should mostly run in the 2-6s range

@@ -32,27 +32,66 @@
 # to reconstruct) plus `-P` is the standard, documented macOS-safe
 # parallel-xargs idiom, and works identically on GNU findutils too.
 #
-# Usage: tests/run_all.sh                    (default: every test_*.py file, 2 workers)
+# Usage: tests/run_all.sh                    (default: every test_*.py file, sharded -- see below)
 #        TEST_JOBS=4 tests/run_all.sh
 #        tests/run_all.sh tests/test_a.py tests/test_b.py   (run only these -- CI's
-#                                                             per-shard matrix job uses this)
+#                                                             per-shard matrix job uses this,
+#                                                             and an explicit list is NEVER
+#                                                             re-sharded, only default discovery is)
+#
+# Sharding the DEFAULT (no-args) file list, found the hard way: -P 2 was
+# measured safe for the whole suite back when it had ~30 files, but that
+# number was never re-measured as the suite kept growing -- by 35 files, a
+# single unsharded `xargs -P 2` batch over everything started failing
+# reproducibly (opaque CDP-level crashes under CPU contention on a 4-core
+# box, not a code bug -- confirmed identical on pre-change code via a
+# git-stash comparison). What DIDN'T fail, at any suite size tried:
+# .github/workflows/tests.yml's own 3-way shard, each shard independently
+# run through this same script at TEST_JOBS=2 -- 9/9 clean across all three
+# shards, three runs each, right when the unsharded 35-file run was failing
+# 10/10. So the default (no-args) path below now reproduces THAT exact
+# split locally -- same `NR % n == i` partitioning CI uses, same shard
+# count -- run one shard fully before starting the next, rather than one
+# large batch. This trades some theoretical parallel speed (now closer to
+# ~90s than the ~80s the old unsharded call achieved when it wasn't
+# crashing) for actually finishing reliably, and means "the full suite
+# passes locally" and "CI is green" are now the same claim, checked the
+# same way -- not two different configurations that can silently diverge.
+#
+# SHARD_COUNT here is a local copy of .github/workflows/tests.yml's own
+# SHARD_COUNT env var, not read from it (a bash script and a GitHub Actions
+# workflow have no shared source of truth to draw from) -- if one changes,
+# check whether the other still matches the suite's actual size.
+SHARD_COUNT="${SHARD_COUNT:-3}"
+
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
 JOBS="${TEST_JOBS:-2}"
 
 if [ "$#" -gt 0 ]; then
-  files=("$@")
-else
-  files=(tests/test_*.py)
+  printf '%s\n' "$@" | xargs -n 1 -P "$JOBS" tests/_run_one.sh
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    echo "All Playwright tests passed (TEST_JOBS=$JOBS)."
+  else
+    echo "One or more Playwright tests FAILED (TEST_JOBS=$JOBS) -- see above."
+  fi
+  exit "$status"
 fi
 
-printf '%s\n' "${files[@]}" | xargs -n 1 -P "$JOBS" tests/_run_one.sh
-status=$?
+status=0
+for shard in $(seq 0 $((SHARD_COUNT - 1))); do
+  mapfile -t files < <(ls tests/test_*.py | awk -v n="$SHARD_COUNT" -v i="$shard" 'NR % n == i')
+  echo "--- shard $shard/$SHARD_COUNT: ${#files[@]} file(s) ---"
+  printf '%s\n' "${files[@]}" | xargs -n 1 -P "$JOBS" tests/_run_one.sh
+  shard_status=$?
+  [ "$shard_status" -ne 0 ] && status="$shard_status"
+done
 
 if [ "$status" -eq 0 ]; then
-  echo "All Playwright tests passed (TEST_JOBS=$JOBS)."
+  echo "All Playwright tests passed (TEST_JOBS=$JOBS, $SHARD_COUNT shards)."
 else
-  echo "One or more Playwright tests FAILED (TEST_JOBS=$JOBS) -- see above."
+  echo "One or more Playwright tests FAILED (TEST_JOBS=$JOBS, $SHARD_COUNT shards) -- see above."
 fi
 exit "$status"
