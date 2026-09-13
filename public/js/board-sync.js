@@ -132,8 +132,32 @@ function isLocalBoardReady(){
 // fully post-hydrate board, never something in between.
 var hydrating = false;
 
+// Same hazard, different trigger: a LOCAL multi-doc rewrite (today: only
+// templates.js's loadTemplate(), switching starter templates) writes new
+// dimension docs and then a new meta/config doc as SEPARATE Firestore-like
+// operations. Each one independently fires a db.js onSnapshot listener
+// that calls pushBoardSnapshotIfConnected() -- so the moment the new
+// dimension docs land but before the config write follows, a push escapes
+// built from `state` at that exact instant: the NEW dimensions, but still
+// the OLD config (activeTemplateName/attribution). With a live subscription
+// open (board sync is default-on for every device), that inconsistent
+// snapshot echoes straight back and overwrites the just-loaded template's
+// config with the PREVIOUS template's -- real bug, reported from usage:
+// loading Tuckman left the dimension grid showing Tuckman's 5 stages but
+// the attribution/model name still reading Spotify's. Any file doing a
+// similar multi-doc local rewrite should wrap it in
+// suppressBoardPushDuring(fn) rather than poking `hydrating` directly (that
+// flag is specifically for applying a REMOTE snapshot, and shares
+// `pendingRemoteApply` bookkeeping this local-rewrite case has no use for).
+var suppressingLocalRewrite = false;
+function suppressBoardPushDuring(work){
+  suppressingLocalRewrite = true;
+  function done(){ suppressingLocalRewrite = false; pushBoardSnapshotIfConnected(); }
+  return work().then(function(result){ done(); return result; }, function(err){ done(); throw err; });
+}
+
 function pushBoardSnapshotIfConnected(){
-  if(hydrating) return;
+  if(hydrating || suppressingLocalRewrite) return;
   if(!isLocalBoardReady()) return; // don't push a snapshot built from a still-partially-loaded local board
   var secret = getTeamSecret();
   if(!secret || !state.db) return;
