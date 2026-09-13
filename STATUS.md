@@ -1327,3 +1327,18 @@ not just in this repo's own tests.
     suite and the full 36-file Playwright suite (2 new files this session), run entirely serially
     (`TEST_JOBS=1`, no parallelization, per explicit instruction), zero regressions after one real
     fix along the way (the bidi-isolate assertion above).
+- 2026-09-13 — **Delivery workflow change: `claude/optimistic-keller-holuql` is now a shared preview
+  branch, not a workspace every session commits straight to.** Prompted by real, repeated pain, not a
+  hypothetical: two concurrent Claude Code sessions (this relay/testing work and the multi-language
+  rollout above) plus a local VSCode checkout all pushed directly to this one branch throughout the
+  day, colliding several times -- each collision needing a manual `git fetch` + merge to untangle
+  (documented earlier this same log: a full commit-graph forensic trace of exactly when each session's
+  local HEAD went stale relative to the other's pushes, confirming the pattern was symmetric and
+  unavoidable under "everyone commits straight to one branch," not a sign either side was failing to
+  pull). Considered three options: leave it as-is (kept failing), tighten how often each session
+  fetches (reduces the WINDOW but not the possibility), or give each session its own short-lived
+  branch merged deliberately into a shared trunk (chosen). New rule, in `docs/DefinitionOfDone.md`'s
+  Delivery workflow section (not duplicated here): branch from the current tip of
+  `claude/optimistic-keller-holuql` for a unit of work, merge the latest back in and re-validate before
+  merging out, never commit to the shared branch mid-work. `main` promotion is unaffected -- still
+  solely the product owner's call, unchanged by this.

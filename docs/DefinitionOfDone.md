@@ -112,9 +112,23 @@ and to every one already covered:
 
 ## 3. Delivery workflow
 
-- Development happens on the project's working branch; `main` only moves
-  when the product owner explicitly says so — never push to `main` on your
-  own judgment.
+- **`claude/optimistic-keller-holuql` is the shared PREVIEW branch, not any
+  one session's individual workspace.** Do a unit of work on your own
+  short-lived branch, branched from the current tip of
+  `claude/optimistic-keller-holuql` — do not commit directly to it while
+  work is in progress. When the work is done and validated (full suite
+  green per the Testing section above), fetch the latest
+  `claude/optimistic-keller-holuql`, merge it into your branch (resolving
+  anything that needs it, re-validating afterward), then merge your branch
+  into `claude/optimistic-keller-holuql` and push that. Delete your branch
+  once it's merged. (Adopted 2026-09-13 after several real collisions —
+  two concurrent sessions and a local checkout all committing straight to
+  `claude/optimistic-keller-holuql` at once, needing repeated manual merges
+  to untangle. See STATUS.md's session log for the incident.)
+- **`main` only moves when the product owner explicitly says so** — never
+  push to `main` on your own judgment. This is unchanged by the branching
+  model above: `claude/optimistic-keller-holuql` is a PREVIEW branch, not a
+  path around that gate.
 - A real, non-trivial change gets a session-log entry in `STATUS.md` (see
   nearly every existing entry for the expected level of detail: what
   changed, why, what it fixed, and what was verified).
