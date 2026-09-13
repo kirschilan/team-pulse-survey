@@ -4,6 +4,11 @@ One-page entry point for picking this project up cold. Update the session log at
 whenever you finish a chunk of work — this is the one place "what's outstanding" lives; the other
 docs in `docs/` are reference material this file points to, not duplicates of it.
 
+Before calling any change done, check it against **`docs/DefinitionOfDone.md`** — the standing
+quality bar (testing, multi-language support, delivery workflow) that applies regardless of which
+feature or story a change belongs to. This file's own "Decisions locked in" below is a different
+thing: specific architecture/product choices already made, not the bar every change clears.
+
 ## What's real right now
 
 - `public/` is a working static site — `index.html` + `styles.css` + `vendor/qrcode.js` +
@@ -20,10 +25,11 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 - Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-13) — see
   `tests/README.md`. **`tests/unit/`**: 3 plain-Node files (`node:test`, nothing to install) for
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
-  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 31 Playwright files
-  (named for the feature/flow each one covers) for everything that needs a real browser, running in
-  around 2 minutes total after two 2026-09-12 perf passes (see the session log below) — zero JS errors on
-  the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
+  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: one Playwright file
+  per feature/flow (`ls tests/test_*.py | wc -l` for the current count — deliberately not
+  hardcoded here) for everything that needs a real browser, run via `tests/run_all.sh`'s parallel
+  workers after three 2026-09-12/13 perf passes (see the session log below) — zero JS errors on the
+  last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
   + `tests/fixtures/build_page.py`) standing in for the real backend, for speed and determinism; a
   handful deliberately bypass it because they exist specifically to test what it stands in for —
   `test_local_store.py` (the real `localStorage` board), `test_relay_cross_device_sync.py` (the real
@@ -51,7 +57,9 @@ along the seams the original file already had (`// ---------- section ----------
 
 | File | Covers |
 |---|---|
-| `state.js` | Shared `state` object, starter templates, placeholder squads/dimensions, initial UI-prefs load. Loads first. |
+| `state.js` | Shared `state` object, starter templates, placeholder squads/dimensions, initial UI-prefs load (including `ui.locale`). Loads first. |
+| `locales/en.js`, `locales/he.js` | Multi-language support: the English source-of-truth string table and its Hebrew translation (plain `key: "text"` objects, no build step -- see `he.js`'s own header comment on how a human corrects a translation). Loads right after `state.js`, before anything that calls `t()`. |
+| `i18n.js` | `t(key, vars)`/`setLocale()` -- looks up the active locale (falling back to English for any missing key), interpolates `{word}` tokens, applies `[data-i18n]`/`[data-i18n-placeholder]` markup, and scopes `dir`/`lang` to `#viewAdmin` only (Story 1: Admin panel translated, the rest of the app not yet). |
 | `helpers.js` | Pure helpers used everywhere: `esc`, `diag`, banding/consolidation math, `colorWord`/`trendWord`, `isStatementDimension`, `sortedSquads`/`sortedDimensions`, `findSquad`, unit-label helpers, and the `liveOr`/`syncLiveIfConnected` write-shape helpers every mutator uses. |
 | `render.js` | `renderAll` and everything it drives — header/stats/ranking/hotspots/grid/legend, grid tooltip. |
 | `modals.js` | The generic confirm modal, the cell-rating modal, and the busy overlay — shared widgets several features reuse. |
@@ -924,3 +932,153 @@ not just in this repo's own tests.
   `test_uncaught_error_diagnostics.py` verify the REAL clipboard content (not just "didn't throw"),
   which needed granting the test's browser context `clipboard-write`/`clipboard-read` permissions
   Playwright doesn't have by default. Full 31-file Playwright + 38-test unit suite passing.
+- 2026-09-13 — **Test-runner portability fix, plus a second wait-condition pass.** `tests/run_all.sh`
+  failed on macOS with `xargs: command line cannot be assembled, too long` -- even for a single,
+  short test file, which ruled out an actual argument-length overflow. Root cause: `xargs -I{} sh
+  -c '<inline script>'` combined with `-P` (parallel) is a known-broken combination on BSD/macOS's
+  `xargs` specifically; it worked fine on this machine's Linux/GNU findutils, which doesn't share
+  the limitation, and would have kept looking "fine" here indefinitely without a macOS test.
+  Fixed by extracting the per-file run/report logic into its own file, `tests/_run_one.sh`, and
+  dispatching to it with `xargs -n 1 -P "$JOBS" tests/_run_one.sh` -- no `-I`, no inline script for
+  xargs to reconstruct, which is the standard macOS-safe parallel-xargs idiom and behaves
+  identically on GNU findutils. Verified: one explicit file, two explicit files, the full suite, and
+  intentional failures (a missing file, a genuinely failing assertion) all propagate a real nonzero
+  exit with useful per-file output, no false success. (Could not literally run this on macOS from
+  this session's environment -- the fix is evidence-based on BSD xargs's documented `-I`+`-P`
+  limitation and the exact error text matching, not directly re-verified on that OS; flagging this
+  honestly rather than claiming a test that didn't happen.)
+
+  Re-audited `wait_for_timeout` across the suite rather than assuming the prior pass's "leave the
+  other ~400 alone" conclusion was still complete -- it wasn't: the SAME pattern fixed last time in
+  one relay file (a fixed sleep guessing a real relay round trip's duration, right before reading
+  what that round trip produces) turned out to still exist, unconverted, in several sibling
+  files -- `test_board_sync_finish_retro_convergence.py`, `test_cofacilitator_join.py`,
+  `test_relay_cross_device_sync.py`, `test_board_sync_hydrate_on_boot.py`,
+  `test_board_sync_live_subscribe.py`, `test_board_sync_default_on.py`,
+  `test_retro_join_link_carries_team_sync.py`. Converted each to `page.wait_for_selector(...)` or
+  `page.wait_for_function(...)` on the SPECIFIC result the very next assertion checks (a cell
+  leaving "unscored", a squad name matching the expected rename, `.direct-row` appearing, a join
+  screen's heading changing away from its "Connecting..." placeholder) -- not a generic "wait for
+  everything to settle" guess, which the prior pass correctly identified as unsafe. Two `cell_color`
+  helper files gained a matching `wait_for_scored(page, squad, dim)` used only where the test
+  already expects that exact cell to become scored. Also converted a few `fake_store`-backed
+  boot-wait sites in `test_local_store.py`/`test_retro_join_flow.py`/`test_retro_join_exit_and_return.py`
+  where a real, non-guessed boot marker existed (`.squad-pick-btn` is rendered from `state.squads`,
+  not static HTML; `#syncText` transitions away from its literal "Connecting..." placeholder).
+  Left the deliberate rainy-day "make sure X did NOT arrive" waits, the relay backoff-timing test's
+  own `wait_for_timeout(1800)` (verifying a specific point in the retry schedule, which IS the
+  point of that test), and the Copy-diagnostics fade timer's wait (a known, deterministic 1500ms
+  constant, not a guess) exactly as they were -- none of those have a "did the work finish" signal
+  to wait on, because either nothing is supposed to happen, or the wait itself IS the thing under
+  test.
+
+  One of the `.squad-pick-btn` boot-marker conversions initially SEEMED safe (passed 3 clean runs
+  in `test_local_store.py`) but was actually a lucky pass, not a correct fix: `wait_for_selector()`
+  defaults to requiring the element `state="visible"`, and `.squad-pick-btn` lives inside whichever
+  of Tribe/Squad view is currently hidden -- `test_local_store.py` happened to already be on Squad
+  view before its reload, so the element stayed visible throughout, but the same conversion in
+  `test_board_sync_finish_retro_convergence.py` (reloading from a context where Tribe was the
+  active view) hung for the full 30s default timeout and failed for real. Fixed by adding
+  `state="attached"` everywhere this boot marker is used, which only requires the element to exist
+  in the DOM -- the actual "has this render happened" signal intended, regardless of which view is
+  currently shown. A reminder that a passing run isn't proof a wait-condition change is correct;
+  re-verifying is what caught this before it shipped.
+
+  Measured before/after on this machine: serial suite runtime ~158.7s → ~142.1s from this session's
+  wait-condition changes (on top of the four files already fixed last session); combined with the
+  parallel runner, full suite (unit + relay + all Playwright files) now completes in ~72-73s at the
+  default `TEST_JOBS=2`, vs. serial's ~142s -- essentially unchanged ratio from before (parallelism
+  was always the bigger lever than trimming individual waits), but both numbers dropped together.
+  Slowest single file post-fix: `test_board_sync_finish_retro_convergence.py` at ~11.3s (two full
+  rounds of a real 3-device relay scenario -- genuine work, not waiting). No Playwright file was
+  removed or weakened,
+  no relay/crypto/localStorage integration behavior changed, and `fake_store.html`'s architecture
+  was not touched -- re-examined the prior pass's "do not change" list specifically for this task
+  and found no evidence to override any of it. Fixed a stale "30-file"/"30 Playwright files" count
+  in `tests/README.md`'s Performance section (a live, current-facts section, unlike this dated log)
+  by rewording to avoid hardcoding a count that will keep drifting, rather than just bumping the
+  number to 31. Full unit + relay + 31-file Playwright suite passing, including repeated runs of
+  every modified file.
+- 2026-09-13 — **Multi-language support, Story 1: hardened Hebrew/RTL test coverage.** First step
+  of the product owner's multi-language roadmap (Hebrew UI, persisted language switcher, a
+  translate-everything DOD, human-correctable translations) -- this step is test-only, no new
+  feature. The one existing RTL check (in `test_template_switching_and_csv_import.py`) only
+  confirmed `dir="auto"` was present in markup on 3 of the ~35 such locations across the app, never
+  that real Hebrew content actually resolves to rtl. New `tests/test_hebrew_rtl_coverage.py` types
+  or seeds real Hebrew (paired with an English control on a sibling element, so an always-rtl false
+  positive would be caught) across every `dir="auto"` surface: admin's dimension manager and squad
+  list, Squad view, the rating modal, Tribe view's grid/legend/header-tooltip/hotspots, Templates,
+  the retro facilitator card and join/direct-rating flow, plus a CSV export/re-import proving
+  `csv.js`'s Dimension Key column (not the label text) is really what survives a dimension being
+  re-translated after export, per that file's own header comment. Writing it for real (not just
+  re-confirming the attribute exists) found two genuine bugs, now fixed: `render.js`'s Tribe-view
+  legend and `retro-join.js`'s direct-rating green/red anchor line both put `dir="auto"` on a `<p>`
+  shared with a hardcoded English "Green:"/"Red:" bold prefix -- per the HTML auto-directionality
+  algorithm (first strong character in tree order), that prefix's leading "G"/"R" forced the whole
+  line ltr even when the translatable content behind it was pure Hebrew, silently defeating RTL for
+  exactly the content this feature exists to support. Fixed by moving `dir="auto"` onto a `<span>`
+  wrapping just the translatable content, leaving the English label outside it (`index.html`'s
+  matching modal fields already did this correctly, which is how they passed while these two
+  didn't). Old narrow sanity check removed as superseded. Full 32-file Playwright + 38-test unit
+  suite passing (one `test_relay_board_path_sync.py` failure seen under `run_all.sh -P2` reproduced
+  as this file's own documented CPU-contention flake -- passed clean standalone, unrelated to this
+  change, no relay/board-sync file touched).
+- 2026-09-13 — **Multi-language support, Story 2: i18n infrastructure + a first translated module
+  (Admin panel) + the AI-human correction workflow.** Deliberately scoped as one small, INVEST-shaped
+  vertical slice per the product owner's explicit redirect on the first draft plan (which had spread
+  infra/translation/DOD across separate stories) -- infra, a real translated screen, and a working
+  correction mechanism, all in one story, or none of it proves anything end to end. New
+  `locales/en.js` (source of truth) and `locales/he.js` (AI-translated, flagged for human review in
+  its own header comment) are plain `key: "text"` objects, not `.json` files as first sketched in
+  planning -- this app's static `<script>` architecture can't `fetch()` a same-origin JSON file over
+  `file://` (the Playwright suite's own transport), so locale data follows the exact same
+  no-build-step pattern as every other `public/js/*.js` file instead. New `i18n.js`'s `t(key, vars)`
+  falls back to English for any key missing from the active locale (generic by locale, not
+  hardcoded to Hebrew, so a future third language degrades the same way); `[data-i18n]`/
+  `[data-i18n-placeholder]` cover static markup, JS-built Admin strings (`squads.js`'s aria-labels,
+  delete-confirm dialogs, the CSV-mismatch-adjacent "Untitled X" fallback, `render.js`'s
+  unit-interpolated "+ Add {unit}") call `t()` directly. Translated the ENTIRE Admin screen except
+  modal interiors (Edit dimensions/Templates/CSV import stay English -- explicitly later stories):
+  Board setup, Team sync (including `board-sync.js`'s dynamically-set "Connected..." status line,
+  easy to miss since it's not in static markup -- caught by screenshotting the live Hebrew page,
+  not just reading the diff), Squads, Diagnostics. `dir`/`lang` scope to `#viewAdmin` ONLY, not the
+  document root -- the rest of the app is still English-only, so a page-wide RTL flip would visibly
+  break it; confirmed by asserting Tribe view's own heading stays unaffected while Admin is in
+  Hebrew. New `.lang-switch .lang-btn` CSS is a scoped duplicate of `.view-btn`'s look (same
+  reasoning as the existing `.reveal-toggle .reveal-btn`, see that rule's own comment) -- reusing
+  `.view-btn` literally would have both mis-toggled these buttons' active state AND, worse,
+  attached `app.js`'s boot-time `.view-btn` click listener to them, firing `setView(null)` on every
+  language switch and hiding all three main views; caught before shipping by re-reading that
+  existing CSS comment rather than by a failing test. `state.ui.locale` persists via
+  `squadpulse:lang` in `localStorage`, same try/catch pattern as `squadpulse:view`/`squadpulse:squad`
+  in `state.js`. The AI-human correction workflow is git-native, not an in-app editor (deferred,
+  separable scope per the product owner's own plan): `locales/he.js` is a plain file a human edits
+  directly and commits; `tests/unit/test_i18n.js`'s key-parity check (every `LOCALE_EN` key has a
+  `LOCALE_HE` counterpart and vice versa, plus no blank Hebrew values) is the mechanical guardrail
+  that stands in for the DOD until it's formalized as written policy in Story 3 -- it catches a
+  missing/blank translation, not a wrong one; wording quality is still the product owner's own
+  read-through, exactly as `he.js`'s header comment says. New `test_admin_language_switch.py`
+  proves the switcher end to end: defaults to English, Hebrew renders (static + JS-built strings),
+  `#viewAdmin` flips to rtl while `<html>` doesn't, Tribe view is unaffected, the choice survives a
+  reload via the real `localStorage` key, and switching back to English fully restores everything.
+  Full 33-file Playwright + 45-test unit suite passing.
+- 2026-09-13 — Fixed the Admin panel's "Language / Beta" heading badge misalignment under Hebrew
+  (reported after the Story 2 push): a hardcoded `margin-left` plus `.model-badge`'s `margin-top`
+  (meant for that class's other, header context) don't survive a `dir="rtl"` flip -- replaced with
+  a `.heading-with-badge`/`.beta-badge` flex-row-plus-`gap` layout, direction-agnostic by
+  construction. Merged a human correction to `locales/he.js`'s Squads hint pushed directly to the
+  branch -- exactly the git-native correction workflow Story 2 was built for.
+- 2026-09-13 — **Multi-language support, Story 3: formalized the Definition of Done.** New
+  `docs/DefinitionOfDone.md` is the standing quality bar every change clears -- Testing (points to
+  the `tdd` skill for the how), Multi-language support (every i18n-supported screen's strings go
+  through `t()`, every locale carries every key -- enforced by `test_i18n.js`'s parity check --
+  `dir="auto"` never shares a container with a hardcoded label, no hardcoded directional CSS
+  `margin-left`/`-right` near text ANYWHERE in the app, not just translated screens, since the cost
+  of doing it right from the start is near zero and the alternative is re-discovering the exact
+  badge-alignment bug above on every future screen), and Delivery workflow (branch/`main` discipline,
+  session-log entries). Deliberately distinct from, and cross-referencing rather than duplicating,
+  `STATUS.md`'s "Decisions locked in" (specific architecture/product choices, not a standing bar)
+  and the `tdd` skill (the how-to for this doc's Testing section). New `CLAUDE.md` (didn't exist
+  before) and updates to `README.md`, this file, `tests/README.md`, `tests/unit/README.md`, and the
+  `tdd` skill all point to `docs/DefinitionOfDone.md` as the answer to "is this done," rather than
+  leaving that judgment implicit or scattered.

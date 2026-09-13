@@ -76,7 +76,9 @@ try:
 
         print("=== both devices connected via the same link; device A adds a squad -- device B should see it LIVE, no reload ===")
         a.click("#addSquadBtn")
-        a.wait_for_timeout(600)  # give the relay round trip + B's live callback time, but no reload/navigation at all
+        # real relay round trip + B's live callback -- wait for the actual
+        # result B is about to be checked for, not a guessed delay
+        b.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).some(i => i.value === 'New squad')")
 
         b_squad_names = b.eval_on_selector_all("#adminSquadList input.admin-squad-name", "els=>els.map(e=>e.value)")
         print("device B's board, without ever reloading:", b_squad_names)
@@ -84,7 +86,7 @@ try:
 
         print("=== the reverse direction also works live: device B adds a squad, device A sees it live ===")
         b.click("#addSquadBtn")
-        a.wait_for_timeout(600)
+        a.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).filter(i => i.value === 'New squad').length === 2")
         a_squad_names = a.eval_on_selector_all("#adminSquadList input.admin-squad-name", "els=>els.map(e=>e.value)")
         print("device A's board, without ever reloading:", a_squad_names)
         assert a_squad_names.count("New squad") == 2, "device A should now see BOTH squads (its own + B's), live"

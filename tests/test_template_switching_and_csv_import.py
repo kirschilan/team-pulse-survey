@@ -87,13 +87,10 @@ with sync_playwright() as p:
 
     # (loadTemplate() already closed the Templates modal on success)
 
-    # ---- Hebrew: dir=auto sanity check ----
-    print("=== dir=auto checks ===")
-    print("squad-name dir:", page.eval_on_selector('.squad-name', 'el=>el.getAttribute("dir")'))
-    page.click('#dimManageBtn'); page.wait_for_timeout(150)
-    print("dim-label dir:", page.eval_on_selector('.dim-label', 'el=>el.getAttribute("dir")'))
-    print("dim green textarea dir:", page.eval_on_selector('#dimList textarea[data-field="green"]', 'el=>el.getAttribute("dir")'))
-    page.click('#dimDoneBtn')
+    # Hebrew/RTL coverage (dir="auto" resolving to real rtl for actual Hebrew
+    # content, not just the attribute's presence) moved to its own dedicated
+    # file, test_hebrew_rtl_coverage.py, which checks it across every
+    # dir="auto" surface in the app, not just these 3.
 
     # ---- CSV import test ----
     print("=== CSV import ===")

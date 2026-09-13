@@ -44,16 +44,16 @@ function renderAdminSquadList(){
   var html = squads.map(function(sq){
     return '<div class="tpl-row" data-id="'+esc(sq.id)+'">' +
       '<div class="tinfo">' +
-        '<input class="dim-label admin-squad-name" data-id="'+esc(sq.id)+'" value="'+esc(sq.name)+'" aria-label="'+esc(unitLower())+' name" dir="auto">' +
+        '<input class="dim-label admin-squad-name" data-id="'+esc(sq.id)+'" value="'+esc(sq.name)+'" aria-label="'+esc(t("admin.squads.nameAriaLabel", {unit: unitLower()}))+'" dir="auto">' +
       '</div>' +
-      '<button class="icon-btn danger admin-squad-del" data-id="'+esc(sq.id)+'" title="Remove '+esc(unitLower())+'" type="button">' +
+      '<button class="icon-btn danger admin-squad-del" data-id="'+esc(sq.id)+'" title="'+esc(t("admin.squads.removeTitle", {unit: unitLower()}))+'" type="button">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
     '</div>';
   }).join("");
-  document.getElementById("adminSquadList").innerHTML = html || '<p class="hint" style="margin:0;">No '+esc(unitPluralLower())+' yet — add one below.</p>';
+  document.getElementById("adminSquadList").innerHTML = html || '<p class="hint" style="margin:0;">'+esc(t("admin.squads.emptyList", {unitPlural: unitPluralLower()}))+'</p>';
   document.querySelectorAll(".admin-squad-name").forEach(function(input){
     input.addEventListener("change", function(){
-      renameSquad(input.getAttribute("data-id"), input.value.trim() || "Untitled " + unitLower());
+      renameSquad(input.getAttribute("data-id"), input.value.trim() || t("admin.squads.untitledFallback", {unit: unitLower()}));
     });
   });
   document.querySelectorAll(".admin-squad-del").forEach(function(btn){
@@ -61,10 +61,10 @@ function renderAdminSquadList(){
       var id = btn.getAttribute("data-id");
       var sq = findSquad(id);
       openConfirm(
-        "Remove " + unitLower() + "?",
-        "Remove “" + (sq ? sq.name : "this " + unitLower()) + "”? Its ratings go with it.",
+        t("admin.squads.confirmRemoveTitle", {unit: unitLower()}),
+        t("admin.squads.confirmRemoveMessage", {name: sq ? sq.name : t("admin.squads.thisUnit", {unit: unitLower()})}),
         function(){ removeSquad(id); },
-        "Remove"
+        t("admin.squads.confirmRemoveButton")
       );
     });
   });

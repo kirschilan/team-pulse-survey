@@ -5,6 +5,11 @@ description: Test-first workflow for this repo (team-pulse-survey). Use this bef
 
 # Test-first in this repo
 
+This skill is the detailed how-to for `docs/DefinitionOfDone.md`'s Testing
+section — that doc states the standing rule (test-first, correct tier, full
+suite green before calling anything done); this skill is the workflow that
+satisfies it.
+
 This is a working agreement, not general TDD advice: **write the failing
 test before the implementation**, for every change to `public/js/*.js`,
 `public/local-store.js`, or `relay/*.js`. That's the product owner's

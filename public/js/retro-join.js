@@ -223,9 +223,9 @@ function renderJoinScreen(){
     var directListHtml = directDims.length ?
       directIntroHtml + '<div class="direct-list">' + directDims.map(function(dim){
         var anchorsHtml = (dim.green || dim.red) ?
-          '<p class="hint" style="margin:0 0 10px;" dir="auto">' +
-            (dim.green ? '<b>Green:</b> '+esc(dim.green)+' ' : '') +
-            (dim.red ? '<b>Red:</b> '+esc(dim.red) : '') +
+          '<p class="hint" style="margin:0 0 10px;">' +
+            (dim.green ? '<b>Green:</b> <span dir="auto">'+esc(dim.green)+'</span> ' : '') +
+            (dim.red ? '<b>Red:</b> <span dir="auto">'+esc(dim.red)+'</span>' : '') +
           '</p>' : "";
         return '<div class="direct-row" data-dim="'+esc(dim.key)+'">' +
           '<div class="stmt-text" dir="auto">'+esc(dim.label)+'</div>' +

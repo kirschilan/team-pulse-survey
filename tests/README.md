@@ -1,5 +1,9 @@
 # Regression suite
 
+See `docs/DefinitionOfDone.md` for the standing policy this suite exists to
+satisfy (full suite green, zero JS errors, before any change is done); this
+file is the mechanics.
+
 Two tiers:
 
 - **`tests/unit/`** — plain Node (`node:test`, nothing to install) tests of
@@ -94,23 +98,28 @@ history and STATUS.md's session log.
 **Run the suite with `tests/run_all.sh`, not a serial loop.** Every file is
 fully independent by construction — its own unique `build_page()` /
 `write_plain_index()` output filename, and its own hardcoded relay port
-where a relay-backed file spawns one (verified, 2026-09-13 perf pass: no
-two files in the suite share either) — so running them as separate
-processes at the same time is safe with zero test changes. `run_all.sh`
-defaults to 2 at a time; measured on a 4-core machine, that ran the full
-30-file suite with zero failures in ~75s, against ~170s run serially (a
-plain `for f in tests/test_*.py; do python3 "$f"; done` loop) — a ~2.3x
-wall-clock win for free. Pushing concurrency to 4 (one worker per core, no
-headroom) cut it further (~41s) but produced a real, reproducible flake in
-a timing-sensitive relay test purely from CPU contention (an element read
-right after a genuine WebSocket round trip occasionally hadn't rendered
-yet) — passing standalone every time, only failing under a fully-saturated
-CPU. 2 is the concurrency this repo has actually verified safe; raise it
+where a relay-backed file spawns one (verified: no two files in the suite
+share either) — so running them as separate processes at the same time is
+safe with zero test changes. `run_all.sh` dispatches through
+`tests/_run_one.sh` via `xargs -n 1 -P`, not `xargs -I{} sh -c '...'` — the
+latter is a known-broken combination on macOS/BSD's `xargs` (fails with
+"command line cannot be assembled, too long" even for a single short
+input; see `run_all.sh`'s own comment). `run_all.sh` defaults to 2 workers
+at a time; measured on a 4-core machine, that ran the full suite with zero
+failures in a bit over a third of the serial time (a plain
+`for f in tests/test_*.py; do python3 "$f"; done` loop). Pushing
+concurrency to 4 (one worker per core, no headroom) cut it further but
+produced a real, reproducible flake in a timing-sensitive relay test
+purely from CPU contention (an element read right after a genuine
+WebSocket round trip occasionally hadn't rendered yet) — passing
+standalone every time, only failing under a fully-saturated CPU. 2 is the
+concurrency this repo has actually verified safe; raise it
 (`TEST_JOBS=N tests/run_all.sh`) only after checking your own machine has
 the headroom, and re-running enough times to trust it. CI shards the suite
 further still — see `.github/workflows/tests.yml`'s `playwright` job's own
 comments for why that's a matrix of separate runners, not just a bigger
-`TEST_JOBS`.
+`TEST_JOBS`. (Exact current file count: `ls tests/test_*.py | wc -l` —
+deliberately not hardcoded here, since it drifts as the suite grows.)
 
 If a specific file still feels slow, `time python3 tests/test_whatever.py`
 it directly — the fake-store files should mostly run in the 2-6s range
@@ -168,7 +177,9 @@ references.)
 | File | Covers |
 |---|---|
 | `test_dimension_and_template_admin.py` | Rating a cell; Admin's dimension manager (rename/add/reorder/delete); saving and reloading a custom template |
-| `test_template_switching_and_csv_import.py` | Switching templates preserves each one's own dimension set and squad ratings underneath; RTL (`dir=auto`) fields; a basic CSV import |
+| `test_template_switching_and_csv_import.py` | Switching templates preserves each one's own dimension set and squad ratings underneath; a basic CSV import |
+| `test_hebrew_rtl_coverage.py` | Real Hebrew content resolves `dir="auto"` to actual rtl (not just the attribute's presence) across every such surface in the app -- admin's dimension manager and squad list, Squad view, the rating modal, Tribe view's grid/legend/tooltip/hotspots, Templates, and the retro facilitator/join flow -- each paired with an English control; a Dimension-Key-based CSV re-import after a dimension's Hebrew label is edited again |
+| `test_admin_language_switch.py` | Multi-language support Story 1 (`i18n.js`): the Admin panel's language switcher renders Hebrew (static markup via `[data-i18n]`/`[data-i18n-placeholder]`, plus JS-built strings like the squad list's aria-labels and confirm dialogs, all via `t()`), scopes `dir="rtl"` to `#viewAdmin` only (the rest of the still-English app stays untouched), and persists the choice across reload via `localStorage` |
 | `test_csv_import_column_matching.py` | CSV export/import round-tripping through renamed headers, reordered columns, and a template-mismatch warning |
 | `test_tooltip_busy_overlay_and_csv_key.py` | Grid header hover/focus tooltip; the busy overlay during template switches and CSV import; the CSV "Dimension Key" column surviving a dimension rename |
 | `test_view_navigation_and_squad_admin.py` | Tribe view's read-only grid; Squad view rating and its "hotspots" panel; Admin squad CRUD; view/squad selection persisting across reload |

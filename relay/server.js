@@ -9,14 +9,39 @@
 // Wire protocol (JSON messages over one WebSocket per room, room code given
 // as `?code=` on the connection URL):
 //
-//   client -> server  {op:"put", path, envelope}     create/replace one doc
-//   client -> server  {op:"delete", path}            remove one doc
+//   client -> server  {op:"put", path, envelope, opId?}   create/replace one doc
+//   client -> server  {op:"delete", path, opId?}          remove one doc
 //   server -> client  {op:"snapshot", docs}          sent once, right after
 //                                                     connecting: the room's
 //                                                     entire current state
 //   server -> client  {op:"put", path, envelope}     another client's write
 //   server -> client  {op:"delete", path}            another client's delete
-//   server -> client  {op:"error", message}          malformed input
+//   server -> client  {op:"ack", opId, forOp, path}  sent ONLY to the
+//                                                     originating connection,
+//                                                     once an accepted put/
+//                                                     delete has actually
+//                                                     updated the room and
+//                                                     persistence has been
+//                                                     initiated -- never
+//                                                     carries the envelope.
+//                                                     Only sent when the
+//                                                     client's own message
+//                                                     included an opId.
+//   server -> client  {op:"error", opId?, message}   malformed or rejected
+//                                                     input; opId is echoed
+//                                                     back when the client's
+//                                                     message had one, so a
+//                                                     rejected write can be
+//                                                     correlated and only
+//                                                     that write's promise
+//                                                     rejected (see
+//                                                     relay-client.js)
+//
+// `opId` is a client-chosen, opaque correlation token -- the server never
+// interprets it, just echoes it back on the ack/error for whichever message
+// carried it. It's optional so a message with none behaves exactly as
+// before (no ack, error with no opId) -- see relay/test/relay.test.js's
+// "no opId at all" case.
 //
 // A "path" is always shaped like a Firestore path relative to `sessions/`
 // (e.g. the room for code ABC123 stores its own session doc at "ABC123",
@@ -159,26 +184,29 @@ function startServer(opts){
       ws.on("message", function(raw){
         var msg;
         try{ msg = JSON.parse(raw.toString()); }catch(e){ send(ws, { op:"error", message:"invalid JSON" }); return; }
+        var opId = msg && msg.opId; // undefined is fine -- see the opId comment above
         if(!msg || typeof msg.path !== "string" || msg.path.length === 0 || msg.path.length > MAX_PATH_LENGTH){
-          send(ws, { op:"error", message:"invalid path" }); return;
+          send(ws, { op:"error", opId: opId, message:"invalid path" }); return;
         }
         if(msg.op === "put"){
-          if(msg.envelope === undefined){ send(ws, { op:"error", message:"put needs an envelope" }); return; }
+          if(msg.envelope === undefined){ send(ws, { op:"error", opId: opId, message:"put needs an envelope" }); return; }
           if(Buffer.byteLength(JSON.stringify(msg.envelope)) > MAX_ENVELOPE_BYTES){
-            send(ws, { op:"error", message:"envelope too large" }); return;
+            send(ws, { op:"error", opId: opId, message:"envelope too large" }); return;
           }
           if(!room.docs.has(msg.path) && room.docs.size >= MAX_DOCS_PER_ROOM){
-            send(ws, { op:"error", message:"room is full" }); return;
+            send(ws, { op:"error", opId: opId, message:"room is full" }); return;
           }
           room.docs.set(msg.path, msg.envelope);
           broadcast(room, { op:"put", path: msg.path, envelope: msg.envelope });
           persistRoom(code, room);
+          if(opId !== undefined) send(ws, { op:"ack", opId: opId, forOp:"put", path: msg.path });
         } else if(msg.op === "delete"){
           room.docs.delete(msg.path);
           broadcast(room, { op:"delete", path: msg.path });
           persistRoom(code, room);
+          if(opId !== undefined) send(ws, { op:"ack", opId: opId, forOp:"delete", path: msg.path });
         } else {
-          send(ws, { op:"error", message:"unknown op" });
+          send(ws, { op:"error", opId: opId, message:"unknown op" });
         }
       });
 
