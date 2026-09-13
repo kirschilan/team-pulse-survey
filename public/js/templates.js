@@ -157,23 +157,32 @@ function loadTemplate(tpl){
     // only delete old dimensions that the incoming set doesn't reuse --
     // avoids a pointless delete+recreate round-trip when a key carries over
     var toDelete = oldKeys.filter(function(k){ return !newKeys[k]; });
-    Promise.all(toDelete.map(function(k){ return state.db.collection("dimensions").doc(k).delete(); }))
-      .then(function(){
-        diag("Writing " + newDimSpecs.length + " dimension(s) for '" + tpl.name + "'...");
-        return Promise.all(newDimSpecs.map(function(d){
-          var payload = { label:d.label, green:d.green, red:d.red, order:d.order, updatedAt: nowIso() };
-          // statements/scoreBands/strategies are optional content used by the
-          // scored-survey rating flow (not built yet) -- carried through here
-          // so a template that has them keeps them once that flow exists
-          if(d.statements) payload.statements = d.statements;
-          if(d.scoreBands) payload.scoreBands = d.scoreBands;
-          if(d.strategies) payload.strategies = d.strategies;
-          return state.db.collection("dimensions").doc(d.key).set(payload);
-        }));
-      })
-      .then(function(){
-        return state.db.doc("meta/config").set(Object.assign({}, newConfig, { updatedAt: nowIso() }));
-      })
+    // board-sync.js's suppressBoardPushDuring(): the dimension writes and
+    // the config write below are separate Firestore-like operations, each
+    // of which independently fires a db.js onSnapshot listener that would
+    // otherwise push an inconsistent intermediate snapshot (new dimensions,
+    // still-old config) to the relay -- see that function's own comment for
+    // the real bug this caused (Tuckman's dimensions loaded correctly, but
+    // the model name/attribution regressed back to the previous template).
+    suppressBoardPushDuring(function(){
+      return Promise.all(toDelete.map(function(k){ return state.db.collection("dimensions").doc(k).delete(); }))
+        .then(function(){
+          diag("Writing " + newDimSpecs.length + " dimension(s) for '" + tpl.name + "'...");
+          return Promise.all(newDimSpecs.map(function(d){
+            var payload = { label:d.label, green:d.green, red:d.red, order:d.order, updatedAt: nowIso() };
+            // statements/scoreBands/strategies are optional content used by the
+            // scored-survey rating flow (not built yet) -- carried through here
+            // so a template that has them keeps them once that flow exists
+            if(d.statements) payload.statements = d.statements;
+            if(d.scoreBands) payload.scoreBands = d.scoreBands;
+            if(d.strategies) payload.strategies = d.strategies;
+            return state.db.collection("dimensions").doc(d.key).set(payload);
+          }));
+        })
+        .then(function(){
+          return state.db.doc("meta/config").set(Object.assign({}, newConfig, { updatedAt: nowIso() }));
+        });
+    })
       .then(function(){
         diag("Template '" + tpl.name + "' loaded successfully.");
         hideBusy();

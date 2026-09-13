@@ -1327,3 +1327,34 @@ not just in this repo's own tests.
     suite and the full 36-file Playwright suite (2 new files this session), run entirely serially
     (`TEST_JOBS=1`, no parallelization, per explicit instruction), zero regressions after one real
     fix along the way (the bidi-isolate assertion above).
+- 2026-09-14 — **Fixed a real bug, reported from usage, that turned out to have nothing to do with
+  translation: loading Tuckman's template left the dimension grid correctly showing Tuckman's 5
+  stages, but the model name/attribution regressed back to Spotify's.** First suspected as an i18n
+  gap (same shape as the Story 5 bug); ruled that out by reproducing against the real `index.html` +
+  real `local-store.js` with no relay involved at all -- worked perfectly. The actual reproduction
+  needed a REAL relay subprocess: **board sync is default-on for every device** (STATUS.md's "Board
+  sync" plan, step 7), and `templates.js`'s `loadTemplate()` writes the new dimension docs and the
+  new `meta/config` doc as two SEPARATE Firestore-like operations. Each one independently fires a
+  `db.js` `onSnapshot` listener that calls `pushBoardSnapshotIfConnected()` -- so the instant the new
+  dimension docs land (before the config write follows), a push escapes built from `state` at that
+  exact moment: the NEW dimensions, but still the OLD config. With a live subscription open (which
+  every default-on device has, to its own default room -- no explicit team link needed to hit this),
+  that inconsistent intermediate snapshot echoes straight back and `board-sync.js`'s
+  `applyRemoteBoardSnapshot()` rewrites the local `meta/config` to match it, regressing
+  `activeTemplateName`/`attribution` to the PREVIOUS template. `board-sync.js` already had an
+  established guard for exactly this class of problem -- the `hydrating` flag suppresses pushes while
+  a multi-doc REMOTE snapshot is being applied -- but nothing equivalent existed for a multi-doc LOCAL
+  rewrite. New `suppressBoardPushDuring(work)` (`board-sync.js`): a second flag
+  (`suppressingLocalRewrite`, checked alongside `hydrating` in `pushBoardSnapshotIfConnected()`'s
+  guard) rather than reusing `hydrating` itself, since that flag carries `pendingRemoteApply`
+  bookkeeping this case has no use for; fires exactly one consistent push once the wrapped work
+  settles (success or failure). `loadTemplate()`'s live-mode branch now wraps its whole
+  delete-dimensions → write-dimensions → write-config sequence in it. True test-first: new
+  `tests/test_board_sync_template_switch_race.py` spins up a real `relay/server.js` subprocess
+  (board sync can't be reproduced against the fake store or a relay-less `local-store.js` -- both
+  silently no-op the push/hydrate calls this bug lives in), loads Tuckman while connected, and
+  watched it fail for the right reason (`activeTemplateName` regressed to Spotify's, dimensions
+  correctly Tuckman's) before the fix, then confirmed passing after -- including that a page RELOAD
+  picks up the same correct state from the relay, not a regressed one. Full suite verified: 65-test
+  unit suite and the full 37-file Playwright suite (1 new file), serial (`TEST_JOBS=1`), zero
+  regressions.
