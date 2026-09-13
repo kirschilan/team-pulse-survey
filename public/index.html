@@ -35,40 +35,40 @@
     <section class="stats" aria-label="Snapshot at a glance">
       <div class="stat">
         <div class="label" id="statAssessedLabel">Squads assessed</div>
-        <div class="value" id="statAssessed">&mdash;</div>
+        <div class="value" id="statAssessed" dir="ltr">&mdash;</div>
         <div class="sub" id="statAssessedSub">of the dimensions scored, on average</div>
       </div>
       <div class="stat">
-        <div class="label">Items at risk</div>
+        <div class="label" data-i18n="tribe.stats.riskLabel">Items at risk</div>
         <div class="value crit" id="statRisk">&mdash;</div>
-        <div class="sub" id="statRiskSub">dimensions marked red across all squads</div>
+        <div class="sub" data-i18n="tribe.stats.riskSub" id="statRiskSub">dimensions marked red across all squads</div>
       </div>
       <div class="stat">
-        <div class="label">Top systemic hotspot</div>
+        <div class="label" data-i18n="tribe.stats.hotspotLabel">Top systemic hotspot</div>
         <div class="value" id="statHotspot" style="font-size:19px;">&mdash;</div>
         <div class="sub" id="statHotspotSub">the dimension struggling most, org&#8209;wide</div>
       </div>
     </section>
 
     <div class="card">
-      <h2>Cross-squad hotspots</h2>
-      <p class="hint">Dimensions where trouble shows up in more than one squad &mdash; likely worth an org-level fix, not a squad-by-squad one. Shown in aggregate; no squad is named here by default.</p>
+      <h2 data-i18n="tribe.hotspots.heading">Cross-squad hotspots</h2>
+      <p class="hint" data-i18n="tribe.hotspots.hint">Dimensions where trouble shows up in more than one squad &mdash; likely worth an org-level fix, not a squad-by-squad one. Shown in aggregate; no squad is named here by default.</p>
       <div class="legend-mini">
-        <span class="sw"><i style="background:var(--crit)"></i>Red</span>
-        <span class="sw"><i style="background:var(--warn)"></i>Yellow</span>
-        <span class="sw"><i style="background:var(--good)"></i>Green</span>
-        <span class="sw"><i style="background:var(--unscored)"></i>Not yet scored</span>
+        <span class="sw"><i style="background:var(--crit)"></i><span data-i18n="common.color.crit">Red</span></span>
+        <span class="sw"><i style="background:var(--warn)"></i><span data-i18n="common.color.warn">Yellow</span></span>
+        <span class="sw"><i style="background:var(--good)"></i><span data-i18n="common.color.good">Green</span></span>
+        <span class="sw"><i style="background:var(--unscored)"></i><span data-i18n="common.color.unscored">Not yet scored</span></span>
       </div>
       <div id="hotspotList"></div>
     </div>
 
     <details class="legend" id="squadBreakdown">
-      <summary>Squad-by-squad breakdown <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <summary><span data-i18n="tribe.breakdown.summary">Squad-by-squad breakdown</span> <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
       <div style="padding:0 18px 18px;">
-        <p class="hint" style="margin:0 0 14px;">Collapsed by default so the headline view stays about patterns, not individual squads &mdash; expand any time to see or drill into a specific squad. Read-only here; squads enter their own ratings from Squad view.</p>
+        <p class="hint" style="margin:0 0 14px;" data-i18n="tribe.breakdown.hint">Collapsed by default so the headline view stays about patterns, not individual squads &mdash; expand any time to see or drill into a specific squad. Read-only here; squads enter their own ratings from Squad view.</p>
         <div class="card" style="margin-bottom:16px;">
-          <h2>Where to invest first</h2>
-          <p class="hint">Squads ranked by weighted risk (red counts double). Highest first.</p>
+          <h2 data-i18n="tribe.ranking.heading">Where to invest first</h2>
+          <p class="hint" data-i18n="tribe.ranking.hint">Squads ranked by weighted risk (red counts double). Highest first.</p>
           <div id="rankList"></div>
         </div>
         <div class="table-scroll">
@@ -87,8 +87,8 @@
   <!-- ================= SQUAD VIEW ================= -->
   <section id="viewSquad" hidden>
     <div class="card">
-      <h2>Choose your squad</h2>
-      <p class="hint">Pick your squad to enter or update this check-in&rsquo;s ratings. Only this squad&rsquo;s own data is shown here.</p>
+      <h2 data-i18n="squad.picker.heading">Choose your squad</h2>
+      <p class="hint" data-i18n="squad.picker.hint">Pick your squad to enter or update this check-in&rsquo;s ratings. Only this squad&rsquo;s own data is shown here.</p>
       <div class="squad-picker" id="squadPicker"></div>
     </div>
     <div id="squadDetail" style="margin-top:16px;"></div>
@@ -220,36 +220,36 @@
     <h3 id="modalTitle" dir="auto">Dimension</h3>
     <div class="squadline" id="modalSquadline" dir="auto">Squad</div>
     <div class="anchor-pair">
-      <p><b>Green looks like:</b> <span id="modalGreen" dir="auto"></span></p>
-      <p><b>Red looks like:</b> <span id="modalRed" dir="auto"></span></p>
+      <p><b data-i18n="ratingModal.greenLabel">Green looks like:</b> <span id="modalGreen" dir="auto"></span></p>
+      <p><b data-i18n="ratingModal.redLabel">Red looks like:</b> <span id="modalRed" dir="auto"></span></p>
     </div>
-    <div class="field-label">Health</div>
+    <div class="field-label" data-i18n="ratingModal.healthLabel">Health</div>
     <div class="swatches" id="swatches">
-      <button class="swatch" data-color="unscored" type="button" title="Not yet scored">
+      <button class="swatch" data-color="unscored" type="button" title="Not yet scored" data-i18n-title="common.color.unscored">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>
       </button>
-      <button class="swatch good" data-color="good" type="button" title="Green">
+      <button class="swatch good" data-color="good" type="button" title="Green" data-i18n-title="common.color.good">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 13l4 4 10-10"/></svg>
       </button>
-      <button class="swatch warn" data-color="warn" type="button" title="Yellow">
+      <button class="swatch warn" data-color="warn" type="button" title="Yellow" data-i18n-title="common.color.warn">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 12h12"/></svg>
       </button>
-      <button class="swatch crit" data-color="crit" type="button" title="Red">
+      <button class="swatch crit" data-color="crit" type="button" title="Red" data-i18n-title="common.color.crit">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
-    <div class="field-label">Trend since last check</div>
+    <div class="field-label" data-i18n="ratingModal.trendLabel">Trend since last check</div>
     <div class="trendsel" id="trendsel">
-      <button data-trend="up" type="button" title="Improving"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 15l7-7 7 7"/></svg></button>
-      <button data-trend="flat" type="button" title="Steady"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 12h14"/></svg></button>
-      <button data-trend="down" type="button" title="Declining"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 9l7 7 7-7"/></svg></button>
+      <button data-trend="up" type="button" title="Improving" data-i18n-title="common.trend.up"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 15l7-7 7 7"/></svg></button>
+      <button data-trend="flat" type="button" title="Steady" data-i18n-title="common.trend.flat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 12h14"/></svg></button>
+      <button data-trend="down" type="button" title="Declining" data-i18n-title="common.trend.down"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 9l7 7 7-7"/></svg></button>
     </div>
-    <div class="field-label">Note (optional)</div>
-    <textarea class="note" id="modalNote" placeholder="Why this rating? What's driving it?" dir="auto"></textarea>
+    <div class="field-label" data-i18n="ratingModal.noteLabel">Note (optional)</div>
+    <textarea class="note" id="modalNote" placeholder="Why this rating? What's driving it?" data-i18n-placeholder="ratingModal.notePlaceholder" dir="auto"></textarea>
     <div class="modal-actions">
       <button class="btn ghost" id="modalResetOverride" type="button" style="margin-right:auto;" hidden>Use consolidated result</button>
-      <button class="btn ghost" id="modalCancel" type="button">Cancel</button>
-      <button class="btn primary" id="modalSave" type="button">Save</button>
+      <button class="btn ghost" id="modalCancel" type="button" data-i18n="ratingModal.cancel">Cancel</button>
+      <button class="btn primary" id="modalSave" type="button" data-i18n="ratingModal.save">Save</button>
     </div>
   </div>
 </div>

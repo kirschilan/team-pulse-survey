@@ -132,10 +132,15 @@ function closeSession(sessionId){
   });
 }
 
+// dir="ltr" on both branches' root below: this card renders inside
+// #viewSquad, which Story 4 made i18n-supported (flips to dir="rtl" under
+// Hebrew) -- but the retro flow itself isn't translated yet (Stories 9-10),
+// so this still-English subtree opts back out of inheriting that flip
+// rather than rendering mirrored English text.
 function renderSessionCardHtml(sq){
   var sess = openSessionForSquad(sq.id);
   if(!sess){
-    return '<div class="card session-card">' +
+    return '<div class="card session-card" dir="ltr">' +
       '<h2>Retro session</h2>' +
       '<p class="hint">Start a live session using the board&rsquo;s current template (&ldquo;'+esc(state.config.activeTemplateName||"Custom")+'&rdquo;) &mdash; teammates can join and answer on their own device.</p>' +
       '<button class="btn primary" id="startSessionBtn" type="button">Start retro session</button>' +
@@ -224,7 +229,7 @@ function renderSessionCardHtml(sq){
   var finishHtml = activeDims.length
     ? '<button class="btn primary" id="finishSessionBtn" type="button" style="margin-top:14px;">Finish retro &amp; apply results</button>'
     : "";
-  return '<div class="card session-card">' +
+  return '<div class="card session-card" dir="ltr">' +
     '<h2>Retro session in progress</h2>' +
     '<p class="hint">Retro: &ldquo;'+esc(sess.templateName)+'&rdquo;.</p>' +
     '<div class="session-code-block">' +

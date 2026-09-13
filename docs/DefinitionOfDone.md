@@ -38,9 +38,10 @@ duplicated or contradicted elsewhere:
 
 ## 2. Multi-language support
 
-The Admin panel is this app's first i18n-supported screen (Story 2,
-2026-09-13); the same rules apply to every screen a future story brings
-under translation, and to every one already covered:
+The Admin panel (Story 2) and Tribe view/Squad view/the rating modal
+(Story 4, 2026-09-13) are this app's i18n-supported screens so far; the
+same rules apply to every screen a future story brings under translation,
+and to every one already covered:
 
 - **English (`public/js/locales/en.js`) is the source of truth.** Every
   user-facing string on an i18n-supported screen goes through `t(key, vars)`
@@ -81,7 +82,33 @@ under translation, and to every one already covered:
 - A newly i18n-supported screen's `dir`/`lang` attributes are scoped to
   that screen's own container (e.g. `#viewAdmin`), not the document root,
   until every screen is translated — a page-wide RTL flip before then would
-  visibly break whatever's still English-only.
+  visibly break whatever's still English-only. A still-English WIDGET
+  embedded inside a translated container (e.g. the retro session card
+  embedded in `#viewSquad`, Story 4) sets its own `dir="ltr"` on its root to
+  opt back out, rather than rendering mirrored English text.
+- **Interpolated values in a translated string must not leak their own
+  directionality into the surrounding sentence.** `t(key, vars)` wraps
+  every substituted value in Unicode bidi isolate marks (U+2066 LRI /
+  U+2069 PDI) for exactly this reason — found as a real bug in Story 4:
+  `"{count} {unit} tracked"` rendered with `{count}` and `{unit}` visually
+  swapped once the Hebrew sentence around them took over the paragraph's
+  bidi resolution, even though `.textContent` (the logical string) was
+  correct throughout — only the on-screen rendering was scrambled. Two
+  corollaries, both learned the same way: (1) isolating two adjacent
+  placeholders SEPARATELY doesn't help if nothing but neutral punctuation
+  (a space, a `/`) sits between them — e.g. a `"{scored}/{total}"`
+  fraction needs the whole fraction built as ONE value and isolated once,
+  not built from two independently-isolated numbers; (2) a value with NO
+  strong-direction character at all (a bare numeric ratio like `"2.0 / 3"`,
+  no isolate involved) still gets visually reversed by an RTL ancestor and
+  needs its own explicit `dir="ltr"`, the same fix as `#statAssessed`'s.
+  Any future code that builds translated strings without going through
+  `t()`'s interpolation must reproduce this, not silently drop it.
+- Existing tests asserting exact `.textContent` on a string that now flows
+  through `t()` need their assertions updated for the (invisible, harmless)
+  isolate marks above — strip them before comparing (see
+  `test_tribe_hotspots.py`'s `strip_bidi()` helper) rather than asserting
+  against plain ASCII that no longer matches.
 
 ## 3. Delivery workflow
 

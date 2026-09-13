@@ -51,7 +51,68 @@ var LOCALE_HE = {
 
   "admin.diagnostics.summary": "אבחון (זמני — לפתרון בעיות שמירה)",
   "admin.diagnostics.hint": "אם השמירה לא עובדת, פתחו כאן, נסו לדרג תא, ואז העתיקו או צלמו מסך של מה שמופיע למטה.",
-  "admin.diagnostics.copyButton": "העתקת אבחון"
+  "admin.diagnostics.copyButton": "העתקת אבחון",
+
+  "common.color.good": "ירוק",
+  "common.color.warn": "צהוב",
+  "common.color.crit": "אדום",
+  "common.color.unscored": "עדיין לא דורג",
+  "common.trend.up": "משתפר",
+  "common.trend.down": "בירידה",
+  "common.trend.flat": "יציב",
+  "common.trend.upSuffix": ", משתפר",
+  "common.trend.downSuffix": ", בירידה",
+  "common.scoreLine": "{score} נק' · {fraction} דורגו",
+  "common.ptsOnly": "{score} נק'",
+  "common.breakdownLine": "{crit} אדום · {warn} צהוב",
+  "common.hasNoteTitle": "יש הערה",
+
+  "tribe.stats.assessedLabel": "{unitPlural} שהוערכו",
+  "tribe.stats.assessedSub": "{countUnit} במעקב",
+  "tribe.stats.riskLabel": "פריטים בסיכון",
+  "tribe.stats.riskSub": "ממדים המסומנים באדום בכל הצוותים",
+  "tribe.stats.hotspotLabel": "הנקודה החמה המערכתית המובילה",
+  "tribe.stats.hotspotNone": "עדיין אין",
+  "tribe.stats.hotspotSubFlagged": "{count} מתוך {totalUnit} סימנו את זה באדום",
+  "tribe.stats.hotspotSubNone": "אין ממד שמסומן אדום במספר {unitPlural}",
+
+  "tribe.hotspots.heading": "נקודות חמות בין-צוותיות",
+  "tribe.hotspots.hint": "ממדים שבהם בעיה חוזרת ביותר מצוות אחד — כנראה שווה תיקון ברמת הארגון, לא צוות אחד בכל פעם. מוצג במצטבר; שום צוות אינו מוזכר כאן כברירת מחדל.",
+  "tribe.hotspots.countLine": "{crit} אדום מתוך {total}",
+  "tribe.hotspots.empty": "דרגו כמה {unitPlural} כדי לראות דפוסים מתגבשים.",
+
+  "tribe.breakdown.summary": "פירוט לפי צוות",
+  "tribe.breakdown.hint": "מוצג מכווץ כברירת מחדל כדי שהתצוגה הראשית תישאר על דפוסים, לא צוותים בודדים — הרחיבו בכל עת כדי לראות או להעמיק בצוות מסוים. תצוגה בלבד כאן; צוותים מזינים את הדירוגים שלהם מתצוגת הצוות.",
+  "tribe.ranking.heading": "היכן להשקיע קודם",
+  "tribe.ranking.hint": "צוותים מדורגים לפי סיכון משוקלל (אדום נספר פעמיים). הגבוה ביותר ראשון.",
+  "tribe.ranking.empty": "הוסיפו {unit} כדי להתחיל.",
+  "tribe.grid.empty": "אין עדיין ממדים. הוסיפו אחד מהניהול, או טענו תבנית.",
+
+  "tribe.legend.summaryOne": "איך לקרוא את הממד האחד",
+  "tribe.legend.summaryMany": "איך לקרוא את {count} הממדים",
+  "tribe.legend.empty": "לא הוגדרו ממדים עדיין.",
+  "tribe.legend.attribDefault": "הממדים מותאמים אישית לחלוטין ללוח הזה — נהלו אותם בכל עת דרך עריכת ממדים או תבניות.",
+  "tribe.legend.greenLabel": "ירוק:",
+  "tribe.legend.redLabel": "אדום:",
+  "tribe.tooltip.noDescription": "אין עדיין תיאור",
+
+  "squad.picker.heading": "בחרו את הצוות שלכם",
+  "squad.picker.hint": "בחרו את הצוות שלכם כדי להזין או לעדכן את הדירוגים של הבדיקה הזו. מוצגים כאן רק הנתונים של הצוות הזה.",
+  "squad.picker.empty": "אין עדיין {unitPlural} — בקשו ממנהל להוסיף אחד.",
+  "squad.empty": "בחרו את ה{unit} שלכם למעלה כדי להזין או לעיין בדירוגים שלו.",
+  "squad.hotspots.heading": "הנקודות החמות שלכם",
+  "squad.hotspots.hint": "היכן {name} מסומן אדום או צהוב כרגע.",
+  "squad.hotspots.empty": "שום דבר אדום או צהוב כרגע — כל הכבוד.",
+  "squad.entries.empty": "אין עדיין ממדים — בקשו ממנהל להגדיר כמה.",
+
+  "ratingModal.healthLabel": "בריאות",
+  "ratingModal.trendLabel": "מגמה מאז הבדיקה האחרונה",
+  "ratingModal.noteLabel": "הערה (אופציונלי)",
+  "ratingModal.notePlaceholder": "למה הדירוג הזה? מה מניע אותו?",
+  "ratingModal.cancel": "ביטול",
+  "ratingModal.save": "שמירה",
+  "ratingModal.greenLabel": "ירוק נראה כך:",
+  "ratingModal.redLabel": "אדום נראה כך:"
 };
 
 if (typeof module !== "undefined" && module.exports) {

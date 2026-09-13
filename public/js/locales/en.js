@@ -52,7 +52,68 @@ var LOCALE_EN = {
 
   "admin.diagnostics.summary": "Diagnostics (temporary — for troubleshooting save issues)",
   "admin.diagnostics.hint": "If saving isn't working, open this, try rating a cell, then copy or screenshot what appears below.",
-  "admin.diagnostics.copyButton": "Copy diagnostics"
+  "admin.diagnostics.copyButton": "Copy diagnostics",
+
+  "common.color.good": "Green",
+  "common.color.warn": "Yellow",
+  "common.color.crit": "Red",
+  "common.color.unscored": "Not yet scored",
+  "common.trend.up": "Improving",
+  "common.trend.down": "Declining",
+  "common.trend.flat": "Steady",
+  "common.trend.upSuffix": ", improving",
+  "common.trend.downSuffix": ", declining",
+  "common.scoreLine": "{score} pts · {fraction} scored",
+  "common.ptsOnly": "{score} pts",
+  "common.breakdownLine": "{crit} red · {warn} yellow",
+  "common.hasNoteTitle": "Has a note",
+
+  "tribe.stats.assessedLabel": "{unitPlural} assessed",
+  "tribe.stats.assessedSub": "{countUnit} tracked",
+  "tribe.stats.riskLabel": "Items at risk",
+  "tribe.stats.riskSub": "dimensions marked red across all squads",
+  "tribe.stats.hotspotLabel": "Top systemic hotspot",
+  "tribe.stats.hotspotNone": "None yet",
+  "tribe.stats.hotspotSubFlagged": "{count} of {totalUnit} flagged this red",
+  "tribe.stats.hotspotSubNone": "no dimension is red across multiple {unitPlural}",
+
+  "tribe.hotspots.heading": "Cross-squad hotspots",
+  "tribe.hotspots.hint": "Dimensions where trouble shows up in more than one squad — likely worth an org-level fix, not a squad-by-squad one. Shown in aggregate; no squad is named here by default.",
+  "tribe.hotspots.countLine": "{crit} red / {total}",
+  "tribe.hotspots.empty": "Score a few {unitPlural} to see patterns emerge.",
+
+  "tribe.breakdown.summary": "Squad-by-squad breakdown",
+  "tribe.breakdown.hint": "Collapsed by default so the headline view stays about patterns, not individual squads — expand any time to see or drill into a specific squad. Read-only here; squads enter their own ratings from Squad view.",
+  "tribe.ranking.heading": "Where to invest first",
+  "tribe.ranking.hint": "Squads ranked by weighted risk (red counts double). Highest first.",
+  "tribe.ranking.empty": "Add a {unit} to get started.",
+  "tribe.grid.empty": "No dimensions yet. Add one from Admin, or load a template.",
+
+  "tribe.legend.summaryOne": "How to read the 1 dimension",
+  "tribe.legend.summaryMany": "How to read the {count} dimensions",
+  "tribe.legend.empty": "No dimensions defined yet.",
+  "tribe.legend.attribDefault": "Dimensions are fully custom to this board — manage them any time via Edit dimensions or Templates.",
+  "tribe.legend.greenLabel": "Green:",
+  "tribe.legend.redLabel": "Red:",
+  "tribe.tooltip.noDescription": "No description yet",
+
+  "squad.picker.heading": "Choose your squad",
+  "squad.picker.hint": "Pick your squad to enter or update this check-in's ratings. Only this squad's own data is shown here.",
+  "squad.picker.empty": "No {unitPlural} yet — ask an admin to add one.",
+  "squad.empty": "Select your {unit} above to enter or review its ratings.",
+  "squad.hotspots.heading": "Your hotspots",
+  "squad.hotspots.hint": "Where {name} is flagged red or yellow right now.",
+  "squad.hotspots.empty": "Nothing red or yellow right now — nice work.",
+  "squad.entries.empty": "No dimensions yet — ask an admin to set some up.",
+
+  "ratingModal.healthLabel": "Health",
+  "ratingModal.trendLabel": "Trend since last check",
+  "ratingModal.noteLabel": "Note (optional)",
+  "ratingModal.notePlaceholder": "Why this rating? What's driving it?",
+  "ratingModal.cancel": "Cancel",
+  "ratingModal.save": "Save",
+  "ratingModal.greenLabel": "Green looks like:",
+  "ratingModal.redLabel": "Red looks like:"
 };
 
 if (typeof module !== "undefined" && module.exports) {

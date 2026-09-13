@@ -1082,3 +1082,44 @@ not just in this repo's own tests.
   before) and updates to `README.md`, this file, `tests/README.md`, `tests/unit/README.md`, and the
   `tdd` skill all point to `docs/DefinitionOfDone.md` as the answer to "is this done," rather than
   leaving that judgment implicit or scattered.
+- 2026-09-13 — **Multi-language support, Story 4: Tribe view, Squad view, and the shared rating
+  modal.** Translated every piece of chrome on both main screens and the modal that isn't
+  template-sourced dimension content (labels/green/red text stays whatever the active template
+  defines -- Stories 5-7's job): stats cards, cross-squad hotspots, squad-by-squad breakdown and
+  ranking, the dimension legend, both empty states and the grid, the squad picker, "Your hotspots,"
+  entry list, and the rating modal's Health/Trend/Note chrome, swatch and trend titles, and
+  Cancel/Save. `dir`/`lang` now scope to `#viewTribe`, `#viewSquad`, and `#backdrop` too (`i18n.js`'s
+  `RTL_SCOPED_CONTAINERS`) -- not the document root, so the still-untranslated retro flow and every
+  other modal don't visually break. The retro session card renders INSIDE `#viewSquad` but stays
+  English (Stories 9-10), so it now sets its own `dir="ltr"` to opt out of inheriting the RTL flip,
+  same pattern documented in `docs/DefinitionOfDone.md` for any future still-English widget embedded
+  in a translated container. `colorWord()`/`trendWord()` (`helpers.js`) were deliberately NOT made
+  locale-aware directly -- they're also called from retro-facilitator.js/retro-join.js, which aren't
+  translated yet, and doing so would leak Hebrew into an untranslated screen the moment the language
+  switches; new `colorWordLocalized()`/`trendWordLocalized()` (`i18n.js`) are used only from the
+  Tribe-/Squad-view call sites Story 4 actually covers.
+
+  Real, non-obvious bug found and fixed while building this (now written into the DOD, Multi-language
+  section, so it doesn't have to be rediscovered per screen): a value interpolated into a translated
+  string can visually reorder relative to the surrounding text once that sentence's language flips
+  the container to `rtl`, even though `.textContent` (the logical string) stays correct throughout.
+  `"{count} {unit} tracked"` rendered with `{count}` and `{unit}` visually swapped. Fixed generically
+  in `t(key, vars)`: every substituted value is now wrapped in Unicode bidi isolate marks (U+2066
+  LRI / U+2069 PDI) -- plain, invisible Unicode characters, so this works for a bare `.textContent`
+  assignment, not just `innerHTML`. Two follow-on findings while verifying the fix, both empirical
+  (confirmed with a minimal standalone repro page before touching the real app): isolating two
+  adjacent placeholders SEPARATELY doesn't help when only neutral punctuation sits between them (a
+  `"{scored}/{total}"` fraction still reordered) -- fixed by building the whole fraction as one
+  value (`common.scoreLine`'s new `{fraction}` var) and isolating it once; and a value with NO
+  strong-direction character at all (`#statAssessed`'s bare `"0.0 / 3"` ratio, no translated word
+  nearby to anchor it) still gets reversed by an RTL ancestor regardless of isolation, needing its
+  own explicit `dir="ltr"`. Updated three existing tests whose exact-`.textContent` assertions
+  predated `t()`'s isolate marks (`test_admin_language_switch.py`, `test_tribe_hotspots.py` --
+  the latter gained a small `strip_bidi()` helper other tests can reuse) -- all real breakage from a
+  real (correct) behavior change, not flakes. New `test_main_screen_language.py` covers the
+  translated chrome, the dir-scoping (including the session-card opt-out), the bidi-isolate fix on
+  four different composite strings, and full restore on switching back to English. Full 34-file
+  Playwright + 45-test unit suite passing, verified both at `TEST_JOBS=2` and serially at
+  `TEST_JOBS=1` (one `test_relay_board_path_sync.py` failure seen at `TEST_JOBS=2`, reproduced as
+  this file's own documented CPU-contention flake -- passed clean standalone and at `TEST_JOBS=1`,
+  unrelated to this change, no relay/board-sync file touched).

@@ -35,10 +35,19 @@ test("t() surfaces the raw key when it exists in no locale at all (never a blank
   assert.equal(t("admin.totally.unknown.key"), "admin.totally.unknown.key");
 });
 
-test("t() interpolates {word} tokens from the vars argument", () => {
-  assert.equal(t("admin.squads.addButton", { unit: "Team" }), "+ Add Team");
+test("t() interpolates {word} tokens from the vars argument, wrapped in bidi isolate marks", () => {
+  // U+2066 LRI / U+2069 PDI wrap every substituted value -- see i18n.js's
+  // own comment: without this, an untranslated word (or a name/number of
+  // unknown script) embedded in a translated sentence can visually reorder
+  // relative to the surrounding text once that sentence's language flips
+  // the paragraph to rtl, even though .textContent itself is unaffected.
+  const LRI = "⁦", PDI = "⁩";
+  assert.equal(t("admin.squads.addButton", { unit: "Team" }), `+ Add ${LRI}Team${PDI}`);
   global.state.ui.locale = "he";
-  assert.equal(t("admin.squads.addButton", { unit: "Team" }), LOCALE_HE["admin.squads.addButton"].replace("{unit}", "Team"));
+  assert.equal(
+    t("admin.squads.addButton", { unit: "Team" }),
+    LOCALE_HE["admin.squads.addButton"].replace("{unit}", LRI + "Team" + PDI)
+  );
   global.state.ui.locale = "en";
 });
 

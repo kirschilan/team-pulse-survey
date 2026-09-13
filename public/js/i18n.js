@@ -2,13 +2,16 @@
 
 
 // ---------- multi-language support ----------
-// Story 1 of the multi-language roadmap (see STATUS.md): a t()/setLocale()
-// layer for the Admin panel only -- Tribe/Squad view, the retro flow, and
-// every modal (Edit dimensions, Templates, CSV import) stay English-only
-// until their own future stories translate them. This deliberately does NOT
-// flip the whole document to rtl: only #viewAdmin's own dir/lang attributes
-// change, so the rest of the still-English app doesn't visually break under
-// a page-wide RTL layout it was never translated for.
+// Story 1: Admin panel. Story 4: Tribe view, Squad view, and the shared
+// rating modal. Still English-only: every other modal (Edit dimensions,
+// Templates, CSV import), and the retro facilitator/join flow (their own
+// future stories). RTL_SCOPED_CONTAINERS below lists every container
+// currently translated -- each gets its own dir/lang flip; nothing else
+// does, so a still-English screen never visually breaks under an RTL
+// layout it was never translated for. A still-English WIDGET embedded
+// inside a translated container (e.g. the retro session card inside
+// #viewSquad) sets its own dir="ltr" on its root to opt back out -- see
+// retro-facilitator.js's renderSessionCardHtml().
 //
 // LOCALE_EN (locales/en.js) is the source of truth for every key; LOCALE_HE
 // (locales/he.js) is what a human corrects when a phrase reads wrong -- see
@@ -19,6 +22,7 @@ var LOCALES = { en: LOCALE_EN, he: LOCALE_HE };
 var DEFAULT_LOCALE = "en";
 var SUPPORTED_LOCALES = ["en", "he"];
 var LANG_STORAGE_KEY = "squadpulse:lang";
+var RTL_SCOPED_CONTAINERS = ["viewAdmin", "viewTribe", "viewSquad", "backdrop"];
 
 function t(key, vars){
   var loc = (state && state.ui && state.ui.locale) || DEFAULT_LOCALE;
@@ -27,18 +31,31 @@ function t(key, vars){
   if(str === undefined) return key; // missing from every locale -- surface the key, not a blank
   if(vars){
     Object.keys(vars).forEach(function(k){
-      str = str.split("{"+k+"}").join(vars[k]);
+      // Wrap each substituted value in Unicode bidi isolate marks (U+2066
+      // LEFT-TO-RIGHT ISOLATE / U+2069 POP DIRECTIONAL ISOLATE) so its own
+      // directionality -- an untranslated English unit name embedded in a
+      // Hebrew sentence, a squad name of unknown script, a number -- never
+      // leaks out to reorder the surrounding translated text's word order.
+      // Real, observed bug otherwise (see STATUS.md): "{count} {unit}
+      // tracked" rendered with {count} and {unit} visually swapped once
+      // the Hebrew sentence around them took over the paragraph's bidi
+      // resolution, even though .textContent (the logical string) was
+      // always correct -- only the on-screen rendering was scrambled.
+      // These are plain Unicode characters, not markup, so this is safe
+      // for a plain .textContent assignment, not just innerHTML.
+      str = str.split("{"+k+"}").join("⁦"+vars[k]+"⁩");
     });
   }
   return str;
 }
 
-// Applies every [data-i18n] element's textContent and every
-// [data-i18n-placeholder] element's placeholder from the active locale --
+// Applies every [data-i18n] element's textContent, every
+// [data-i18n-placeholder] element's placeholder, and every
+// [data-i18n-title] element's title attribute from the active locale --
 // called once at boot and again on every setLocale(). Static markup only;
-// admin-panel strings built in JS (squads.js's dynamic squad rows, confirm
-// dialogs) call t() directly instead, since renderAdminSquadList() already
-// re-renders on every relevant change.
+// strings built in JS (dynamic rows, confirm dialogs, aria-labels) call
+// t() directly instead, since their own render function already re-runs on
+// every relevant change.
 function applyStaticTranslations(){
   document.querySelectorAll("[data-i18n]").forEach(function(el){
     el.textContent = t(el.getAttribute("data-i18n"));
@@ -46,6 +63,24 @@ function applyStaticTranslations(){
   document.querySelectorAll("[data-i18n-placeholder]").forEach(function(el){
     el.placeholder = t(el.getAttribute("data-i18n-placeholder"));
   });
+  document.querySelectorAll("[data-i18n-title]").forEach(function(el){
+    el.title = t(el.getAttribute("data-i18n-title"));
+  });
+}
+
+// Localized counterparts of helpers.js's colorWord()/trendWord() -- kept
+// separate rather than making those two i18n-aware directly, since they're
+// also called from retro-facilitator.js/retro-join.js, which aren't
+// i18n-supported yet (Stories 9-10); making them locale-aware would leak
+// Hebrew into an otherwise-English retro screen the moment someone switches
+// languages, ahead of the story that's actually supposed to translate it.
+// Used only from render.js/squads.js's Tribe- and Squad-view code.
+function colorWordLocalized(color){
+  return color==="good" ? t("common.color.good") : color==="warn" ? t("common.color.warn") : color==="crit" ? t("common.color.crit") : t("common.color.unscored");
+}
+function trendWordLocalized(trend, suffix){
+  if(suffix) return trend==="up" ? t("common.trend.upSuffix") : trend==="down" ? t("common.trend.downSuffix") : "";
+  return trend==="up" ? t("common.trend.up") : trend==="down" ? t("common.trend.down") : "";
 }
 
 function updateLangSwitchUi(){
@@ -54,18 +89,23 @@ function updateLangSwitchUi(){
   });
 }
 
+function applyScopedDirLang(loc){
+  RTL_SCOPED_CONTAINERS.forEach(function(id){
+    var el = document.getElementById(id);
+    if(!el) return;
+    el.setAttribute("dir", loc === "he" ? "rtl" : "ltr");
+    el.setAttribute("lang", loc);
+  });
+}
+
 function setLocale(loc){
   if(SUPPORTED_LOCALES.indexOf(loc) === -1) return;
   state.ui.locale = loc;
   try{ localStorage.setItem(LANG_STORAGE_KEY, loc); }catch(e){ /* per-viewer convenience only */ }
-  var adminSection = document.getElementById("viewAdmin");
-  if(adminSection){
-    adminSection.setAttribute("dir", loc === "he" ? "rtl" : "ltr");
-    adminSection.setAttribute("lang", loc);
-  }
+  applyScopedDirLang(loc);
   applyStaticTranslations();
   updateLangSwitchUi();
-  if(typeof renderAll === "function") renderAll(); // re-render admin-panel strings built in JS (squad list, add-squad button, ...)
+  if(typeof renderAll === "function") renderAll(); // re-render strings built in JS (squad list, grid, entries, ...)
   if(typeof renderTeamSyncStatus === "function") renderTeamSyncStatus(); // not part of renderAll() -- only re-rendered on connect/disconnect otherwise
 }
 
@@ -75,11 +115,7 @@ if (typeof document !== "undefined" && document.querySelectorAll){
   document.querySelectorAll(".lang-btn").forEach(function(btn){
     btn.addEventListener("click", function(){ setLocale(btn.getAttribute("data-lang")); });
   });
-  var adminSectionBoot = document.getElementById("viewAdmin");
-  if(adminSectionBoot && state && state.ui && state.ui.locale === "he"){
-    adminSectionBoot.setAttribute("dir", "rtl");
-    adminSectionBoot.setAttribute("lang", "he");
-  }
+  if(state && state.ui && state.ui.locale === "he") applyScopedDirLang("he");
 }
 
 // See helpers.js's matching block for why this exists and why it's safe: a

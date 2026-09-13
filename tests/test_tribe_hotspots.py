@@ -14,6 +14,15 @@ from fixtures.build_page import build_page, test_output_path
 
 out_path = build_page(out_name="_test_tribe_hotspots.html")
 
+
+def strip_bidi(s):
+    # t()'s {word} substitutions are wrapped in U+2066/U+2069 bidi isolate
+    # marks (see i18n.js's Story 4 entry in STATUS.md) so an untranslated
+    # word can't scramble a future RTL sentence's word order -- invisible
+    # and harmless in English too, but present in .textContent, so substring
+    # checks here strip them rather than matching against plain ASCII.
+    return s.replace("⁦", "").replace("⁩", "")
+
 with sync_playwright() as p:
     browser = p.chromium.launch()
     page = browser.new_page(viewport={"width":1280,"height":1000})
@@ -32,7 +41,7 @@ with sync_playwright() as p:
     row_texts_empty = page.eval_on_selector_all('#hotspotList .hotspot-row', 'els=>els.map(e=>e.textContent)')
     print("hotspot rows before any ratings (all 0 red):", row_texts_empty)
     assert len(row_texts_empty) == 3
-    assert all("0 red" in t for t in row_texts_empty)
+    assert all("0 red" in strip_bidi(t) for t in row_texts_empty)
 
     # ---- add a 3rd squad (the fake store already seeds squad-1/squad-2) ----
     page.click('.view-btn[data-view="admin"]')
@@ -74,12 +83,12 @@ with sync_playwright() as p:
     hot_sub = page.eval_on_selector('#statHotspotSub', 'el=>el.textContent')
     print("top single hotspot (should be Easy to release, 2 of 3 squads):", hot_label, "|", hot_sub)
     assert hot_label == "Easy to release"
-    assert "2 of 3" in hot_sub
+    assert "2 of 3" in strip_bidi(hot_sub)
 
     row_texts = page.eval_on_selector_all('#hotspotList .hotspot-row', 'els=>els.map(e=>e.textContent)')
     print("hotspot rows, ranked by weightScore (release, process, value):", row_texts)
     assert len(row_texts) == 3
-    assert "Easy to release" in row_texts[0] and "2 red / 3" in row_texts[0]
+    assert "Easy to release" in row_texts[0] and "2 red / 3" in strip_bidi(row_texts[0])
     assert "Suitable process" in row_texts[1]
     assert "Value" in row_texts[2]
     print("errors:", errors)

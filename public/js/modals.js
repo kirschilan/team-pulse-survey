@@ -54,7 +54,7 @@ function openEditor(squadId, dimKey){
   document.getElementById("modalRed").textContent = d.red;
   var noteBox = document.getElementById("modalNote");
   noteBox.value = state.editingCell.note;
-  noteBox.placeholder = "Why this rating? What's driving it?";
+  noteBox.placeholder = t("ratingModal.notePlaceholder");
   document.getElementById("modalResetOverride").hidden = true;
   updateSwatchSelection();
   updateTrendSelection();
