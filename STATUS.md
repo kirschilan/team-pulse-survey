@@ -1518,3 +1518,15 @@ not just in this repo's own tests.
   selectors happened to also match hidden markup elsewhere. Result: ~5.25s -> ~1.6-2.0s per run
   locally, 10/10 clean, then the full 43-file suite (69-test unit suite included), zero
   regressions.
+- 2026-09-14 — Third file in the condition-based-wait perf pass: `test_tribe_hotspots.py`
+  (Copilot's #3-ranked file), on its own short-lived branch. Same treatment. The `rate()` helper's
+  5-click chain needed no waits at all -- Playwright's `click()` auto-waits on every step, and
+  nothing reads state between the 7 calls to it, so the whole chain just needed to be left alone.
+  One read needed care beyond a plain "did the element land" check: after the 7 ratings,
+  `#statHotspot` already held content from the earlier "None yet" case, so simple selector
+  presence wasn't a real completion signal for the POST-rating value -- polled
+  (`wait_for_function`) for the actual expected text instead, the same value the assertion right
+  after it re-checks (the same pattern this repo's own `wait_for_scored()` helper already uses
+  elsewhere for a comparable "wait for the real end-state, not just some transition" case).
+  Result: ~7.2s -> ~2.3-2.6s per run locally, 10/10 clean, then the full 43-file suite, zero
+  regressions.
