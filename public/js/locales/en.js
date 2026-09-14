@@ -110,6 +110,7 @@ var LOCALE_EN = {
   "common.ptsOnly": "{score} pts",
   "common.breakdownLine": "{crit} red · {warn} yellow",
   "common.hasNoteTitle": "Has a note",
+  "common.ok": "OK",
 
   "tribe.stats.assessedLabel": "{unitPlural} assessed",
   "tribe.stats.assessedSub": "{countUnit} tracked",
@@ -192,7 +193,66 @@ var LOCALE_EN = {
   "join.scale.usually": "Usually",
   "join.squadHealthCheckHeading": "Squad health check",
   "join.submitButton": "Submit",
-  "join.submittingButton": "Submitting…"
+  "join.submittingButton": "Submitting…",
+
+  // Story 11: the retro FACILITATION flow (facilitator-facing screens) --
+  // the session card (start/start-again, session code, live tally, reveal
+  // toggle, sprint-experiment note, finish/close), the per-dimension
+  // override editor (shares the rating modal's own markup -- see
+  // modals.js's activeEditor()), and their confirm dialogs. Same scope
+  // boundary as Story 10: dimension content (label/green/red) stays
+  // untranslated, it's the admin's own authored content.
+  "retro.noSession.heading": "Retro session",
+  "retro.noSession.hint": "Start a live session using the board's current template (“{templateName}”) — teammates can join and answer on their own device.",
+  "retro.startButton": "Start retro session",
+  "retro.startingButton": "Starting…",
+  "retro.inProgressHeading": "Retro session in progress",
+  "retro.retroLabel": "Retro: “{name}”.",
+  "retro.codeBlock.heading": "Session code",
+  "retro.codeBlock.hint": "Have teammates open Squad Pulse and tap “Join a retro” up top, then type this code in.",
+  "retro.reveal.hold": "Hold results",
+  "retro.reveal.live": "Show live",
+  "retro.countLine.one": "1 teammate has submitted so far.",
+  "retro.countLine.many": "{count} teammates have submitted so far.",
+  "retro.live.heading": "Live results",
+  "retro.live.waiting": "Waiting…",
+  "retro.live.overriddenTag": "Overridden",
+  "retro.live.overrideTitle": "Override this result",
+  "retro.live.seeResponsesOne": "See all 1 response",
+  "retro.live.seeResponsesMany": "See all {count} responses",
+  "retro.live.responseRowLabel": "Response {n}",
+  "retro.held.heading": "Results held",
+  "retro.held.hint": " Switch to “Show live” any time to see the consolidated results as they come in.",
+  "retro.experiment.heading": "Sprint experiment",
+  "retro.experiment.hint": "What will the team try differently next sprint?",
+  "retro.experiment.placeholder": "e.g. Pair on the riskiest story each day",
+  "retro.experiment.saved": "Saved",
+  "retro.experiment.saveButton": "Save note",
+  "retro.finishButton": "Finish retro & apply results",
+  "retro.closeButton": "Close session without applying results",
+  "retro.shareLink.summary": "Or scan/share a link",
+  "retro.shareLink.hint": "On some phones, scanning this opens the Claude app to the regular board instead of the retro — if that happens, use the session code above instead.",
+  "retro.shareLink.linkLabel": "Join link",
+  "retro.shareLink.copy": "Copy",
+  "retro.coFacilitate.summary": "Bring in a co-facilitator",
+  "retro.coFacilitate.hint": "A different link from the join link above — opening this gets the FULL facilitator view (live tally, override, finish), not the survey.",
+  "retro.coFacilitate.linkLabel": "Co-facilitator link",
+  "retro.coFacilitate.errorTitle": "Couldn't co-facilitate that session",
+  "retro.coFacilitate.errorFallback": "Something went wrong reaching the relay. Check the diagnostic log below for details.",
+  "retro.coFacilitate.notConnected": "Not connected to the relay yet — try again in a moment.",
+  "retro.coFacilitate.codeNotOpen": "That session code isn't open.",
+  "retro.confirmStart.errorTitle": "Couldn't start the retro session",
+  "retro.confirmClose.title": "Close this retro session?",
+  "retro.confirmClose.message": "Ends the session for everyone with the link. This does not change any of {name}'s existing ratings.",
+  "retro.confirmClose.button": "Close without applying results",
+  "retro.confirmFinishEmpty.title": "Finish this retro?",
+  "retro.confirmFinishEmpty.message": "No submissions or overrides yet, so {name}'s ratings won't change. This just closes the session.",
+  "retro.confirmFinish.title": "Finish this retro?",
+  "retro.confirmFinish.message": "Writes these results into {name}'s ratings, then closes the session — {summary}",
+  "retro.confirmFinish.button": "Finish & apply",
+  "retro.confirmFinish.overriddenSuffix": " (overridden)",
+  "retro.override.squadline": "Overriding this retro's consolidated result",
+  "retro.override.notePlaceholder": "Why override this? (optional)"
 };
 
 if (typeof module !== "undefined" && module.exports) {

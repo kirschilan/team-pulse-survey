@@ -5,8 +5,9 @@
 // Story 1: Admin panel. Story 4: Tribe view, Squad view, and the shared
 // rating modal. Story 6: the app header/nav chrome. Story 9: the Templates
 // modal. Story 10: the retro JOIN flow (participant screens + the "Join a
-// retro" code modal). Still English-only: Edit dimensions, CSV import, and
-// the retro FACILITATOR flow (their own future stories). RTL_SCOPED_CONTAINERS
+// retro" code modal). Story 11: the retro FACILITATOR flow (session card,
+// override editor, confirm dialogs). Still English-only: Edit dimensions
+// and CSV import (their own future stories). RTL_SCOPED_CONTAINERS
 // below lists every container currently translated -- each gets its own
 // dir/lang flip; nothing else does, so a still-English screen never
 // visually breaks under an RTL layout it was never translated for. A

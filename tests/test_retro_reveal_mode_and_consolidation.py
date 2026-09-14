@@ -14,6 +14,15 @@ from fixtures.build_page import build_page, test_output_path
 
 out_path = build_page(out_name="_test_retro_reveal_consolidation.html")
 
+
+def strip_bidi(s):
+    # Story 11 routed the held/live submission count line through t(),
+    # which wraps every interpolated value (the count) in Unicode bidi
+    # isolate marks (U+2066 LRI / U+2069 PDI) -- see i18n.js/STATUS.md.
+    # Invisible and harmless, but present in .textContent, so exact-text
+    # checks here strip them rather than matching against plain ASCII.
+    return s.replace("⁦", "").replace("⁩", "")
+
 with sync_playwright() as p:
     browser = p.chromium.launch()
     page = browser.new_page(viewport={"width":1280,"height":1000})
@@ -80,7 +89,7 @@ with sync_playwright() as p:
     print("=== still hold: 5 submissions in, but no pills shown ===")
     held_text = page.eval_on_selector('.live-block .hint', 'el => el.textContent')
     print("held hint text:", held_text)
-    assert held_text.strip().startswith("5")
+    assert strip_bidi(held_text).strip().startswith("5")
     assert page.query_selector('.live-dim-row') is None, "hold mode must not leak the consolidated pills"
     print("errors:", errors)
 
@@ -126,7 +135,7 @@ with sync_playwright() as p:
     assert page.query_selector('.live-dim-row') is None
     held_text2 = page.eval_on_selector('.live-block .hint', 'el => el.textContent')
     print("held hint text after flipping back:", held_text2)
-    assert held_text2.strip().startswith("4")  # one response was deleted above
+    assert strip_bidi(held_text2).strip().startswith("4")  # one response was deleted above
     print("errors:", errors)
 
     print("=== switching squads and back preserves the reveal mode (re-subscribes correctly) ===")

@@ -96,9 +96,9 @@ function submitCoFacilitateCode(){
   closeJoinCodeModal();
   coFacilitateSessionByCode(raw).catch(function(err){
     openConfirm(
-      "Couldn’t co-facilitate that session",
-      (err && err.message) ? err.message : "Something went wrong reaching the relay. Check the diagnostic log below for details.",
-      function(){}, "OK"
+      t("retro.coFacilitate.errorTitle"),
+      (err && err.message) ? err.message : t("retro.coFacilitate.errorFallback"),
+      function(){}, t("common.ok")
     );
   });
 }
