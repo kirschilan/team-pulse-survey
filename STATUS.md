@@ -1677,3 +1677,26 @@ not just in this repo's own tests.
   with it if relevant -- found no trace of it here (no other branch, no committed file referencing
   it), so this export uses its own straightforward shape for now; worth reconciling once that other
   session's work is visible here.
+- 2026-09-14 — Fifth file in the condition-based-wait perf pass: `test_cofacilitator_join.py`
+  (Copilot's #5-ranked file, and the first RELAY-backed/multi-device file this pass has touched),
+  on its own short-lived branch. Same treatment for the click chains and content-dependent reads
+  (device D's session card landing, the confirm dialog's dismissal state, and -- the load-bearing
+  fix here -- device B's live tally actually containing device C's real submission after a genuine
+  relay round trip, tied to the exact text asserted right after rather than a flat 500ms guess).
+  `#teamLinkInput`'s value also got a real poll instead of a guess, since it's populated by
+  `crypto.subtle`-based key generation -- a real, non-instant async browser API, unlike this fake
+  store's near-instant local writes.
+  Deliberately left two waits untouched, matching this repo's own established precedent
+  (`test_board_sync_finish_retro_convergence.py`'s comments on the identical pattern): the settle
+  wait right after each of device B and device C opening device A's team link fresh. No documented
+  DOM-based signal exists yet for "this device has finished adopting a team it just opened via
+  URL," and getting that wrong on a relay-backed, cross-device write path risked a worse, harder-to
+  -diagnose failure than the modest time these two waits cost -- unlike the other conversions in
+  this pass, which only ever risked a slower/more-verbose failure if wrong.
+  Result: ~7.4s -> ~4.6-5.0s per run locally (a more modest cut than the four purely-local files,
+  expected given the two intentionally-kept waits), 15/15 clean (matched the bigger stress-test
+  batch used for the tooltip file, given the relay/multi-device stakes here). Landed via a real
+  merge, not a fast-forward, since Stories 13-14 (bilingual dimension editor, CSV import/export
+  chrome) merged into the shared branch while this was in progress -- re-verified against that
+  merged state: 5x stress-test rerun clean, full 44-file suite (69-test unit suite included), zero
+  regressions.
