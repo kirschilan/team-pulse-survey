@@ -1715,3 +1715,23 @@ not just in this repo's own tests.
   the pipe is guaranteed to hit EOF. Verified the happy path still passes standalone, then re-ran
   the full suite fresh (69 unit tests + full Playwright regression) to confirm zero regressions from
   the fix itself, on its own short-lived branch.
+- 2026-09-14 — Copilot perf pass, file 6/9: `test_retro_join_flow.py`. Replaced nearly all
+  `wait_for_timeout()` calls with real conditions: `wait_for_selector(state="attached")` for reads
+  via `query_selector()`/`eval_on_selector()` after a per-squad detail render or a native
+  `<details>` toggle (both synchronous once the target lands, so the only real gap is DOM
+  attachment -- confirmed the QR/diag-log content in question was already rendered into the
+  collapsed-but-attached markup, not built lazily on open), `state="visible"`/`"hidden"` for the
+  join-code modal's own open/close toggles, and `wait_for_function()` polling
+  `window.__FAKE_STORE__` for session-doc writes (the fake store's `set()`/`update()` write
+  synchronously, but the wait verifies the actual condition -- a specific session's status, or a
+  fresh key landing -- rather than assume that timing holds). A few click-then-click chains with no
+  intervening read needed no wait at all, since `click()`/`fill()` already auto-wait for their own
+  next target to become actionable. Kept exactly one fixed wait: after the copy-join-link button,
+  since `navigator.clipboard.writeText()` rejects asynchronously without clipboard permissions in
+  this headless run, and that rejection surfacing as a `pageerror` is precisely what the following
+  assertion checks -- there's no DOM signal to poll for it instead. Verified byte-for-byte identical
+  output against the original (aside from randomized session codes/timestamps), then stress-tested
+  10x clean at ~2.9-3.1s per run (down from ~6.6s). Landed via a fast-forward-then-merge onto the
+  preview branch after the relay-deadlock fix above landed concurrently; re-verified the merged
+  state: 5x stress-test rerun clean, full 44-file Playwright suite, and the 69-test unit suite, zero
+  regressions.
