@@ -1414,3 +1414,25 @@ not just in this repo's own tests.
   - Backlog table: Stories 1-12 now **DONE**. Story 13 (CSV import/export chrome) remains --
     deliberately last, since `csv.js`'s column-matching/re-import logic keys off raw English
     labels and needs its own design pass, not just a translation pass.
+- 2026-09-14 — Copilot (via VSCode) profiled the full sequential suite and flagged the ten
+  slowest Playwright files, most of it fixed `wait_for_timeout()` calls with no causal link to
+  the thing being waited for. Assessed as a legitimate, safe optimization (not a new
+  architecture, unlike the earlier no-browser integration-tier proposal this repo already
+  rejected) because `local-store.js`'s subscription notify genuinely runs on a `setTimeout(0)`
+  tick -- these waits aren't purely decorative, they're covering a real one-tick async gap, just
+  with a guessed constant instead of a real completion signal. Piloted the fix on
+  `test_hebrew_rtl_coverage.py` (Copilot's #2-ranked file) on its own short-lived branch
+  (`claude/perf-condition-waits`) per the delivery workflow: removed every `wait_for_timeout()`,
+  relying on Playwright's own auto-wait on `click()`/`fill()` where the next action was one of
+  those (redundant already), and adding `wait_for_selector()`/`wait_for_function()` only where
+  the next call was `query_selector()`/`eval_on_selector()`/`evaluate()` (none of which auto-wait).
+  Found two real bugs empirically, not by inspection, via a 10x stress-test loop: `wait_for_selector`
+  defaults to `state="visible"`, which hung when the first DOM-order match was a hidden duplicate
+  of near-identical markup from an inactive (but still-mounted) view, or sat inside a collapsed
+  `<details>` not yet expanded -- both fixed with `state="attached"`, matching what
+  `eval_on_selector`'s own DOM-presence-only semantics already assumed everywhere in this test.
+  Result: ~8.5s -> ~3.2-3.5s per run locally, 10/10 clean, then re-verified against a same-file
+  merge from the concurrent i18n session (Stories 10-12) and the full 41-file suite, zero
+  regressions. Deferred the rest of Copilot's list (other flagged files, duration-aware shard
+  balancing, shared-browser-per-worker) rather than batching them in -- each file needs the same
+  per-site empirical verification this one took, not a mechanical find-and-replace.
