@@ -15,6 +15,49 @@
 // itself translated here; that's a separate, deeper feature this story
 // doesn't attempt.
 var LOCALE_EN = {
+  // Story 6: the app header/nav chrome, outside every view container. The
+  // app NAME itself is a deliberate brand-name pass-through -- same literal
+  // value in every locale (see locales/he.js's header comment) -- still
+  // routed through t() so it satisfies "every string on an i18n-supported
+  // screen goes through t()" mechanically without producing an awkward
+  // literal translation of a proper noun.
+  "header.appName": "Squad Pulse",
+  "header.tagline": "A fast, visual health snapshot across your {unitPlural} — so you can see at a glance where things are strong and where to invest next.",
+  "header.syncConnecting": "Connecting…",
+  "header.syncLive": "Live — synced across viewers",
+  "header.syncPreviewOnly": "Preview only — not connected",
+  "header.joinRetro": "Join a retro",
+  "header.backToRetro": "← Back to my retro",
+  "header.viewTribe": "Tribe view",
+  "header.viewSquad": "Squad view",
+  "header.viewAdmin": "Admin",
+
+  // Story 9: the Templates modal's own chrome. The template NAMES
+  // themselves and a starter template's own dimension content (Stories
+  // 5/7/8) are NOT covered here -- a template's name and a saved custom
+  // template's dimension text are the admin's own content, not app chrome.
+  "templates.title": "Survey templates",
+  "templates.hint": "Swap in a ready-made set of dimensions, or save your current setup so you (or a teammate) can reuse it later.",
+  "templates.starterHeading": "Starter templates",
+  "templates.ownHeading": "Your templates",
+  "templates.emptyOwnHint": "No saved templates yet — set up your dimensions the way you want, then save the current setup as a template below.",
+  "templates.namePlaceholder": "Name this setup, e.g. “My team's checklist”",
+  "templates.saveButton": "Save current as template",
+  "templates.closeButton": "Close",
+  "templates.loadButton": "Load",
+  "templates.deleteTitle": "Delete template",
+  "templates.meta.dimensionsOne": "1 dimension",
+  "templates.meta.dimensionsMany": "{count} dimensions",
+  "templates.meta.rates": " · rates {unit}",
+  "templates.meta.scoredFromStatements": " · {count} scored from statements",
+  "templates.confirmLoadTitle": "Load “{name}”?",
+  "templates.confirmLoadMessage": "This replaces your current {oldCount} dimension(s) with {name}'s {newCount}. Ratings tied to dimensions that don't carry over will be hidden, not deleted.",
+  "templates.confirmLoadButton": "Load template",
+  "templates.confirmDeleteTitle": "Delete “{name}”?",
+  "templates.confirmDeleteMessage": "This removes the saved template. It won't affect your current dimensions or ratings.",
+  "templates.confirmDeleteButton": "Delete",
+  "templates.switchingBusy": "Switching to “{name}”…",
+
   "admin.language.heading": "Language",
   "admin.language.betaBadge": "Beta",
   "admin.language.hint": "Choose the language for the Admin panel. More of the app will follow as translation coverage grows.",
@@ -52,7 +95,202 @@ var LOCALE_EN = {
 
   "admin.diagnostics.summary": "Diagnostics (temporary — for troubleshooting save issues)",
   "admin.diagnostics.hint": "If saving isn't working, open this, try rating a cell, then copy or screenshot what appears below.",
-  "admin.diagnostics.copyButton": "Copy diagnostics"
+  "admin.diagnostics.copyButton": "Copy diagnostics",
+
+  "common.color.good": "Green",
+  "common.color.warn": "Yellow",
+  "common.color.crit": "Red",
+  "common.color.unscored": "Not yet scored",
+  "common.trend.up": "Improving",
+  "common.trend.down": "Declining",
+  "common.trend.flat": "Steady",
+  "common.trend.upSuffix": ", improving",
+  "common.trend.downSuffix": ", declining",
+  "common.scoreLine": "{score} pts · {fraction} scored",
+  "common.ptsOnly": "{score} pts",
+  "common.breakdownLine": "{crit} red · {warn} yellow",
+  "common.hasNoteTitle": "Has a note",
+  "common.ok": "OK",
+
+  "tribe.stats.assessedLabel": "{unitPlural} assessed",
+  "tribe.stats.assessedSub": "{countUnit} tracked",
+  "tribe.stats.riskLabel": "Items at risk",
+  "tribe.stats.riskSub": "dimensions marked red across all squads",
+  "tribe.stats.hotspotLabel": "Top systemic hotspot",
+  "tribe.stats.hotspotNone": "None yet",
+  "tribe.stats.hotspotSubFlagged": "{count} of {totalUnit} flagged this red",
+  "tribe.stats.hotspotSubNone": "no dimension is red across multiple {unitPlural}",
+
+  "tribe.hotspots.heading": "Cross-squad hotspots",
+  "tribe.hotspots.hint": "Dimensions where trouble shows up in more than one squad — likely worth an org-level fix, not a squad-by-squad one. Shown in aggregate; no squad is named here by default.",
+  "tribe.hotspots.countLine": "{crit} red / {total}",
+  "tribe.hotspots.empty": "Score a few {unitPlural} to see patterns emerge.",
+
+  "tribe.breakdown.summary": "Squad-by-squad breakdown",
+  "tribe.breakdown.hint": "Collapsed by default so the headline view stays about patterns, not individual squads — expand any time to see or drill into a specific squad. Read-only here; squads enter their own ratings from Squad view.",
+  "tribe.ranking.heading": "Where to invest first",
+  "tribe.ranking.hint": "Squads ranked by weighted risk (red counts double). Highest first.",
+  "tribe.ranking.empty": "Add a {unit} to get started.",
+  "tribe.grid.empty": "No dimensions yet. Add one from Admin, or load a template.",
+
+  "tribe.legend.summaryOne": "How to read the 1 dimension",
+  "tribe.legend.summaryMany": "How to read the {count} dimensions",
+  "tribe.legend.empty": "No dimensions defined yet.",
+  "tribe.legend.attribDefault": "Dimensions are fully custom to this board — manage them any time via Edit dimensions or Templates.",
+  "tribe.legend.greenLabel": "Green:",
+  "tribe.legend.redLabel": "Red:",
+  "tribe.tooltip.noDescription": "No description yet",
+
+  "squad.picker.heading": "Choose your squad",
+  "squad.picker.hint": "Pick your squad to enter or update this check-in's ratings. Only this squad's own data is shown here.",
+  "squad.picker.empty": "No {unitPlural} yet — ask an admin to add one.",
+  "squad.empty": "Select your {unit} above to enter or review its ratings.",
+  "squad.hotspots.heading": "Your hotspots",
+  "squad.hotspots.hint": "Where {name} is flagged red or yellow right now.",
+  "squad.hotspots.empty": "Nothing red or yellow right now — nice work.",
+  "squad.entries.empty": "No dimensions yet — ask an admin to set some up.",
+
+  "ratingModal.healthLabel": "Health",
+  "ratingModal.trendLabel": "Trend since last check",
+  "ratingModal.noteLabel": "Note (optional)",
+  "ratingModal.notePlaceholder": "Why this rating? What's driving it?",
+  "ratingModal.cancel": "Cancel",
+  "ratingModal.save": "Save",
+  "ratingModal.greenLabel": "Green looks like:",
+  "ratingModal.redLabel": "Red looks like:",
+
+  // Story 10: the retro JOIN flow (participant-facing screens) -- the
+  // "Join a retro" code-entry modal, the join screen's connecting/ended/
+  // unreachable/not-open states, the survey form chrome, and the personal
+  // result screen. Dimension content itself (label/green/red/statement
+  // text) stays untranslated by the same principle Story 9 applied to
+  // template names: it's the admin's own authored content, snapshotted
+  // onto the session at start time, not app chrome.
+  "join.codeModal.title": "Join a retro",
+  "join.codeModal.hint": "Enter the session code your Scrum Master shared. Answering a survey? Tap Join. Co-facilitating (you'll see the live results and can finish the retro too)? Tap Co-facilitate instead.",
+  "join.codeModal.codePlaceholder": "e.g. 7K4QXB",
+  "join.codeModal.cancel": "Cancel",
+  "join.codeModal.coFacilitate": "Co-facilitate",
+  "join.codeModal.join": "Join",
+  "join.backButton": "← Back to Squad Pulse",
+  "join.diagSummary": "Trouble joining? Tap for diagnostics",
+  "join.diagHint": "If this isn't connecting, copy or screenshot what appears below and send it to whoever's running the retro.",
+  "join.connectingHeading": "Connecting…",
+  "join.connectingHint": "Hang tight while we connect to the board.",
+  "join.endedHeading": "This retro has ended",
+  "join.endedHint": "The facilitator closed this session. Ask them for a new link if another one is starting.",
+  "join.unavailableHeading": "Can't connect to the retro server",
+  "join.unavailableHint": "This device never reached the relay. Check your connection, or ask whoever's running the retro if it's up.",
+  "join.notOpenHeading": "This retro session isn't open",
+  "join.notOpenHint": "Check the link with whoever is running the retro — it may have already ended, or the link may be out of date.",
+  "join.thanksHeading": "Thanks — here's your results",
+  "join.retroLabel": "Retro: “{name}”.",
+  "join.joiningHeading": "You're joining {squad}'s retro",
+  "join.formHint": "Answer honestly — your answers are anonymous, and only your squad's combined result is ever shown.",
+  "join.noDimensionsHint": "This retro doesn't have any dimensions set up yet.",
+  "join.scale.rarely": "Rarely",
+  "join.scale.sometimes": "Sometimes",
+  "join.scale.usually": "Usually",
+  "join.squadHealthCheckHeading": "Squad health check",
+  "join.submitButton": "Submit",
+  "join.submittingButton": "Submitting…",
+
+  // Story 11: the retro FACILITATION flow (facilitator-facing screens) --
+  // the session card (start/start-again, session code, live tally, reveal
+  // toggle, sprint-experiment note, finish/close), the per-dimension
+  // override editor (shares the rating modal's own markup -- see
+  // modals.js's activeEditor()), and their confirm dialogs. Same scope
+  // boundary as Story 10: dimension content (label/green/red) stays
+  // untranslated, it's the admin's own authored content.
+  "retro.noSession.heading": "Retro session",
+  "retro.noSession.hint": "Start a live session using the board's current template (“{templateName}”) — teammates can join and answer on their own device.",
+  "retro.startButton": "Start retro session",
+  "retro.startingButton": "Starting…",
+  "retro.inProgressHeading": "Retro session in progress",
+  "retro.retroLabel": "Retro: “{name}”.",
+  "retro.codeBlock.heading": "Session code",
+  "retro.codeBlock.hint": "Have teammates open Squad Pulse and tap “Join a retro” up top, then type this code in.",
+  "retro.reveal.hold": "Hold results",
+  "retro.reveal.live": "Show live",
+  "retro.countLine.one": "1 teammate has submitted so far.",
+  "retro.countLine.many": "{count} teammates have submitted so far.",
+  "retro.live.heading": "Live results",
+  "retro.live.waiting": "Waiting…",
+  "retro.live.overriddenTag": "Overridden",
+  "retro.live.overrideTitle": "Override this result",
+  "retro.live.seeResponsesOne": "See all 1 response",
+  "retro.live.seeResponsesMany": "See all {count} responses",
+  "retro.live.responseRowLabel": "Response {n}",
+  "retro.held.heading": "Results held",
+  "retro.held.hint": " Switch to “Show live” any time to see the consolidated results as they come in.",
+  "retro.experiment.heading": "Sprint experiment",
+  "retro.experiment.hint": "What will the team try differently next sprint?",
+  "retro.experiment.placeholder": "e.g. Pair on the riskiest story each day",
+  "retro.experiment.saved": "Saved",
+  "retro.experiment.saveButton": "Save note",
+  "retro.finishButton": "Finish retro & apply results",
+  "retro.closeButton": "Close session without applying results",
+  "retro.shareLink.summary": "Or scan/share a link",
+  "retro.shareLink.hint": "On some phones, scanning this opens the Claude app to the regular board instead of the retro — if that happens, use the session code above instead.",
+  "retro.shareLink.linkLabel": "Join link",
+  "retro.shareLink.copy": "Copy",
+  "retro.coFacilitate.summary": "Bring in a co-facilitator",
+  "retro.coFacilitate.hint": "A different link from the join link above — opening this gets the FULL facilitator view (live tally, override, finish), not the survey.",
+  "retro.coFacilitate.linkLabel": "Co-facilitator link",
+  "retro.coFacilitate.errorTitle": "Couldn't co-facilitate that session",
+  "retro.coFacilitate.errorFallback": "Something went wrong reaching the relay. Check the diagnostic log below for details.",
+  "retro.coFacilitate.notConnected": "Not connected to the relay yet — try again in a moment.",
+  "retro.coFacilitate.codeNotOpen": "That session code isn't open.",
+  "retro.confirmStart.errorTitle": "Couldn't start the retro session",
+  "retro.confirmClose.title": "Close this retro session?",
+  "retro.confirmClose.message": "Ends the session for everyone with the link. This does not change any of {name}'s existing ratings.",
+  "retro.confirmClose.button": "Close without applying results",
+  "retro.confirmFinishEmpty.title": "Finish this retro?",
+  "retro.confirmFinishEmpty.message": "No submissions or overrides yet, so {name}'s ratings won't change. This just closes the session.",
+  "retro.confirmFinish.title": "Finish this retro?",
+  "retro.confirmFinish.message": "Writes these results into {name}'s ratings, then closes the session — {summary}",
+  "retro.confirmFinish.button": "Finish & apply",
+  "retro.confirmFinish.overriddenSuffix": " (overridden)",
+  "retro.override.squadline": "Overriding this retro's consolidated result",
+  "retro.override.notePlaceholder": "Why override this? (optional)",
+
+  // Story 12: the Edit Dimensions modal (Admin). The dimension NAMES/green/
+  // red text themselves are the admin's own authored content and stay
+  // untranslated -- same principle Stories 9/10/11 already applied to
+  // template names and session content. A freshly added dimension's default
+  // "New dimension" label also stays English by the SAME precedent Story 4
+  // already set for addSquad()'s "New {unit}" default -- it's editable
+  // placeholder content, not app chrome.
+  "dimManager.title": "Edit dimensions",
+  "dimManager.hint": "These are the columns of your snapshot grid. Add, rename, reorder or remove them — changes apply to everyone viewing this board. Ratings for a removed dimension are hidden, not lost, unless you add a dimension back with the same purpose.",
+  "dimManager.emptyHint": "No dimensions yet — add your first one below.",
+  "dimManager.moveUpTitle": "Move up",
+  "dimManager.moveDownTitle": "Move down",
+  "dimManager.nameAriaLabel": "Dimension name",
+  "dimManager.namePlaceholder": "Dimension name",
+  "dimManager.removeTitle": "Remove dimension",
+  "dimManager.greenLabel": "Green looks like",
+  "dimManager.redLabel": "Red looks like",
+  "dimManager.greenPlaceholder": "What healthy looks like",
+  "dimManager.redPlaceholder": "What unhealthy looks like",
+  "dimManager.statementsHeading": "Self-assessment statements",
+  "dimManager.strategiesHeading": "Takeaway strategies",
+  "dimManager.addButton": "+ Add dimension",
+  "dimManager.doneButton": "Done",
+  "dimManager.confirmRemoveTitle": "Remove dimension?",
+  "dimManager.confirmRemoveMessage": "Remove “{name}” from the grid? Any ratings already given for it will be hidden (not deleted) unless you add it back.",
+  "dimManager.confirmRemoveButton": "Remove",
+  "dimManager.untitledFallback": "this dimension",
+
+  // Bilingual dimensions: the per-dimension Hebrew-translation panel in
+  // Edit Dimensions. These describe the panel itself (chrome, follows the
+  // admin's own current UI language) -- the panel's OWN field labels are
+  // fixed Hebrew text regardless of UI language (you're labeling Hebrew
+  // content, not translating app chrome), so they're not t() keys.
+  "dimManager.i18n.addToggle": "🇮🇱 Add a Hebrew translation",
+  "dimManager.i18n.editedToggle": "🇮🇱 Hebrew translation — added",
+  "dimManager.i18n.sourceDefault": "Default translation from {template} — editable",
+  "dimManager.i18n.sourceNone": "No translation yet — this dimension shows English under a Hebrew UI until one is added"
 };
 
 if (typeof module !== "undefined" && module.exports) {

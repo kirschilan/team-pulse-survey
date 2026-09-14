@@ -105,21 +105,34 @@ safe with zero test changes. `run_all.sh` dispatches through
 latter is a known-broken combination on macOS/BSD's `xargs` (fails with
 "command line cannot be assembled, too long" even for a single short
 input; see `run_all.sh`'s own comment). `run_all.sh` defaults to 2 workers
-at a time; measured on a 4-core machine, that ran the full suite with zero
-failures in a bit over a third of the serial time (a plain
-`for f in tests/test_*.py; do python3 "$f"; done` loop). Pushing
+at a time; measured on a 4-core machine early on (~30 files), that ran the
+full suite with zero failures in a bit over a third of the serial time (a
+plain `for f in tests/test_*.py; do python3 "$f"; done` loop). Pushing
 concurrency to 4 (one worker per core, no headroom) cut it further but
-produced a real, reproducible flake in a timing-sensitive relay test
-purely from CPU contention (an element read right after a genuine
-WebSocket round trip occasionally hadn't rendered yet) — passing
-standalone every time, only failing under a fully-saturated CPU. 2 is the
-concurrency this repo has actually verified safe; raise it
-(`TEST_JOBS=N tests/run_all.sh`) only after checking your own machine has
-the headroom, and re-running enough times to trust it. CI shards the suite
-further still — see `.github/workflows/tests.yml`'s `playwright` job's own
-comments for why that's a matrix of separate runners, not just a bigger
-`TEST_JOBS`. (Exact current file count: `ls tests/test_*.py | wc -l` —
-deliberately not hardcoded here, since it drifts as the suite grows.)
+produced a real, reproducible flake purely from CPU contention — passing
+standalone every time, only failing under a fully-saturated CPU.
+
+That "2 is safe" number was never re-measured as the suite kept growing,
+and it stopped holding: by 35 files, a single unsharded `TEST_JOBS=2` batch
+over the WHOLE suite started failing reproducibly (same class of CPU/CDP
+contention crash, confirmed unrelated to any specific test's code via a
+git-stash comparison against the pre-change version). What kept working at
+any size tried: splitting the suite into groups of ~12 files first, THEN
+running each group at `TEST_JOBS=2` — exactly what CI's own 3-way shard
+already does. So `run_all.sh`'s default (no-args) invocation now shards
+itself the same way locally before running anything, rather than handing
+the whole discovered file list to one `xargs` batch — see its own comment
+for the exact reasoning and the `SHARD_COUNT` env var. An explicit file
+list (`run_all.sh tests/test_a.py tests/test_b.py`, which is what CI's own
+per-shard job passes) is never re-sharded, only default discovery is.
+Practical effect: "the full suite passes locally" and "CI is green" are now
+the same claim, checked the same way, instead of two configurations that
+can silently drift apart as the suite grows — which is exactly what
+happened here. Raise `TEST_JOBS` or `SHARD_COUNT` only after checking your
+own machine has the headroom, and re-running enough times to trust it.
+(Exact current file count: `ls tests/test_*.py | wc -l` — deliberately not
+hardcoded here, since it drifts as the suite grows, which is the whole
+lesson of this section.)
 
 If a specific file still feels slow, `time python3 tests/test_whatever.py`
 it directly — the fake-store files should mostly run in the 2-6s range
@@ -180,6 +193,7 @@ references.)
 | `test_template_switching_and_csv_import.py` | Switching templates preserves each one's own dimension set and squad ratings underneath; a basic CSV import |
 | `test_hebrew_rtl_coverage.py` | Real Hebrew content resolves `dir="auto"` to actual rtl (not just the attribute's presence) across every such surface in the app -- admin's dimension manager and squad list, Squad view, the rating modal, Tribe view's grid/legend/tooltip/hotspots, Templates, and the retro facilitator/join flow -- each paired with an English control; a Dimension-Key-based CSV re-import after a dimension's Hebrew label is edited again |
 | `test_admin_language_switch.py` | Multi-language support Story 1 (`i18n.js`): the Admin panel's language switcher renders Hebrew (static markup via `[data-i18n]`/`[data-i18n-placeholder]`, plus JS-built strings like the squad list's aria-labels and confirm dialogs, all via `t()`), scopes `dir="rtl"` to `#viewAdmin` only (the rest of the still-English app stays untouched), and persists the choice across reload via `localStorage` |
+| `test_main_screen_language.py` | Multi-language support Story 4: Tribe view, Squad view, and the shared rating modal as i18n-supported screens -- translated chrome, `dir="rtl"` scoped to `#viewTribe`/`#viewSquad`/`#backdrop` (not the document root, and not the still-English retro session card embedded inside `#viewSquad`, which opts out with its own `dir="ltr"`), template-sourced dimension content staying English on purpose, and `t()`'s bidi-isolate marks keeping composite Hebrew+English/number strings in the correct visual order |
 | `test_csv_import_column_matching.py` | CSV export/import round-tripping through renamed headers, reordered columns, and a template-mismatch warning |
 | `test_tooltip_busy_overlay_and_csv_key.py` | Grid header hover/focus tooltip; the busy overlay during template switches and CSV import; the CSV "Dimension Key" column surviving a dimension rename |
 | `test_view_navigation_and_squad_admin.py` | Tribe view's read-only grid; Squad view rating and its "hotspots" panel; Admin squad CRUD; view/squad selection persisting across reload |

@@ -14,6 +14,15 @@ from fixtures.build_page import build_page, test_output_path
 
 out_path = build_page(out_name="_test_retro_override_table.html")
 
+
+def strip_bidi(s):
+    # Story 11 routed the response-table's row label ("Response {n}")
+    # through t(), which wraps every interpolated value in Unicode bidi
+    # isolate marks (U+2066 LRI / U+2069 PDI) -- see i18n.js/STATUS.md.
+    # Invisible and harmless, but present in .textContent, so exact-text
+    # checks here strip them rather than matching against plain ASCII.
+    return s.replace("⁦", "").replace("⁩", "")
+
 with sync_playwright() as p:
     browser = p.chromium.launch()
     page = browser.new_page(viewport={"width":1280,"height":1200})
@@ -146,7 +155,7 @@ with sync_playwright() as p:
     assert len(rows) == 3
     row_labels = page.eval_on_selector_all('.resp-table tbody tr th', 'els => els.map(e => e.textContent)')
     print("row labels (anonymized):", row_labels)
-    assert row_labels == ["Response 1", "Response 2", "Response 3"]
+    assert [strip_bidi(l) for l in row_labels] == ["Response 1", "Response 2", "Response 3"]
     # trust column is the 1st data column (dimensions come first in template order)
     trust_col_pills = page.eval_on_selector_all('.resp-table tbody tr', 'rows => rows.map(r => r.querySelectorAll("td")[0].textContent.trim())')
     print("trust column across the 3 responses (good, good, crit):", trust_col_pills)

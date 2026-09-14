@@ -52,6 +52,17 @@ relay_proc = subprocess.Popen(
 
 try:
     if not wait_for_port(RELAY_PORT):
+        # Must kill the process (closing its stdout) BEFORE reading it --
+        # .read() blocks until EOF, and a relay that's still alive (just
+        # slow to bind, e.g. under CPU contention from parallel test jobs)
+        # never sends EOF, so this used to deadlock the whole suite instead
+        # of raising the intended error. Found via a real hang in CI/local
+        # runs: this exact test process stuck for 50+ minutes.
+        relay_proc.terminate()
+        try:
+            relay_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            relay_proc.kill()
         out = relay_proc.stdout.read() if relay_proc.stdout else ""
         raise RuntimeError("relay server never opened port %d\n%s" % (RELAY_PORT, out))
 

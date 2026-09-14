@@ -113,8 +113,22 @@ function teamParamFor(){
   var secret = (typeof getTeamSecret === "function") ? getTeamSecret() : "";
   return secret ? "&team=" + encodeURIComponent(secret) : "";
 }
+// Real bug report from usage: a participant opening a join link on a fresh
+// device always landed on an English join screen, even when the
+// facilitator had switched the whole app to Hebrew first -- state.ui.locale
+// (i18n.js) is per-device UI state with no way to reach a device that's
+// never visited before. Same fix shape as teamParamFor() above: carry the
+// facilitator's CURRENT locale on the link, omitted entirely for the "en"
+// default so an all-English board's links are unchanged. state.js's
+// boot-time loadUiPrefs() applies it, but only as a fallback for a device
+// with no locale of its own already saved -- see that function's own
+// comment for why an existing preference always wins.
+function langParamFor(){
+  var locale = (state.ui && state.ui.locale) || "en";
+  return locale === "en" ? "" : "&lang=" + encodeURIComponent(locale);
+}
 function joinUrlFor(sessionId){
-  return window.location.origin + window.location.pathname + "?session=" + encodeURIComponent(sessionId) + teamParamFor();
+  return window.location.origin + window.location.pathname + "?session=" + encodeURIComponent(sessionId) + teamParamFor() + langParamFor();
 }
 // Story 10: a SEPARATE link from joinUrlFor() above -- opening this one
 // attaches a device as a co-facilitator (full facilitator view) rather
@@ -123,7 +137,7 @@ function joinUrlFor(sessionId){
 // team param and for the same reason: a co-facilitator needs the
 // facilitator's real board locally too, not just the session's own data.
 function coFacilitateUrlFor(sessionId){
-  return window.location.origin + window.location.pathname + "?cofacilitate=" + encodeURIComponent(sessionId) + teamParamFor();
+  return window.location.origin + window.location.pathname + "?cofacilitate=" + encodeURIComponent(sessionId) + teamParamFor() + langParamFor();
 }
 function slugify(s, fallback){
   var slug = String(s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");

@@ -73,6 +73,17 @@ relay_proc = subprocess.Popen(
 
 try:
     if not wait_for_port(RELAY_PORT):
+        # Must kill the process (closing its stdout) BEFORE reading it --
+        # .read() blocks until EOF, and a relay that's still alive (just
+        # slow to bind, e.g. under CPU contention from parallel test jobs)
+        # never sends EOF, so this used to deadlock the whole suite instead
+        # of raising the intended error. Found via a real hang in CI/local
+        # runs: this exact test process stuck for 50+ minutes.
+        relay_proc.terminate()
+        try:
+            relay_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            relay_proc.kill()
         out = relay_proc.stdout.read() if relay_proc.stdout else ""
         raise RuntimeError("relay server never opened port %d\n%s" % (RELAY_PORT, out))
 
@@ -87,16 +98,16 @@ try:
         a_errors = []
         a.on("pageerror", lambda e: a_errors.append(str(e)))
         a.goto(INDEX_URL, wait_until="domcontentloaded")
-        a.wait_for_timeout(300)
         a.click('.view-btn[data-view="admin"]')
-        a.wait_for_timeout(100)
-        a.wait_for_timeout(300)  # step 7: default-on -- device A already has its own team link, no click needed
+        # step 7: default-on -- device A auto-generates its own team secret at
+        # boot via crypto.subtle (a real, non-instant async API, unlike this
+        # fake store's near-instant local writes) -- poll for the real value
+        # landing instead of guessing how long key generation takes.
+        a.wait_for_function("() => document.getElementById('teamLinkInput') && document.getElementById('teamLinkInput').value.length > 0")
         team_link = a.eval_on_selector("#teamLinkInput", "el=>el.value")
 
         a.click('.view-btn[data-view="squad"]')
-        a.wait_for_timeout(100)
         a.click('.squad-pick-btn[data-id="squad-1"]')
-        a.wait_for_timeout(150)
         a.click("#startSessionBtn")
         a.wait_for_selector(".session-code")  # real relay round trip -- wait for it, don't guess how long
         code = a.eval_on_selector(".session-code", "el=>el.textContent")
@@ -118,7 +129,10 @@ try:
         d_errors = []
         d.on("pageerror", lambda e: d_errors.append(str(e)))
         d.goto(cofac_link, wait_until="domcontentloaded")
-        d.wait_for_timeout(600)
+        # eval_on_selector()/query_selector() below don't auto-wait -- wait
+        # for the exact element the scenario is about (the session card
+        # landing) rather than guess how long boot + join take.
+        d.wait_for_selector(".session-card", state="attached")
         print("device D (opened the link directly) is on Squad view, not the join screen:", d.eval_on_selector("#viewJoin", "el=>el.hidden"))
         assert d.eval_on_selector("#viewJoin", "el=>el.hidden") is True
         assert d.eval_on_selector("#viewSquad", "el=>el.hidden") is False
@@ -135,7 +149,6 @@ try:
         c.goto(team_link, wait_until="domcontentloaded")
         c.wait_for_timeout(500)
         c.click("#joinCodeBtn")
-        c.wait_for_timeout(100)
         c.fill("#joinCodeInput", code)
         c.click("#joinCodeGo")
         c.wait_for_selector(".direct-row")  # real relay round trip -- wait for it, don't guess how long
@@ -143,11 +156,8 @@ try:
         assert len(rows) > 0
         for row in rows[:-1]:
             row.query_selector(".swatch.good").click()
-            c.wait_for_timeout(20)
         rows[-1].query_selector(".swatch.crit").click()
-        c.wait_for_timeout(50)
         c.click("#stmtSubmitBtn")
-        c.wait_for_timeout(400)
 
         # ============ device B: opens the SAME team link, then attaches as
         # CO-FACILITATOR (never started this session) ============
@@ -161,7 +171,6 @@ try:
 
         print("=== RAINY DAY: co-facilitating with a wrong/nonexistent code shows an error, not a crash ===")
         b.click("#joinCodeBtn")
-        b.wait_for_timeout(100)
         b.fill("#joinCodeInput", "ZZZZZZ")
         b.click("#coFacilitateGo")
         b.wait_for_selector("#confirmBackdrop", state="visible")  # real relay round trip -- wait for it, don't guess how long
@@ -169,13 +178,14 @@ try:
         print("error dialog shown for a bad code:", error_shown)
         assert error_shown
         b.click("#confirmOk")
-        b.wait_for_timeout(150)
+        # eval_on_selector()/query_selector() below don't auto-wait -- poll
+        # for the exact condition asserted next instead of guessing.
+        b.wait_for_function("() => { var el = document.getElementById('joinCodeBackdrop'); return !el || el.hidden; }")
         assert b.eval_on_selector("#joinCodeBackdrop", "el=>el.hidden") is True or b.query_selector("#joinCodeBackdrop") is None
         print("errors so far:", b_errors)
 
         print("=== HAPPY PATH: device B co-facilitates the REAL open session by its real code ===")
         b.click("#joinCodeBtn")
-        b.wait_for_timeout(100)
         b.fill("#joinCodeInput", code)
         b.click("#coFacilitateGo")
         b.wait_for_selector(".session-card")  # real relay round trip -- wait for it, don't guess how long
@@ -192,7 +202,10 @@ try:
 
         print("=== device B (co-facilitator) sees the real live tally from device C's answer ===")
         b.click('.reveal-btn[data-reveal="live"]')
-        b.wait_for_timeout(500)
+        # real relay round trip (device C's earlier submission reaching this
+        # device) -- poll for the exact expected content instead of guessing
+        # how long it takes, the same condition asserted right below.
+        b.wait_for_function("() => Array.from(document.querySelectorAll('.live-dim-row')).some(el => el.textContent.indexOf('Red') !== -1)")
         row_texts = b.eval_on_selector_all(".live-dim-row", "els=>els.map(e=>e.textContent)")
         print("live rows on the co-facilitator's device:", row_texts)
         assert any("Red" in t for t in row_texts), "the co-facilitator should see the real submission, not an empty tally"
@@ -200,7 +213,6 @@ try:
 
         print("=== device B finishes the retro it never started ===")
         b.click("#finishSessionBtn")
-        b.wait_for_timeout(150)
         b.click("#confirmOk")
         wait_for_scored(b, "squad-1", "release")
         b_release = cell_color(b, "squad-1", "release")

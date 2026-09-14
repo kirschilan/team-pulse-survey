@@ -85,7 +85,7 @@ function renderSquadPicker(){
   var html = squads.map(function(sq){
     return '<button class="btn squad-pick-btn'+(sq.id===state.ui.selectedSquadId?" active":"")+'" data-id="'+esc(sq.id)+'" type="button" dir="auto">'+esc(sq.name)+'</button>';
   }).join("");
-  document.getElementById("squadPicker").innerHTML = html || '<p class="hint" style="margin:0;">No '+esc(unitPluralLower())+' yet — ask an admin to add one.</p>';
+  document.getElementById("squadPicker").innerHTML = html || '<p class="hint" style="margin:0;">'+esc(t("squad.picker.empty", {unitPlural: unitPluralLower()}))+'</p>';
   document.querySelectorAll(".squad-pick-btn").forEach(function(btn){
     btn.addEventListener("click", function(){ selectSquad(btn.getAttribute("data-id")); });
   });
@@ -104,10 +104,10 @@ function renderSquadDetailHtml(sq){
   var hotspotHtml = hotspots.length
     ? hotspots.map(function(d){
         var cell = sq.dimensions[d.key];
-        return '<div class="hotspot-row"><div class="hd"><span class="dim" dir="auto">'+esc(d.label)+'</span>' +
-          '<span class="cnt">'+(cell.color==="crit"?"Red":"Yellow")+'</span></div></div>';
+        return '<div class="hotspot-row"><div class="hd"><span class="dim" dir="auto">'+esc(localizedDimText(d, "label"))+'</span>' +
+          '<span class="cnt">'+esc(cell.color==="crit"?t("common.color.crit"):t("common.color.warn"))+'</span></div></div>';
       }).join("")
-    : '<p class="hint" style="margin:0;">Nothing red or yellow right now &mdash; nice work.</p>';
+    : '<p class="hint" style="margin:0;">'+esc(t("squad.hotspots.empty"))+'</p>';
 
   var entryHtml = dims.length ? '<div class="entry-list">' + dims.map(function(d){
     var cell = (sq.dimensions && sq.dimensions[d.key]) || {};
@@ -117,29 +117,29 @@ function renderSquadDetailHtml(sq){
     var showTrend = trend==="up" || trend==="down";
     return '<div class="entry-row">' +
       '<div class="entry-info">' +
-        '<div class="entry-label" dir="auto">'+esc(d.label)+'</div>' +
-        '<div class="entry-desc" dir="auto"><span class="tip-dot good"></span><span>'+esc(d.green||"")+'</span></div>' +
-        '<div class="entry-desc" dir="auto"><span class="tip-dot crit"></span><span>'+esc(d.red||"")+'</span></div>' +
+        '<div class="entry-label" dir="auto">'+esc(localizedDimText(d, "label"))+'</div>' +
+        '<div class="entry-desc" dir="auto"><span class="tip-dot good"></span><span>'+esc(localizedDimText(d, "green")||"")+'</span></div>' +
+        '<div class="entry-desc" dir="auto"><span class="tip-dot crit"></span><span>'+esc(localizedDimText(d, "red")||"")+'</span></div>' +
       '</div>' +
       '<button class="cell-btn '+color+'" data-squad="'+esc(sq.id)+'" data-dim="'+esc(d.key)+'" type="button" ' +
-        'aria-label="'+esc(d.label)+': '+colorWord(color)+trendWord(trend, true)+'">' +
+        'aria-label="'+esc(localizedDimText(d, "label"))+': '+esc(colorWordLocalized(color)+trendWordLocalized(trend, true))+'">' +
         markIcon(color) +
-        (showTrend ? '<span class="trend-badge '+trend+'" title="'+trendWord(trend)+'">'+trendIcon(trend)+'</span>' : '') +
-        (hasNote ? '<span class="note-dot" title="Has a note"></span>' : '') +
+        (showTrend ? '<span class="trend-badge '+trend+'" title="'+esc(trendWordLocalized(trend))+'">'+trendIcon(trend)+'</span>' : '') +
+        (hasNote ? '<span class="note-dot" title="'+esc(t("common.hasNoteTitle"))+'"></span>' : '') +
       '</button>' +
     '</div>';
-  }).join("") + '</div>' : '<p class="hint" style="margin:0;">No dimensions yet &mdash; ask an admin to set some up.</p>';
+  }).join("") + '</div>' : '<p class="hint" style="margin:0;">'+esc(t("squad.entries.empty"))+'</p>';
 
   return (
     '<div class="heatmap-head">' +
       '<div>' +
         '<h2 style="font-size:18px;" dir="auto">'+esc(sq.name)+'</h2>' +
-        '<p class="squad-score-line">'+r.score+' pts &middot; '+r.scored+'/'+r.total+' scored</p>' +
+        '<p class="squad-score-line">'+esc(t("common.scoreLine", {score: r.score, fraction: r.scored + "/" + r.total}))+'</p>' +
       '</div>' +
     '</div>' +
     '<div class="card" style="margin:14px 0;">' +
-      '<h2>Your hotspots</h2>' +
-      '<p class="hint">Where '+esc(sq.name)+' is flagged red or yellow right now.</p>' +
+      '<h2>'+esc(t("squad.hotspots.heading"))+'</h2>' +
+      '<p class="hint">'+esc(t("squad.hotspots.hint", {name: sq.name}))+'</p>' +
       hotspotHtml +
     '</div>' +
     entryHtml
@@ -151,7 +151,7 @@ function renderSquadView(){
   var container = document.getElementById("squadDetail");
   var sq = state.ui.selectedSquadId ? findSquad(state.ui.selectedSquadId) : null;
   if(!sq){
-    container.innerHTML = '<p class="squad-empty">Select your '+esc(unitLower())+' above to enter or review its ratings.</p>';
+    container.innerHTML = '<p class="squad-empty">'+esc(t("squad.empty", {unit: unitLower()}))+'</p>';
     return;
   }
   container.innerHTML = renderSessionCardHtml(sq) + renderSquadDetailHtml(sq);

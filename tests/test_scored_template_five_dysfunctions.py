@@ -76,14 +76,15 @@ with sync_playwright() as p:
     assert squad1["dimensions"]["trust"]["color"] == "warn"
     print("errors:", errors)
 
-    # ---- Edit dimensions (Admin) shows the inspectable "scored from statements" note ----
+    # ---- Edit dimensions (Admin) shows the dimension's statements, now editable ----
     page.click('.view-btn[data-view="admin"]')
     page.wait_for_timeout(100)
     page.click('#dimManageBtn')
     page.wait_for_timeout(150)
-    hint = page.eval_on_selector('.dim-row[data-key="trust"] .hint', 'el=>el ? el.textContent : null')
-    print("scored-dimension hint text in Edit dimensions:", hint)
-    assert hint and "3 self-assessment statements" in hint
+    stmt_inputs = page.query_selector_all('.dim-row[data-key="trust"] [data-field="statements"][data-lang="en"]')
+    print("editable statement inputs for 'trust':", len(stmt_inputs))
+    assert len(stmt_inputs) == 3
+    assert "quickly and genuinely apologize" in stmt_inputs[0].input_value()
     page.click('#dimDoneBtn')
 
     # ---- re-loading the SAME starter template again reuses the same dimension keys ----
@@ -108,6 +109,35 @@ with sync_playwright() as p:
     print("dim rows while on Five Dysfunctions:", n_dims_5df)
     assert n_dims_5df == 5
     page.click('#dimDoneBtn')
+
+    # ============ Story 8: Five Dysfunctions' dimension content localizes live too ============
+    # Same mechanism as Stories 5/7 (state.js's localizedDimText()/
+    # localizedAttribution(), generalized to any starter template that
+    # declares its own .i18n table): switching to Hebrew shows Hebrew
+    # label/green/red/attribution immediately, no reload required; the
+    # underlying stored dimension docs stay English always.
+    print("=== Story 8: Five Dysfunctions dimension content localizes live under Hebrew ===")
+    page.click('.lang-btn[data-lang="he"]')
+    page.wait_for_timeout(150)
+
+    trust_doc_he = page.evaluate("window.__FAKE_STORE__['dimensions/trust']")
+    print("stored 'trust' dimension under Hebrew (should stay English):", trust_doc_he["label"])
+    assert trust_doc_he["label"] == "Absence of Trust"
+
+    page.click('.view-btn[data-view="tribe"]')
+    page.wait_for_timeout(150)
+    page.click('#legendSummary')
+    page.wait_for_timeout(150)
+    trust_label_he = page.eval_on_selector('.legend-item .lh', 'el=>el.textContent')
+    attribution_he = page.eval_on_selector('#legendAttrib', 'el=>el.textContent')
+    print("Tribe legend under Hebrew -- first dimension label / attribution:", trust_label_he, "|", attribution_he)
+    assert trust_label_he.strip() and trust_label_he != "Absence of Trust"
+    assert attribution_he.strip() and "Patrick Lencioni" not in attribution_he
+
+    page.click('.view-btn[data-view="admin"]')
+    page.wait_for_timeout(100)
+    page.click('.lang-btn[data-lang="en"]')
+    page.wait_for_timeout(150)
 
     print("=== FINAL errors:", errors)
     page.screenshot(path=str(test_output_path("shot_tpl_five_dysfunctions.png")), full_page=True)

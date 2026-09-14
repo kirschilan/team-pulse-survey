@@ -435,6 +435,29 @@ the right secret would otherwise mask the check). `tests/unit/test_board_sync.js
 `parseTeamSecretInput()`/`teamLinkFor()` instead of the retired `normalizeTeamCode()`. Full 25-file
 Playwright + 38-test unit suite passing.
 
+## Multi-language rollout backlog
+
+The product owner is driving Hebrew/RTL support in one story at a time on this branch (see the
+Session log's "Multi-language support, Story N" entries for what each one actually did). This table
+is the persisted list — it previously only existed in conversation, which made "what's left" a
+recall exercise instead of something anyone could just read.
+
+| # | Story | Status |
+|---|---|---|
+| 1 | Hardened Hebrew/RTL test coverage (foundation, no user-visible change) | **DONE** (2026-09-13) |
+| 2 | i18n infrastructure (`t()`, `setLocale()`, `locales/en.js`+`he.js`) + Admin panel translated | **DONE** (2026-09-13) |
+| 3 | Formalized the Definition of Done (`docs/DefinitionOfDone.md`) | **DONE** (2026-09-13) |
+| 4 | Tribe view, Squad view, and the shared rating modal's UI chrome translated | **DONE** (2026-09-13) |
+| 5 | Spotify Squad Health Check template's dimension content (label/green/red/attribution) translated, live at render time | **DONE** (2026-09-13) |
+| 6 | Application header/nav chrome: `h1` "Squad Pulse", the tagline, the model-name badge, "Live — synced across viewers", the "Join a retro" button, and the Tribe view/Squad view/Admin switcher — currently untranslated and not scoped to any prior story (flagged when reviewing a screenshot of it) | **DONE** (2026-09-13) |
+| 7 | Tuckman's Team Development Stages template's dimension content translated | **DONE** (2026-09-13) |
+| 8 | The Five Dysfunctions of a Team template's dimension content translated | **DONE** (2026-09-13) |
+| 9 | Templates modal's own chrome (list labels, "Load"/"Delete" buttons, save-as-template form) — the template NAMES themselves (e.g. "Spotify Squad Health Check") stay English by design, same call already made for Story 5 | **DONE** (2026-09-13) |
+| 10 | Retro join flow (participant-facing screens) | **DONE** (2026-09-14) |
+| 11 | Retro facilitation flow (facilitator-facing screens, session cards, overrides) | **DONE** (2026-09-14) |
+| 12 | Dimension detail and Edit Dimensions modal (Admin) | **DONE** (2026-09-14) |
+| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass | Not started |
+
 ## Deliberately not built yet (and why)
 
 | Not built | Why it's cut for now | What would trigger building it |
@@ -443,6 +466,7 @@ Playwright + 38-test unit suite passing.
 | Save-board / Load-board-to-file | `local-store.js` already persists the board via `localStorage`, which covers the same browser/device | Once someone needs a board to move between browsers/devices without a relay |
 | Relay deployed on Vercel itself (one deployment, not two) | Deliberately rejected, not just deferred — see the locked decision above and `relay/README.md`'s "Why not a Vercel Function" | Only if Vercel's WebSocket support later guarantees same-instance routing without an external store, which would remove the reason this was rejected |
 | Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing | Once the marketing site (separate Claude Code project) is further along |
+| A third UI language (beyond English/Hebrew) | YAGNI, per the product owner's own call (2026-09-14) — `SUPPORTED_LOCALES`/`t()`'s fallback (i18n.js) are already written generically enough to add one without a redesign, and the bilingual-dimensions editor (see the session log) is a per-dimension `i18n` object keyed by locale code, not hardcoded to exactly two languages, so neither needs rework specifically to add a third | A real request for a specific third language — at that point, design its own toggle/picker UX (today's per-dimension editor hardcodes one Hebrew panel) rather than assuming the two-language shape generalizes without a look |
 
 ## Suggested next step
 
@@ -1082,3 +1106,667 @@ not just in this repo's own tests.
   before) and updates to `README.md`, this file, `tests/README.md`, `tests/unit/README.md`, and the
   `tdd` skill all point to `docs/DefinitionOfDone.md` as the answer to "is this done," rather than
   leaving that judgment implicit or scattered.
+- 2026-09-13 — **Multi-language support, Story 4: Tribe view, Squad view, and the shared rating
+  modal.** Translated every piece of chrome on both main screens and the modal that isn't
+  template-sourced dimension content (labels/green/red text stays whatever the active template
+  defines -- Stories 5-7's job): stats cards, cross-squad hotspots, squad-by-squad breakdown and
+  ranking, the dimension legend, both empty states and the grid, the squad picker, "Your hotspots,"
+  entry list, and the rating modal's Health/Trend/Note chrome, swatch and trend titles, and
+  Cancel/Save. `dir`/`lang` now scope to `#viewTribe`, `#viewSquad`, and `#backdrop` too (`i18n.js`'s
+  `RTL_SCOPED_CONTAINERS`) -- not the document root, so the still-untranslated retro flow and every
+  other modal don't visually break. The retro session card renders INSIDE `#viewSquad` but stays
+  English (Stories 9-10), so it now sets its own `dir="ltr"` to opt out of inheriting the RTL flip,
+  same pattern documented in `docs/DefinitionOfDone.md` for any future still-English widget embedded
+  in a translated container. `colorWord()`/`trendWord()` (`helpers.js`) were deliberately NOT made
+  locale-aware directly -- they're also called from retro-facilitator.js/retro-join.js, which aren't
+  translated yet, and doing so would leak Hebrew into an untranslated screen the moment the language
+  switches; new `colorWordLocalized()`/`trendWordLocalized()` (`i18n.js`) are used only from the
+  Tribe-/Squad-view call sites Story 4 actually covers.
+
+  Real, non-obvious bug found and fixed while building this (now written into the DOD, Multi-language
+  section, so it doesn't have to be rediscovered per screen): a value interpolated into a translated
+  string can visually reorder relative to the surrounding text once that sentence's language flips
+  the container to `rtl`, even though `.textContent` (the logical string) stays correct throughout.
+  `"{count} {unit} tracked"` rendered with `{count}` and `{unit}` visually swapped. Fixed generically
+  in `t(key, vars)`: every substituted value is now wrapped in Unicode bidi isolate marks (U+2066
+  LRI / U+2069 PDI) -- plain, invisible Unicode characters, so this works for a bare `.textContent`
+  assignment, not just `innerHTML`. Two follow-on findings while verifying the fix, both empirical
+  (confirmed with a minimal standalone repro page before touching the real app): isolating two
+  adjacent placeholders SEPARATELY doesn't help when only neutral punctuation sits between them (a
+  `"{scored}/{total}"` fraction still reordered) -- fixed by building the whole fraction as one
+  value (`common.scoreLine`'s new `{fraction}` var) and isolating it once; and a value with NO
+  strong-direction character at all (`#statAssessed`'s bare `"0.0 / 3"` ratio, no translated word
+  nearby to anchor it) still gets reversed by an RTL ancestor regardless of isolation, needing its
+  own explicit `dir="ltr"`. Updated three existing tests whose exact-`.textContent` assertions
+  predated `t()`'s isolate marks (`test_admin_language_switch.py`, `test_tribe_hotspots.py` --
+  the latter gained a small `strip_bidi()` helper other tests can reuse) -- all real breakage from a
+  real (correct) behavior change, not flakes. New `test_main_screen_language.py` covers the
+  translated chrome, the dir-scoping (including the session-card opt-out), the bidi-isolate fix on
+  four different composite strings, and full restore on switching back to English. Full 34-file
+  Playwright + 45-test unit suite passing, verified both at `TEST_JOBS=2` and serially at
+  `TEST_JOBS=1` (one `test_relay_board_path_sync.py` failure seen at `TEST_JOBS=2`, reproduced as
+  this file's own documented CPU-contention flake -- passed clean standalone and at `TEST_JOBS=1`,
+  unrelated to this change, no relay/board-sync file touched).
+- 2026-09-13 — **Story 5: translated the Spotify Squad Health Check starter template's own dimension
+  content into Hebrew (label/green/red per dimension, plus its attribution line).** This is different
+  from Stories 1-4's work: those translated UI CHROME (through `t()`/`data-i18n`, looked up live on
+  every render); a template's dimension content is board DATA -- plain strings copied into mutable
+  `state.dimensions` the moment a template is loaded, never looked up through `t()` again afterward.
+  New `SPOTIFY_DIMENSIONS_HE` + `SPOTIFY_ATTRIBUTION_HE` (`state.js`), AI-translated/pending human
+  review exactly like `locales/he.js`, keyed by the same stable dimension keys `PLACEHOLDER_DIMENSIONS`
+  already uses (never positional) so a future reordering can't silently mismatch a translation to the
+  wrong dimension. New pure `localizedStarterDimensions(dims, translations)` (`state.js`) merges a
+  translation table over a base dimensions array with per-FIELD English fallback (a translation
+  entry missing e.g. `red` keeps the English `red`, not a blank) -- same fallback principle as `t()`
+  itself. `SPOTIFY_TEMPLATE` now carries `i18n: { he: { attribution, dimensions } }`; `loadTemplate()`
+  (`templates.js`) consults it at load time under the currently-active locale and writes the
+  localized content instead of the template's own English fields. Deliberately scoped as a ONE-TIME
+  SNAPSHOT, not live re-translation: switching language after a template is already loaded does not
+  retroactively change already-written dimensions, same as any other board content today. Explicitly
+  OUT of scope (self-decided, called out here rather than assumed): the fresh-board first-boot seed
+  (`PLACEHOLDER_DIMENSIONS` assigned directly to `state.dimensions`, never through `loadTemplate()`)
+  stays English; the Templates-modal's own list/display-name chrome stays English (Story 8's job) --
+  verified explicitly by a test assertion that `activeTemplateName` stays "Spotify Squad Health Check"
+  even when Hebrew is active. Five Dysfunctions/Tuckman are untouched (their own future stories).
+  **(Superseded the same day — see the correction entry right below: the ONE-TIME SNAPSHOT design
+  described in this paragraph turned out to be wrong. Kept here rather than rewritten, so the record
+  of what was tried and why it didn't hold up stays honest.)**
+  True test-first this time, including a correction mid-flight: wrote and watched fail
+  `tests/unit/test_template_locale.js` (6 tests: substitution, per-field English fallback, untouched
+  when a key has no entry, no-op when no table at all, DOD-style non-blank-per-key check, non-blank
+  distinct-from-English attribution) before writing `localizedStarterDimensions()` or the `i18n` data.
+  For the `loadTemplate()` wiring, the implementation was written before its Playwright test by
+  mistake (an ordering lapse caught immediately, not after the fact) -- corrected by stashing the
+  `templates.js` change, writing the new scenario in `test_starter_template_spotify.py`, running it
+  against the un-wired code to confirm it failed for the right reason (content still English), then
+  popping the stash and re-running to confirm it passed. **(This specific scenario -- and the
+  "one-time snapshot" claim it proved -- no longer reflects the real behavior; see the correction
+  entry below. Left as-is for the honest record of the ordering-lapse correction it does still
+  describe accurately.)** Also added, this session: a project-level `.claude/settings.json`
+  `PreToolUse` hook (Edit/Write on `public/js/*.js`/`public/local-store.js`/`relay/*.js`, excluding
+  test files) that injects a test-first reminder before any such edit -- makes the DOD's test-first
+  policy a standing default for this repo rather than something each session has to remember to
+  invoke; confirmed firing live during this same session's `state.js`/`templates.js` edits. Full
+  suite verified: 51-test unit suite and the full 34-file Playwright suite both green, run serially
+  (`TEST_JOBS=1`) with zero regressions and zero JS errors.
+- 2026-09-13 — **Correction to the Story 5 entry above, from real-usage feedback the same day: the
+  "one-time snapshot at load time" design was wrong.** The product owner tried it on the actual
+  running app and found Hebrew dimension content never appeared at all: the DEFAULT board (the one
+  every fresh session actually has) never goes through `loadTemplate()` -- it's seeded directly into
+  `state.dimensions` -- so the load-time snapshot never had anything to trigger it, and switching the
+  language on the default board did nothing to the dimension text. The fix isn't a missing
+  `DEFAULT_CONFIG_HE` (the product owner's own initial guess at the cause) -- it's a different
+  architecture entirely: dimension label/green/red and the board's `attribution` are now localized
+  LIVE, at RENDER time, the same philosophy `i18n.js`'s `t()` already uses for UI chrome, rather than
+  ever being baked into stored data. `loadTemplate()` (`templates.js`) reverted to always writing
+  plain English (removing the locale-awareness added earlier the same day); `state.js` replaced the
+  now-unused `localizedStarterDimensions()` with two render-time helpers -- `localizedDimText(dim,
+  field)` and `localizedAttribution(attribution)` -- both of which refuse to translate a field an
+  admin customized away from the Spotify template's own English default (exact-string match against
+  `PLACEHOLDER_DIMENSIONS`/`SPOTIFY_ATTRIBUTION`), so a hand-edited dimension is never silently
+  overwritten by a translation the admin didn't write. Wired into every DOM render site that displays
+  a dimension's label/green/red or the attribution: `render.js` (Tribe stats hotspot, hotspot list,
+  grid column headers + cell aria-labels, legend, header tooltip), `squads.js` (Squad view hotspot
+  row, entry-list label/green/red/aria-label), and `modals.js` (the shared rating modal). Deliberately
+  left untouched: `dimensions.js`'s Edit Dimensions list (must keep showing/editing the raw English
+  value -- localizing an editable form field would silently rewrite an admin's custom text as
+  translated text the moment they saved), `csv.js`'s export (re-import matching keys off the raw
+  English label), and `retro-facilitator.js`/`retro-join.js` (the retro flow stays English-only until
+  its own future stories, same precedent already set for `colorWordLocalized()`/`trendWordLocalized()`
+  in Story 4). Two of Story 4's own existing test assertions were asserting the OLD, now-intentionally-
+  wrong behavior (`test_main_screen_language.py`: `#statHotspot` and `.entry-row .entry-label` stay
+  "Easy to release" under Hebrew) -- updated to expect the Hebrew text, per the DOD's standing rule
+  that an assertion asserting old behavior gets updated, not preserved, when the behavior change is
+  deliberate. `test_starter_template_spotify.py`'s Hebrew scenario rewritten end to end: proves the
+  underlying dimension docs and `meta/config` stay English always (single source of truth), that the
+  Tribe legend's label/green/red/attribution display in Hebrew immediately after just flipping the
+  language switch (no template reload at all), and that switching back to English immediately restores
+  English display -- live both directions, not a one-time bake-in. True test-first throughout:
+  `tests/unit/test_template_locale.js` rewritten for `localizedDimText()`/`localizedAttribution()` and
+  watched fail (undefined exports) before implementing; the Playwright scenario was written against
+  the reverted (pre-fix) `templates.js` and watched fail for the right reason (stored English, no
+  Hebrew in the DOM) before the render-site wiring went in. Full 55-test unit suite and full 34-file
+  Playwright suite green, serial (`TEST_JOBS=1`), zero regressions.
+- 2026-09-13 — **Fixed a real bug, reported from usage: the Tribe grid's dimension-header hover
+  tooltip could get stuck open.** Root cause identified by code review: `renderGrid()` rebuilds the
+  whole `<thead>` via one `innerHTML` write on every render (a teammate's live edit, a rating save, a
+  language switch, ...), and the tooltip's mouseenter/mouseleave/focus/blur listeners were bound
+  fresh, per `.dim-th-label` node, on every render (`bindGridHeaderTooltips()`) -- a listener bound to
+  a node that a later render destroys can never fire again, so a re-render happening while a tooltip
+  was open could orphan it with nothing left able to hide it. (Synthetic reproduction of the exact
+  "re-render while hovering" race in headless Chromium didn't itself produce a stuck-forever state --
+  this browser recomputes hover and re-fires the events on the replacement node at the same pointer
+  position, which happened to self-heal the specific sequence tried -- so the precise trigger the
+  product owner hit in real usage wasn't nailed down 1:1. Fixed the underlying fragility either way,
+  since relying on that recompute behavior at all was never the intent.) Fix: delegated the tooltip's
+  event handling to `.table-scroll` (the STABLE wrapper around `#gridTable` that renderGrid() never
+  itself replaces) via `mouseover`/`mouseout` (with a `relatedTarget` check) and `focusin`/`focusout`,
+  bound exactly once at load, instead of re-binding per-node on every render -- removes the whole
+  failure class regardless of exact trigger. `renderGrid()` also now calls `hideDimTooltip()`
+  unconditionally before every rebuild as defense in depth. New Playwright coverage in
+  `test_tooltip_busy_overlay_and_csv_key.py`: hover to open the tooltip, fire a live "remote"
+  dimension edit (`window.__NOTIFY__`) while still hovering (content refreshes correctly, tooltip may
+  legitimately stay open since the pointer never moved), then genuinely move the pointer away and
+  confirm it hides -- not orphaned by whatever render happened while it was open. Full suite verified
+  green alongside the Story 5 correction above (same session, same full-suite run).
+- 2026-09-13 — **Two tech-debt follow-ups from the product owner reviewing the two fixes above.**
+  1. *Why didn't a test catch the missing Hebrew dimension text?* Two real, distinct gaps, not one
+     "buggy test": `test_main_screen_language.py` (Story 4) asserted dimension text STAYS English
+     under Hebrew (`#statHotspot`/`.entry-row .entry-label` == "Easy to release") -- correct for the
+     code as designed at the time (Story 4's own deliberate, but ultimately wrong, scope decision),
+     so that test wasn't lying, it was locking in a decision that needed reversing later, which is
+     exactly what the correction above did. Separately, this session's OWN first Story 5 test only
+     ever exercised the "explicitly reload the template via the Templates modal" path (matching the
+     wrong one-time-snapshot design) -- it never tested the actual real-world path (the untouched
+     DEFAULT board, just flip the language switch), which is exactly where the bug lived. A test that
+     only validates its own implementation's assumption instead of the real acceptance criterion
+     catches nothing. Both gaps are closed by the rewritten tests in the correction commit above,
+     verified still passing here (55-test unit + 34-file Playwright, serial).
+  2. *Is the Tribe grid's mouse-hover state under-tested?* The dimension-header tooltip is the ONLY
+     JS-driven hover interaction anywhere in the Tribe/Squad grids (`.cell-btn:hover`'s
+     `filter:brightness(1.08)` is pure decorative CSS, no JS state to test) -- and it already had
+     hover/leave + keyboard focus/blur coverage, plus the re-render-race regression test added
+     alongside the delegation fix above. But one real path had zero coverage even after that fix
+     landed: moving the pointer DIRECTLY from one header to an ADJACENT one (no neutral "away"
+     position first) -- the most common real usage (scanning across columns), and the one path that
+     specifically exercises the delegated `mouseout` handler's `relatedTarget`/`.contains()` check
+     the delegation fix introduced. New scenario in `test_tooltip_busy_overlay_and_csv_key.py`: hover
+     "release", hover "process" directly (no gap), confirm the tooltip updates to "Suitable process"
+     (not stuck on the old content), then confirm a genuine leave afterward still hides it. Full suite
+     verified green (55-test unit + 34-file Playwright, serial `TEST_JOBS=1`).
+- 2026-09-13 — **Multi-language rollout Stories 6-9: app header/nav chrome, Tuckman + Five
+  Dysfunctions template content, and the Templates modal's own chrome.**
+  - **Story 6 (header/nav):** new `#appHeader` id on `<header class="top">`, added to
+    `RTL_SCOPED_CONTAINERS`. New `header.*` locale keys for the tagline (now `t()`-driven instead of
+    hardcoded string concatenation in `render.js`'s `renderHeader()`), the sync-status text
+    (`db.js`'s `setSyncStatus()`), "Join a retro"/"← Back to my retro", and the Tribe/Squad/Admin
+    view-switch buttons. `header.appName` ("Squad Pulse") is a deliberate BRAND-NAME PASS-THROUGH --
+    same literal value in every locale, still routed through `t()` so it satisfies "every string on
+    an i18n-supported screen goes through `t()`" mechanically without translating a proper noun; the
+    model badge (a TEMPLATE's own display name) is correctly untouched (Story 9's territory, not
+    this one's). New `tests/test_header_language.py`.
+  - **Stories 7-8 (Tuckman / Five Dysfunctions dimension content):** required generalizing Story 5's
+    `localizedDimText()`/`localizedAttribution()` FIRST -- they were hardcoded to `SPOTIFY_TEMPLATE`
+    specifically. New `activeStarterTemplate()` (`state.js`) looks up whichever `STARTER_TEMPLATES`
+    entry is active BY NAME and uses THAT template's own `.i18n` table, so any starter template that
+    declares one gets live-render-time translation for free, no per-template special-casing at any
+    render call site. Proven with a throwaway synthetic template in
+    `tests/unit/test_template_locale.js` BEFORE writing the generalization (watched fail), and the
+    old Spotify-specific tests rewritten to run generically across every `STARTER_TEMPLATES` entry
+    that declares `.i18n` (Tuckman/Five Dysfunctions join the DOD-parity checks automatically the
+    moment they declare one -- no test-code changes needed per template going forward). New
+    `TUCKMAN_DIMENSIONS_HE`/`TUCKMAN_ATTRIBUTION_HE` and
+    `FIVE_DYSFUNCTIONS_DIMENSIONS_HE`/`FIVE_DYSFUNCTIONS_ATTRIBUTION_HE` (`state.js`), same
+    AI-translated/pending-human-review status and label/green/red-only scope as Spotify's (not
+    `.statements`/`.strategies` -- nothing outside the retro statement-survey flow reads those, and
+    that flow stays English by design, see below). New scenarios appended to
+    `tests/test_scored_template_tuckman.py`/`tests/test_scored_template_five_dysfunctions.py`:
+    switching to Hebrew shows Hebrew content in the Tribe legend live (no reload), stored dimension
+    docs stay English always, and -- for Tuckman, which that file already has a live retro session
+    running -- the ALREADY-STARTED session's participant-facing results stay English, since the retro
+    flow itself is still untranslated (its own future story), same precedent Story 5 established.
+  - **Story 9 (Templates modal chrome):** new `templates.*` locale keys for the modal's title/hint,
+    "Starter templates"/"Your templates" headings, Load/Delete buttons and their confirm dialogs, the
+    save-as-template row, Close, the busy-overlay "Switching to..." message, and the per-row meta
+    line (dimension count/unit/scored-count, now correctly bidi-isolated via `t()`'s interpolation --
+    fixed one existing test, `test_starter_template_spotify.py`, whose exact-substring assertion on
+    that line predated the isolate marks, same category of fix the DOD already documents). Template
+    NAMES and a starter template's own dimension content stay untouched, per the same "admin's own
+    content, not app chrome" principle as a manually customized dimension. `templatesBackdrop` added
+    to `RTL_SCOPED_CONTAINERS`. **Real bug caught before it shipped, not after:** `templates.js`
+    named its template-object parameter/local variable `t` throughout (`templateRowHtml(t, opts)`,
+    `loadTemplate(t)`, a `var t = findAnyTemplateById(id)` inside `renderTemplateList()`) -- which
+    SHADOWS the global `t()` translation function for the rest of that scope. Calling `t("some.key")`
+    inside a scope where `t` had been reassigned to a template object would have thrown a TypeError
+    at runtime the moment Hebrew was active and that code path ran. Caught while writing this
+    story's own i18n wiring, before ever running it, by recognizing the naming collision -- fixed by
+    renaming every template-object reference in the file to `tpl` (verified via `grep` that no `t`
+    binding remains anywhere in `templates.js` besides the explanatory comment). New
+    `tests/test_templates_language.py`.
+  - All four stories' Playwright tests were written and watched fail for the right reason before
+    their implementation landed, per this repo's test-first policy. Full suite verified: 65-test unit
+    suite and the full 36-file Playwright suite (2 new files this session), run entirely serially
+    (`TEST_JOBS=1`, no parallelization, per explicit instruction), zero regressions after one real
+    fix along the way (the bidi-isolate assertion above).
+- 2026-09-13 — **Delivery workflow change: `claude/optimistic-keller-holuql` is now a shared preview
+  branch, not a workspace every session commits straight to.** Prompted by real, repeated pain, not a
+  hypothetical: two concurrent Claude Code sessions (this relay/testing work and the multi-language
+  rollout above) plus a local VSCode checkout all pushed directly to this one branch throughout the
+  day, colliding several times -- each collision needing a manual `git fetch` + merge to untangle
+  (documented earlier this same log: a full commit-graph forensic trace of exactly when each session's
+  local HEAD went stale relative to the other's pushes, confirming the pattern was symmetric and
+  unavoidable under "everyone commits straight to one branch," not a sign either side was failing to
+  pull). Considered three options: leave it as-is (kept failing), tighten how often each session
+  fetches (reduces the WINDOW but not the possibility), or give each session its own short-lived
+  branch merged deliberately into a shared trunk (chosen). New rule, in `docs/DefinitionOfDone.md`'s
+  Delivery workflow section (not duplicated here): branch from the current tip of
+  `claude/optimistic-keller-holuql` for a unit of work, merge the latest back in and re-validate before
+  merging out, never commit to the shared branch mid-work. `main` promotion is unaffected -- still
+  solely the product owner's call, unchanged by this.
+- 2026-09-14 — **Fixed a real bug, reported from usage, that turned out to have nothing to do with
+  translation: loading Tuckman's template left the dimension grid correctly showing Tuckman's 5
+  stages, but the model name/attribution regressed back to Spotify's.** First suspected as an i18n
+  gap (same shape as the Story 5 bug); ruled that out by reproducing against the real `index.html` +
+  real `local-store.js` with no relay involved at all -- worked perfectly. The actual reproduction
+  needed a REAL relay subprocess: **board sync is default-on for every device** (STATUS.md's "Board
+  sync" plan, step 7), and `templates.js`'s `loadTemplate()` writes the new dimension docs and the
+  new `meta/config` doc as two SEPARATE Firestore-like operations. Each one independently fires a
+  `db.js` `onSnapshot` listener that calls `pushBoardSnapshotIfConnected()` -- so the instant the new
+  dimension docs land (before the config write follows), a push escapes built from `state` at that
+  exact moment: the NEW dimensions, but still the OLD config. With a live subscription open (which
+  every default-on device has, to its own default room -- no explicit team link needed to hit this),
+  that inconsistent intermediate snapshot echoes straight back and `board-sync.js`'s
+  `applyRemoteBoardSnapshot()` rewrites the local `meta/config` to match it, regressing
+  `activeTemplateName`/`attribution` to the PREVIOUS template. `board-sync.js` already had an
+  established guard for exactly this class of problem -- the `hydrating` flag suppresses pushes while
+  a multi-doc REMOTE snapshot is being applied -- but nothing equivalent existed for a multi-doc LOCAL
+  rewrite. New `suppressBoardPushDuring(work)` (`board-sync.js`): a second flag
+  (`suppressingLocalRewrite`, checked alongside `hydrating` in `pushBoardSnapshotIfConnected()`'s
+  guard) rather than reusing `hydrating` itself, since that flag carries `pendingRemoteApply`
+  bookkeeping this case has no use for; fires exactly one consistent push once the wrapped work
+  settles (success or failure). `loadTemplate()`'s live-mode branch now wraps its whole
+  delete-dimensions → write-dimensions → write-config sequence in it. True test-first: new
+  `tests/test_board_sync_template_switch_race.py` spins up a real `relay/server.js` subprocess
+  (board sync can't be reproduced against the fake store or a relay-less `local-store.js` -- both
+  silently no-op the push/hydrate calls this bug lives in), loads Tuckman while connected, and
+  watched it fail for the right reason (`activeTemplateName` regressed to Spotify's, dimensions
+  correctly Tuckman's) before the fix, then confirmed passing after -- including that a page RELOAD
+  picks up the same correct state from the relay, not a regressed one. Full suite verified: 65-test
+  unit suite and the full 37-file Playwright suite (1 new file), serial (`TEST_JOBS=1`), zero
+  regressions.
+- 2026-09-14 — **Multi-language rollout Stories 10-12: retro join flow, retro facilitation flow,
+  and the Edit Dimensions modal.** Each done on its own short-lived branch off
+  `claude/optimistic-keller-holuql` per the new delivery workflow, merged back after full-suite
+  validation.
+  - **Story 10** (`retro-join.js`, `#viewJoin`, `#joinCodeBackdrop`): the "Join a retro" code-entry
+    modal, the join screen's connecting/ended/unreachable/not-open states, the survey form chrome
+    (scale buttons, the "Squad health check" sub-heading, Green:/Red: anchors reusing the Tribe
+    legend's own labels, swatch titles, Submit), and the personal-result screen. Replaced the join
+    heading's hardcoded `dir="ltr"` (a workaround for mixing untranslated English chrome with a
+    Hebrew squad name) with `t()`'s own bidi-isolate wrapping now that the whole sentence
+    translates and `#viewJoin`/`#joinCodeBackdrop` are RTL-scoped.
+  - **Story 11** (`retro-facilitator.js`): the session card (no-session hint + Start button,
+    session code block, live/hold reveal toggle, live results / results held, the
+    response-consolidation table, sprint-experiment note, finish/close buttons), the per-dimension
+    override editor (shares the rating modal's markup), the co-facilitate error paths, and every
+    confirm dialog. Dropped the session card's hardcoded `dir="ltr"` opt-out now that its own
+    chrome translates -- it inherits RTL scoping from `#viewSquad` (Story 4) like the rest of
+    Squad view.
+  - **Story 12** (`dimensions.js`, `#dimBackdrop`): the modal's title/hint, per-row move/remove
+    control titles, the name input's aria-label/placeholder, the Green/Red looks-like labels and
+    placeholders, the statement-count hint, Add/Done buttons, the empty-state hint, and the remove
+    confirm dialog.
+  - **Consistent scope boundary across all three**, same principle Story 9 established for
+    template names: dimension/session content itself (label/green/red/statement text, a freshly
+    added dimension's default "New dimension" label) stays untranslated -- it's the admin's own
+    authored content, not app chrome. `colorWordLocalized()`/`trendWordLocalized()` (i18n.js) --
+    previously unused outside Tribe/Squad view because Stories 10-11 weren't done yet -- are now
+    used by both retro files for band/pill/trend vocabulary, replacing hardcoded English ternaries.
+  - Four now-stale exact-text assertions in pre-existing tests needed updating, all for the same
+    reason (`t()`'s bidi-isolate wrapping around a newly-translated interpolated value, or a
+    dropped `dir="ltr"` opt-out) -- not new bugs, just tests written before these strings went
+    through `t()`: `test_hebrew_rtl_coverage.py` (join heading selector/direction),
+    `test_main_screen_language.py` (session-card dir/heading), `test_retro_override_and_response_table.py`
+    and `test_retro_reveal_mode_and_consolidation.py` (response-row-label / count-line
+    `startswith`), `test_scored_template_five_dysfunctions.py` (statement-count hint substring).
+  - New test files, one per story: `test_join_flow_language.py`, `test_facilitator_language.py`,
+    `test_dim_manager_language.py`. Full suite verified after each story and again at the end:
+    65-test unit suite, 42-file Playwright suite, zero regressions.
+  - Backlog table: Stories 1-12 now **DONE**. Story 13 (CSV import/export chrome) remains --
+    deliberately last, since `csv.js`'s column-matching/re-import logic keys off raw English
+    labels and needs its own design pass, not just a translation pass.
+- 2026-09-14 — Copilot (via VSCode) profiled the full sequential suite and flagged the ten
+  slowest Playwright files, most of it fixed `wait_for_timeout()` calls with no causal link to
+  the thing being waited for. Assessed as a legitimate, safe optimization (not a new
+  architecture, unlike the earlier no-browser integration-tier proposal this repo already
+  rejected) because `local-store.js`'s subscription notify genuinely runs on a `setTimeout(0)`
+  tick -- these waits aren't purely decorative, they're covering a real one-tick async gap, just
+  with a guessed constant instead of a real completion signal. Piloted the fix on
+  `test_hebrew_rtl_coverage.py` (Copilot's #2-ranked file) on its own short-lived branch
+  (`claude/perf-condition-waits`) per the delivery workflow: removed every `wait_for_timeout()`,
+  relying on Playwright's own auto-wait on `click()`/`fill()` where the next action was one of
+  those (redundant already), and adding `wait_for_selector()`/`wait_for_function()` only where
+  the next call was `query_selector()`/`eval_on_selector()`/`evaluate()` (none of which auto-wait).
+  Found two real bugs empirically, not by inspection, via a 10x stress-test loop: `wait_for_selector`
+  defaults to `state="visible"`, which hung when the first DOM-order match was a hidden duplicate
+  of near-identical markup from an inactive (but still-mounted) view, or sat inside a collapsed
+  `<details>` not yet expanded -- both fixed with `state="attached"`, matching what
+  `eval_on_selector`'s own DOM-presence-only semantics already assumed everywhere in this test.
+  Result: ~8.5s -> ~3.2-3.5s per run locally, 10/10 clean, then re-verified against a same-file
+  merge from the concurrent i18n session (Stories 10-12) and the full 41-file suite, zero
+  regressions. Deferred the rest of Copilot's list (other flagged files, duration-aware shard
+  balancing, shared-browser-per-worker) rather than batching them in -- each file needs the same
+  per-site empirical verification this one took, not a mechanical find-and-replace.
+- 2026-09-14 — **Fixed a real bug, reported from usage with screenshots: a retro participant's join
+  screen stayed English even when the facilitator had switched the whole app to Hebrew before
+  starting the session.** Root cause: `state.ui.locale` (i18n.js) is pure per-device UI state, saved
+  only to that one browser's own `localStorage` -- never part of what a session/join link carries, so
+  a brand-new device (no prior localStorage) always booted at the "en" default regardless of the
+  facilitator's own choice. The only workaround was exiting the join screen, digging into Admin,
+  switching languages, then tapping "back to my retro" to return -- real friction the product owner
+  called out directly. Fixed with the same shape as the existing team-sync-via-join-link mechanism:
+  `joinUrlFor()`/`coFacilitateUrlFor()` (`helpers.js`) now also carry the facilitator's CURRENT
+  locale as a `&lang=` param (new `langParamFor()`, omitted entirely for the "en" default so an
+  all-English board's links are unchanged); `state.js`'s boot-time `loadUiPrefs()` applies it, but
+  ONLY as a fallback default when this device has no locale of its own already saved -- an existing
+  preference always wins, and a device that picks one up this way remembers it as its own from then
+  on (persisted to `localStorage`), so it doesn't need re-discovering on a later, un-tagged visit.
+  New `tests/test_join_link_carries_language.py` covers all three cases: the link carries `&lang=he`
+  only while the facilitator is on Hebrew, a fresh device opening a Hebrew-tagged link boots straight
+  into Hebrew with no exit/switch/return needed, and a device with its own already-saved preference
+  is never overridden. Full suite verified: 65-test unit suite, 43-file Playwright suite, zero
+  regressions.
+  - **Still open, raised by the same usage report, needing a product decision rather than a code fix
+    yet:** (1) the retro survey's actual STATEMENT/strategy text (e.g. Tuckman's/Five Dysfunctions'
+    20 assessment statements) has never been translated -- Stories 5/7/8 deliberately scoped
+    dimension-content translation to label/green/red/attribution only, explicitly excluding
+    `.statements`/`.strategies` (see `state.js`'s own header comments on `TUCKMAN_DIMENSIONS_HE`/
+    `FIVE_DYSFUNCTIONS_DIMENSIONS_HE`), so there is no Hebrew statement text anywhere to show yet --
+    translating it is a real, scoped addition (new AI-translated content needing the same
+    pending-human-review treatment as the existing translations), not a bug in Stories 10/11's own
+    work. (2) The Edit Dimensions modal (Story 12) shows a dimension's name/green/red as the raw
+    STORED English value even under Hebrew, unlike Tribe/Squad view's live-localized read-only
+    display (Story 5/7/8) -- this is intentional, not an oversight: `localizedDimText()`'s safety
+    check only auto-translates a field while its stored value still exactly matches the template's
+    own English default, and Edit Dimensions is an EDIT surface -- showing translated text in an
+    editable input risks the admin saving that Hebrew text back as the new "customized" value,
+    permanently breaking the live-translation match for every other viewer (including a future
+    English-locale one). Surfaced to the product owner as a real but consciously-made tradeoff worth
+    a second look, not silently fixed either way.
+- 2026-09-14 — **Translated the retro survey's own statements/strategies (Tuckman + Five
+  Dysfunctions), closing the open item raised by the join-link-language usage report above.**
+  Product owner approved translating them after that report's screenshots showed the join screen's
+  chrome in Hebrew but the actual survey questions ("Team members are still learning about each
+  other's roles...") still English -- Stories 5/7/8 had deliberately scoped dimension-content
+  translation to label/green/red/attribution, explicitly excluding `.statements`/`.strategies`.
+  Added Hebrew translations for both templates' full statement/strategy arrays to
+  `TUCKMAN_DIMENSIONS_HE`/`FIVE_DYSFUNCTIONS_DIMENSIONS_HE` (`state.js`), same array shape/order as
+  the English default (read by index -- see `retro-join.js`'s `interleavedStatements()`). Extended
+  the localization mechanism itself along the way: `dimensionValuesMatch()` replaces the
+  reference-equality (`!==`) customization check with a value-based one for array fields --
+  reference equality would wrongly treat a value-identical-but-different-array-instance statements
+  list (exactly what happens once a value round-trips through a session doc's own JSON-shaped
+  storage/relay transport) as "the admin customized this," permanently blocking translation, a bug
+  class label/green/red's plain-string fields never had. New `localizedSessionDimText()` (sharing
+  `localizedFieldForTemplate()`'s core logic with `localizedDimText()`) is keyed off a retro
+  SESSION's own frozen `templateName` rather than the live board's currently active template --
+  `openSessionOverrideEditor()` already documented why a session can't just reuse
+  `activeStarterTemplate()` (the board's template may have moved on since the session started);
+  this generalizes that same reasoning into the translation lookup itself. Wired into every
+  session-scoped dimension field read in `retro-join.js` (interleaved statement text, a
+  direct-rating dimension's openly-shown label/green/red, the personal-result screen's
+  label/message/strategies) and `retro-facilitator.js` (live result dimension names, the response
+  table header, the override editor, the finish-confirm summary) -- a Hebrew-speaking facilitator
+  now sees the same consistently-translated retro their Hebrew-speaking teammates do. New
+  `tests/test_retro_statement_language.py`; extended `tests/unit/test_template_locale.js` with
+  `localizedSessionDimText()` coverage and a mechanical statements/strategies length+non-blank
+  check alongside the existing label/green/red one. Full suite verified: 69-test unit suite,
+  44-file Playwright suite, zero regressions.
+  - **Still open from the same usage report, by the product owner's own choice (not yet designed):**
+    letting an admin edit BOTH the English and Hebrew text of a dimension at the template level --
+    a genuine architecture change (today's translation tables are hardcoded template constants, not
+    editable board data) the product owner asked to see a design proposal for before any
+    implementation starts.
+- 2026-09-14 — Second file in the condition-based-wait perf pass (see the 2026-09-14 entry above
+  on `test_hebrew_rtl_coverage.py` for the full rationale): `test_template_switching_and_csv_import.py`
+  (Copilot's #9-ranked file), on its own short-lived branch. Same treatment -- removed every
+  `wait_for_timeout()`, relying on `click()`/`fill()`'s own auto-wait where the next action was one
+  of those, and adding `wait_for_selector()`/`wait_for_function()` only where the next call was
+  `query_selector()`/`eval_on_selector()`/`evaluate()`. Unlike the RTL file, this one needed no
+  `state="attached"` correction -- clean on the first 10x stress-test pass, likely because this
+  file's post-action reads are mostly `evaluate()` polls on `window.__FAKE_STORE__` fields
+  (`wait_for_function`, no visibility concept at all) rather than `eval_on_selector()` calls whose
+  selectors happened to also match hidden markup elsewhere. Result: ~5.25s -> ~1.6-2.0s per run
+  locally, 10/10 clean, then the full 43-file suite (69-test unit suite included), zero
+  regressions.
+- 2026-09-14 — Third file in the condition-based-wait perf pass: `test_tribe_hotspots.py`
+  (Copilot's #3-ranked file), on its own short-lived branch. Same treatment. The `rate()` helper's
+  5-click chain needed no waits at all -- Playwright's `click()` auto-waits on every step, and
+  nothing reads state between the 7 calls to it, so the whole chain just needed to be left alone.
+  One read needed care beyond a plain "did the element land" check: after the 7 ratings,
+  `#statHotspot` already held content from the earlier "None yet" case, so simple selector
+  presence wasn't a real completion signal for the POST-rating value -- polled
+  (`wait_for_function`) for the actual expected text instead, the same value the assertion right
+  after it re-checks (the same pattern this repo's own `wait_for_scored()` helper already uses
+  elsewhere for a comparable "wait for the real end-state, not just some transition" case).
+  Result: ~7.2s -> ~2.3-2.6s per run locally, 10/10 clean, then the full 43-file suite, zero
+  regressions.
+- 2026-09-14 — Fourth file in the condition-based-wait perf pass: `test_tooltip_busy_overlay_and_csv_key.py`
+  (Copilot's #4-ranked file), on its own short-lived branch. This one caught a genuinely new
+  failure mode, not just a repeat of `state="attached"`: `showBusy()`/`hideBusy()` (`modals.js`)
+  bracket a Promise chain (`templates.js`'s `loadTemplate()`) that this fake store resolves fast
+  enough to complete within the SAME JS turn as the click that triggers it. A `wait_for_function`
+  polling for `busyOverlay.hidden === false` -- an EXTERNAL CDP call that only gets a turn once the
+  page's own microtask queue drains -- timed out 15/15, because by the time any external poll runs,
+  `hideBusy()` has usually already fired too. This is exactly what the file's own top-of-file
+  comment already warned about ("polling at an arbitrary later point would otherwise likely just
+  see the already-hidden end state") -- confirmed empirically the hard way instead of heeding it
+  up front. `__busyHistory`, recorded by a `MutationObserver` running on the PAGE's own timeline
+  rather than an external poll, is the only reliable record of that transient show; the fix waits
+  for the cycle to fully settle (`hidden === true`) and reads the recorded history, rather than
+  trying to catch the shown moment live. Every hover/focus/blur tooltip check got a
+  `wait_for_function` tied to `dimTooltip`'s hidden state or exact expected content (those handlers
+  run synchronously, so these resolve near-instantly); the three CSV-import waits became
+  `pendingImportPlan !== null` polls, same as the other files in this pass. Result: ~6.9s -> ~2.1-2.2s
+  per run locally, 15/15 clean (a bigger stress-test batch than the first three files, given the
+  event-timing sensitivity here), then the full 43-file suite, zero regressions.
+- 2026-09-14 — **Bilingual dimensions: made a dimension's Hebrew translation a real, editable field
+  on the dimension itself, replacing the hardcoded template-level lookup table.** Product owner
+  approved this from a working mockup (an Artifact reusing the app's real design tokens, with the
+  actual toggle/expand interaction built rather than described — see the new Delivery-workflow
+  policy this prompted, below) rather than a text proposal, then asked for it to be built along
+  with two of the mockup's own open questions resolved: survey statements/strategies get the same
+  EN+HE editing (not just label/green/red), and a third UI language is explicit backlog (YAGNI for
+  now, recorded in the "Deliberately not built yet" table).
+  - **The redesign itself** (`state.js`): `localizedDimText(dim, field)` now reads
+    `dim.i18n.he.<field>` directly off the dimension object handed to it — no more matching the
+    dimension's CURRENT value against a template's own English default to decide whether to
+    translate. That old mechanism (Stories 5/7-9's `activeStarterTemplate()`-keyed lookup, and
+    Stories 10/11's session-scoped `localizedSessionDimText()`/`starterTemplateByName()`
+    variant, both now removed) was fragile in exactly the way a real usage report eventually
+    surfaced: an array field (statements) round-tripping through a session doc's JSON-shaped
+    storage broke reference-equality matching, and it could never be extended to a custom/saved
+    template or a hand-edited dimension. The three built-in starter templates' own `dimensions[]`
+    entries now each carry their own `i18n.he` (folding in the existing
+    `SPOTIFY_DIMENSIONS_HE`/`TUCKMAN_DIMENSIONS_HE`/`FIVE_DYSFUNCTIONS_DIMENSIONS_HE` tables by
+    reference, so no translated content was retyped) — these seed a dimension's translation the
+    moment a starter template is loaded, but from there on it's the dimension's own editable data,
+    same as label/green/red, carried forward by `loadTemplate()`, `saveCurrentAsTemplate()`, and
+    `startSession()`'s session snapshot wherever the dimension itself travels. Array-field
+    fallback (statements/strategies) is per-ELEMENT, not per-whole-array — the new editor lets an
+    admin translate one statement at a time, so a real Hebrew array is very often partially
+    filled, and an all-or-nothing fallback would show a blank line for every untranslated entry
+    instead of its English text.
+  - **Two real bugs found while wiring the redesign through the LIVE (relay-shaped) write path**,
+    neither visible from the pure-logic unit tests alone: (1) `db.js`'s dimensions AND templates
+    `onSnapshot` listeners both explicitly rebuild "brand-new plain objects" from each frozen
+    `doc.data()` snapshot (deliberately, so `state.dimensions`/`state.templates` entries can be
+    edited in place later) — and both listeners' explicit field lists dropped `i18n` entirely, so
+    a just-saved translation echoed back through the device's own live subscription and vanished
+    on the very next snapshot. (2) Once (1) was fixed by copying `data.i18n` across, a SECOND edit
+    to the same dimension (e.g. green after label) started throwing, because `data.i18n` is nested
+    inside the frozen snapshot clone — assigning it by reference (rather than cloning it) handed
+    `dimensions.js` a frozen object it then tried to mutate in place on the next keystroke.
+    Fixed by reusing `board-sync.js`'s existing `plainClone()` helper (built for the identical
+    "frozen nested data, later edited in place" hazard in the opposite data-flow direction) rather
+    than inventing a second deep-clone utility.
+  - **The Edit Dimensions modal** (`dimensions.js`): every dimension row gets a collapsible
+    "🇮🇱 Add a Hebrew translation" / "Hebrew translation — added" panel (open by default once a
+    translation exists, closed by default otherwise, and the open/closed choice survives the
+    full-innerHTML-rebuild every edit already triggers via a small `openI18nPanels` map keyed by
+    dimension key) holding Hebrew label/green/red fields alongside the English ones. Survey
+    statements/strategies are no longer read-only in either language: each renders as one input
+    per item, English inline in the row and Hebrew inside the translation panel, aligned by index
+    (a Hebrew array is padded to the English array's length before writing, so translating item
+    #1 before #0 never leaves #0 as `undefined`).
+  - New `tests/test_bilingual_dimension_editor.py` (Playwright) covers the full loop: an
+    untranslated dimension's collapsed toggle and blank fields, filling one in and seeing it
+    localize live in Tribe view, a Tuckman dimension's pre-filled/already-open panel naming its
+    source template, and editing statements/strategies in both languages without disturbing
+    sibling items. Rewrote `tests/unit/test_template_locale.js` for the new, simpler
+    `localizedDimText()` contract (dropped every test of the removed session/template-matching
+    machinery, added per-element array-fallback coverage). Updated `tests/fixtures/fake_store.html`
+    and `public/local-store.js`'s seed data to carry the same per-dimension `i18n` shape a real
+    board now has (`fake_store.html` deliberately leaves two of its three seeded dimensions
+    untranslated, so tests needing a genuine "no translation yet" example still have one).
+    Fixed four now-stale assertions in existing tests that depended on the removed
+    template-level `i18n.he.dimensions` shape or the old read-only statements hint.
+  - Full suite verified: 69-test unit suite, 44-file Playwright suite, zero regressions.
+  - **New Definition-of-Done policy this round prompted** (`docs/DefinitionOfDone.md`'s Delivery
+    workflow section): a genuine architecture/UX decision gets a working, interactive mockup built
+    from the app's real design tokens before implementation starts, not a text description — this
+    is specifically why the proposal above got a fast, confident "go ahead" rather than a round of
+    clarifying questions. Also added: a new data shape must explicitly say whether it needs a
+    migration path for existing stored data, even when the honest answer (as here) is "not yet,
+    nothing real depends on the old shape."
+- 2026-09-14 — Second file in the condition-based-wait perf pass (see the 2026-09-14 entry above
+  on `test_hebrew_rtl_coverage.py` for the full rationale): `test_template_switching_and_csv_import.py`
+  (Copilot's #9-ranked file), on its own short-lived branch. Same treatment -- removed every
+  `wait_for_timeout()`, relying on `click()`/`fill()`'s own auto-wait where the next action was one
+  of those, and adding `wait_for_selector()`/`wait_for_function()` only where the next call was
+  `query_selector()`/`eval_on_selector()`/`evaluate()`. Unlike the RTL file, this one needed no
+  `state="attached"` correction -- clean on the first 10x stress-test pass, likely because this
+  file's post-action reads are mostly `evaluate()` polls on `window.__FAKE_STORE__` fields
+  (`wait_for_function`, no visibility concept at all) rather than `eval_on_selector()` calls whose
+  selectors happened to also match hidden markup elsewhere. Result: ~5.25s -> ~1.6-2.0s per run
+  locally, 10/10 clean, then the full 43-file suite (69-test unit suite included), zero
+  regressions.
+- 2026-09-14 — Third file in the condition-based-wait perf pass: `test_tribe_hotspots.py`
+  (Copilot's #3-ranked file), on its own short-lived branch. Same treatment. The `rate()` helper's
+  5-click chain needed no waits at all -- Playwright's `click()` auto-waits on every step, and
+  nothing reads state between the 7 calls to it, so the whole chain just needed to be left alone.
+  One read needed care beyond a plain "did the element land" check: after the 7 ratings,
+  `#statHotspot` already held content from the earlier "None yet" case, so simple selector
+  presence wasn't a real completion signal for the POST-rating value -- polled
+  (`wait_for_function`) for the actual expected text instead, the same value the assertion right
+  after it re-checks (the same pattern this repo's own `wait_for_scored()` helper already uses
+  elsewhere for a comparable "wait for the real end-state, not just some transition" case).
+  Result: ~7.2s -> ~2.3-2.6s per run locally, 10/10 clean, then the full 43-file suite, zero
+  regressions.
+- 2026-09-14 — Fourth file in the condition-based-wait perf pass: `test_tooltip_busy_overlay_and_csv_key.py`
+  (Copilot's #4-ranked file), on its own short-lived branch. This one caught a genuinely new
+  failure mode, not just a repeat of `state="attached"`: `showBusy()`/`hideBusy()` (`modals.js`)
+  bracket a Promise chain (`templates.js`'s `loadTemplate()`) that this fake store resolves fast
+  enough to complete within the SAME JS turn as the click that triggers it. A `wait_for_function`
+  polling for `busyOverlay.hidden === false` -- an EXTERNAL CDP call that only gets a turn once the
+  page's own microtask queue drains -- timed out 15/15, because by the time any external poll runs,
+  `hideBusy()` has usually already fired too. This is exactly what the file's own top-of-file
+  comment already warned about ("polling at an arbitrary later point would otherwise likely just
+  see the already-hidden end state") -- confirmed empirically the hard way instead of heeding it
+  up front. `__busyHistory`, recorded by a `MutationObserver` running on the PAGE's own timeline
+  rather than an external poll, is the only reliable record of that transient show; the fix waits
+  for the cycle to fully settle (`hidden === true`) and reads the recorded history, rather than
+  trying to catch the shown moment live. Every hover/focus/blur tooltip check got a
+  `wait_for_function` tied to `dimTooltip`'s hidden state or exact expected content (those handlers
+  run synchronously, so these resolve near-instantly); the three CSV-import waits became
+  `pendingImportPlan !== null` polls, same as the other files in this pass. Result: ~6.9s -> ~2.1-2.2s
+  per run locally, 15/15 clean (a bigger stress-test batch than the first three files, given the
+  event-timing sensitivity here), then the full 43-file suite, zero regressions.
+- 2026-09-14 — **Added a translation export script for the product owner's own review workflow**
+  (`scripts/export-template-translations.js`), the last item from the same usage-report follow-up
+  as the bilingual-dimensions work above. Every starter template's dimension content is marked
+  "AI-translated, pending human review" in `state.js`'s own comments -- this gives the product
+  owner a plain JSON file (English and Hebrew side by side, per field, for every dimension of every
+  starter template, including statements/strategies) to review and correct instead of editing
+  state.js's hardcoded JS objects directly. Deliberately export-only: applying an edited file back
+  is a Claude-assisted step (read the file, edit `state.js`), not an automated importer -- state.js
+  is source code, not data a script should rewrite unattended. Output path defaults to
+  `translations-export.json` at the repo root (gitignored -- a regenerate-on-demand scratch file,
+  never checked in). Checked this repo (both branches) for a "revised JSON export format" the
+  product owner mentioned another session was working on, specifically to align this script's shape
+  with it if relevant -- found no trace of it here (no other branch, no committed file referencing
+  it), so this export uses its own straightforward shape for now; worth reconciling once that other
+  session's work is visible here.
+- 2026-09-14 — Fifth file in the condition-based-wait perf pass: `test_cofacilitator_join.py`
+  (Copilot's #5-ranked file, and the first RELAY-backed/multi-device file this pass has touched),
+  on its own short-lived branch. Same treatment for the click chains and content-dependent reads
+  (device D's session card landing, the confirm dialog's dismissal state, and -- the load-bearing
+  fix here -- device B's live tally actually containing device C's real submission after a genuine
+  relay round trip, tied to the exact text asserted right after rather than a flat 500ms guess).
+  `#teamLinkInput`'s value also got a real poll instead of a guess, since it's populated by
+  `crypto.subtle`-based key generation -- a real, non-instant async browser API, unlike this fake
+  store's near-instant local writes.
+  Deliberately left two waits untouched, matching this repo's own established precedent
+  (`test_board_sync_finish_retro_convergence.py`'s comments on the identical pattern): the settle
+  wait right after each of device B and device C opening device A's team link fresh. No documented
+  DOM-based signal exists yet for "this device has finished adopting a team it just opened via
+  URL," and getting that wrong on a relay-backed, cross-device write path risked a worse, harder-to
+  -diagnose failure than the modest time these two waits cost -- unlike the other conversions in
+  this pass, which only ever risked a slower/more-verbose failure if wrong.
+  Result: ~7.4s -> ~4.6-5.0s per run locally (a more modest cut than the four purely-local files,
+  expected given the two intentionally-kept waits), 15/15 clean (matched the bigger stress-test
+  batch used for the tooltip file, given the relay/multi-device stakes here). Landed via a real
+  merge, not a fast-forward, since Stories 13-14 (bilingual dimension editor, CSV import/export
+  chrome) merged into the shared branch while this was in progress -- re-verified against that
+  merged state: 5x stress-test rerun clean, full 44-file suite (69-test unit suite included), zero
+  regressions.
+- 2026-09-14 — **Fixed a real deadlock in 12 relay-backed Playwright test files**, found live: a
+  full regression run was stuck for 55+ minutes on `test_board_sync_hydrate_on_boot.py` (normally
+  finishes in under 2 minutes). Root cause: every relay-backed test's `wait_for_port()` gives the
+  `node server.js` subprocess a 5s window to start listening; on timeout, the error path calls
+  `relay_proc.stdout.read()` to include the relay's own output in the raised `RuntimeError` — but
+  `.read()` blocks until EOF, and a relay process that's simply running LATE (confirmed via `lsof`:
+  it did bind the port, just after the 5s window closed, under `-P 2` CPU contention from the
+  parallel suite) never closes its stdout, since it's a live server, not a process that exits.
+  Confirmed via `/proc/<pid>/stack` showing the Python process blocked in `anon_pipe_read`, reading
+  a pipe whose write end (`node`'s stdout/stderr) was still held open by a very-much-alive relay
+  process. Fix, applied identically to all 12 relay-backed test files: `.terminate()` (then
+  `.wait(timeout=5)`, falling back to `.kill()`) the relay process BEFORE reading its stdout, so
+  the pipe is guaranteed to hit EOF. Verified the happy path still passes standalone, then re-ran
+  the full suite fresh (69 unit tests + full Playwright regression) to confirm zero regressions from
+  the fix itself, on its own short-lived branch.
+- 2026-09-14 — Copilot perf pass, file 6/9: `test_retro_join_flow.py`. Replaced nearly all
+  `wait_for_timeout()` calls with real conditions: `wait_for_selector(state="attached")` for reads
+  via `query_selector()`/`eval_on_selector()` after a per-squad detail render or a native
+  `<details>` toggle (both synchronous once the target lands, so the only real gap is DOM
+  attachment -- confirmed the QR/diag-log content in question was already rendered into the
+  collapsed-but-attached markup, not built lazily on open), `state="visible"`/`"hidden"` for the
+  join-code modal's own open/close toggles, and `wait_for_function()` polling
+  `window.__FAKE_STORE__` for session-doc writes (the fake store's `set()`/`update()` write
+  synchronously, but the wait verifies the actual condition -- a specific session's status, or a
+  fresh key landing -- rather than assume that timing holds). A few click-then-click chains with no
+  intervening read needed no wait at all, since `click()`/`fill()` already auto-wait for their own
+  next target to become actionable. Kept exactly one fixed wait: after the copy-join-link button,
+  since `navigator.clipboard.writeText()` rejects asynchronously without clipboard permissions in
+  this headless run, and that rejection surfacing as a `pageerror` is precisely what the following
+  assertion checks -- there's no DOM signal to poll for it instead. Verified byte-for-byte identical
+  output against the original (aside from randomized session codes/timestamps), then stress-tested
+  10x clean at ~2.9-3.1s per run (down from ~6.6s). Landed via a fast-forward-then-merge onto the
+  preview branch after the relay-deadlock fix above landed concurrently; re-verified the merged
+  state: 5x stress-test rerun clean, full 44-file Playwright suite, and the 69-test unit suite, zero
+  regressions.
+- 2026-09-14 — **Fixed a real regression in the bilingual-dimensions redesign**, reported live by
+  the product owner: "the HE template from state.js is not loading, neither to the squad/team/retro
+  view, nor to the edit dimensions modal." Root cause: `i18n` is only ever WRITTEN onto a dimension
+  doc when `loadTemplate()`/`startSession()` actually runs, or on a brand-new seeded board -- an
+  already-saved dimension doc from BEFORE the redesign shipped is never retroactively backfilled, so
+  it has no `i18n` at all. The OLD mechanism the redesign replaced matched a dimension's current
+  VALUE against `STARTER_TEMPLATES` regardless of when it was saved, so it kept working for any
+  pre-existing board; the redesign silently dropped that safety net -- confirmed by reproducing it
+  directly against `public/local-store.js` (the real, non-test backend) with a simulated
+  pre-redesign-shaped board: Tribe/Squad view and Edit Dimensions all showed plain English under
+  Hebrew for a legacy Tuckman dimension, a fresh board showed Hebrew correctly everywhere.
+  Fixed with `state.js`'s new `builtinDimTranslation(dim, field, index, locale)`: a fallback tier
+  UNDER the dimension's own `i18n` (an admin's real translation always wins), matching a built-in
+  starter template's dimension by its stable KEY -- but unlike the old shadow table, which compared
+  by fragile REFERENCE equality (the exact thing that broke for an array field round-tripping
+  through a session doc's JSON-shaped storage), this fallback is additionally gated on the field's/
+  element's own current VALUE still matching the built-in's English default: a string comparison
+  can't break on a JSON round-trip, and it also means a field an admin HAS since edited away from
+  the default correctly falls back to plain English instead of showing a stale, unrelated built-in
+  translation. `localizedDimText()` now calls this shared helper (used by every display site --
+  Tribe/Squad/Retro), and `dimensions.js`'s Edit Dimensions panel gained its own locale-independent
+  `effectiveHeValue()` built on the same helper, so a legacy dimension's translation panel shows the
+  same in-effect Hebrew content the rest of the app does, pre-filled and still freely editable --
+  closing the third place the product owner named. Purely a display/pre-fill fallback: nothing is
+  written to a dimension's own `i18n` until an admin actually edits a field.
+  Found a real test-fixture coupling while fixing this: `tests/fixtures/fake_store.html`'s "process"/
+  "value" dimensions (used elsewhere as a "genuinely untranslated" example) turned out to be
+  unmodified Spotify Squad Health Check defaults by label, so they now correctly pick up the built-in
+  fallback too -- `test_bilingual_dimension_editor.py` updated to use a freshly-added custom
+  dimension for the "no built-in match at all" case, and to assert the new partial-fallback behavior
+  (label translated via fallback, synthetic green/red correctly NOT translated since their test
+  content doesn't match Spotify's real text) as its own explicit scenario. Test-first throughout
+  (5 new unit tests in `test_template_locale.js` proving the fallback, its value-gating, and its
+  per-element array behavior, written and confirmed failing before the `state.js` change). Full
+  74-test unit suite + 44-file Playwright suite green, on its own short-lived branch.

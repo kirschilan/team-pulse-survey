@@ -56,6 +56,17 @@ def start_relay():
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     if not wait_for_port(RELAY_PORT):
+        # Must kill the process (closing its stdout) BEFORE reading it --
+        # .read() blocks until EOF, and a relay that's still alive (just
+        # slow to bind, e.g. under CPU contention from parallel test jobs)
+        # never sends EOF, so this used to deadlock the whole suite instead
+        # of raising the intended error. Found via a real hang in CI/local
+        # runs: this exact test process stuck for 50+ minutes.
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
         out = proc.stdout.read() if proc.stdout else ""
         raise RuntimeError("relay server never opened port %d\n%s" % (RELAY_PORT, out))
     return proc
@@ -151,7 +162,19 @@ try:
         """)
         print("acks received for the two concurrent writes:", concurrent)
         assert concurrent["acksAfter"] == 2
-        both = fresh_page.evaluate("""
+        # A NEW page here, not the already-open fresh_page above: fresh_page
+        # has been continuously connected since its earlier read, so by now
+        # it's just another live subscriber -- reading through it would
+        # depend on the server's "put" BROADCAST to it having already been
+        # received and decrypted, a completely separate, unawaited path from
+        # the ack the writer itself waited on. That's exactly the kind of
+        # race this whole file exists to eliminate; a genuinely fresh
+        # connection's very first snapshot is built synchronously from
+        # room.docs at accept time, so it's guaranteed to reflect both
+        # already-acked writes with no timing dependency at all.
+        second_reader = browser.new_page()
+        second_reader.goto(harness_url, wait_until="domcontentloaded")
+        both = second_reader.evaluate("""
           async () => {
             var a = await SquadPulseRelay.doc("boards/ACKPROOF/first").get();
             var b = await SquadPulseRelay.doc("boards/ACKPROOF/second").get();

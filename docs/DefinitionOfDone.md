@@ -38,9 +38,10 @@ duplicated or contradicted elsewhere:
 
 ## 2. Multi-language support
 
-The Admin panel is this app's first i18n-supported screen (Story 2,
-2026-09-13); the same rules apply to every screen a future story brings
-under translation, and to every one already covered:
+The Admin panel (Story 2) and Tribe view/Squad view/the rating modal
+(Story 4, 2026-09-13) are this app's i18n-supported screens so far; the
+same rules apply to every screen a future story brings under translation,
+and to every one already covered:
 
 - **English (`public/js/locales/en.js`) is the source of truth.** Every
   user-facing string on an i18n-supported screen goes through `t(key, vars)`
@@ -81,13 +82,78 @@ under translation, and to every one already covered:
 - A newly i18n-supported screen's `dir`/`lang` attributes are scoped to
   that screen's own container (e.g. `#viewAdmin`), not the document root,
   until every screen is translated — a page-wide RTL flip before then would
-  visibly break whatever's still English-only.
+  visibly break whatever's still English-only. A still-English WIDGET
+  embedded inside a translated container (e.g. the retro session card
+  embedded in `#viewSquad`, Story 4) sets its own `dir="ltr"` on its root to
+  opt back out, rather than rendering mirrored English text.
+- **Interpolated values in a translated string must not leak their own
+  directionality into the surrounding sentence.** `t(key, vars)` wraps
+  every substituted value in Unicode bidi isolate marks (U+2066 LRI /
+  U+2069 PDI) for exactly this reason — found as a real bug in Story 4:
+  `"{count} {unit} tracked"` rendered with `{count}` and `{unit}` visually
+  swapped once the Hebrew sentence around them took over the paragraph's
+  bidi resolution, even though `.textContent` (the logical string) was
+  correct throughout — only the on-screen rendering was scrambled. Two
+  corollaries, both learned the same way: (1) isolating two adjacent
+  placeholders SEPARATELY doesn't help if nothing but neutral punctuation
+  (a space, a `/`) sits between them — e.g. a `"{scored}/{total}"`
+  fraction needs the whole fraction built as ONE value and isolated once,
+  not built from two independently-isolated numbers; (2) a value with NO
+  strong-direction character at all (a bare numeric ratio like `"2.0 / 3"`,
+  no isolate involved) still gets visually reversed by an RTL ancestor and
+  needs its own explicit `dir="ltr"`, the same fix as `#statAssessed`'s.
+  Any future code that builds translated strings without going through
+  `t()`'s interpolation must reproduce this, not silently drop it.
+- Existing tests asserting exact `.textContent` on a string that now flows
+  through `t()` need their assertions updated for the (invisible, harmless)
+  isolate marks above — strip them before comparing (see
+  `test_tribe_hotspots.py`'s `strip_bidi()` helper) rather than asserting
+  against plain ASCII that no longer matches.
 
 ## 3. Delivery workflow
 
-- Development happens on the project's working branch; `main` only moves
-  when the product owner explicitly says so — never push to `main` on your
-  own judgment.
+- **`claude/optimistic-keller-holuql` is the shared PREVIEW branch, not any
+  one session's individual workspace.** Do a unit of work on your own
+  short-lived branch, branched from the current tip of
+  `claude/optimistic-keller-holuql` — do not commit directly to it while
+  work is in progress. When the work is done and validated (full suite
+  green per the Testing section above), fetch the latest
+  `claude/optimistic-keller-holuql`, merge it into your branch (resolving
+  anything that needs it, re-validating afterward), then merge your branch
+  into `claude/optimistic-keller-holuql` and push that. Delete your branch
+  once it's merged. (Adopted 2026-09-13 after several real collisions —
+  two concurrent sessions and a local checkout all committing straight to
+  `claude/optimistic-keller-holuql` at once, needing repeated manual merges
+  to untangle. See STATUS.md's session log for the incident.)
+- **`main` only moves when the product owner explicitly says so** — never
+  push to `main` on your own judgment. This is unchanged by the branching
+  model above: `claude/optimistic-keller-holuql` is a PREVIEW branch, not a
+  path around that gate.
 - A real, non-trivial change gets a session-log entry in `STATUS.md` (see
   nearly every existing entry for the expected level of detail: what
   changed, why, what it fixed, and what was verified).
+- **A genuine architecture or UX decision — something the product owner
+  would want to see and react to before engineering time goes into it, not
+  a call you can make yourself — gets a working mockup, not a text
+  description, before implementation starts.** Build it as a real HTML
+  page/Artifact that reuses the app's actual design tokens (`styles.css`'s
+  CSS variables, its real fonts) and, wherever the proposal is interactive
+  (a toggle, an expand/collapse, a tab), make that interaction actually
+  work in the mockup rather than describing it in prose — a mockup the
+  product owner can click is a much shorter round-trip than a written
+  description they have to imagine and then correct. Ground it in the
+  app's own real content (an existing template's real dimension, real
+  copy) rather than lorem ipsum or a generic example. Call out open
+  questions the mockup itself doesn't resolve directly in the mockup, not
+  buried in a chat message. (Adopted 2026-09-14, after the bilingual-
+  dimensions proposal below — see STATUS.md's session log — got a clear
+  "go ahead" specifically because it was reviewed as a working page, not a
+  paragraph.)
+- **A change that introduces a new data shape (a new field, a new nesting,
+  a moved value) explicitly decides whether existing stored data needs a
+  migration path, and says so out loud — in the STATUS.md entry, or in the
+  PR/change description — rather than leaving it implicit.** Before this
+  product is out in real use, "no migration needed, nothing real depends
+  on the old shape yet" is a perfectly good answer — but it must be a
+  stated decision, not an oversight discovered later. Once real boards
+  exist, the same question needs a real answer, not the same default.

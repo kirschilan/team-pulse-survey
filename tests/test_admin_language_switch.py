@@ -6,8 +6,10 @@ from fixtures.build_page import build_page, test_output_path
 
 # Story 1 of the multi-language roadmap (see STATUS.md): the Admin panel's
 # language switcher, persisted to localStorage, English-fallback for any gap,
-# and scoped RTL/lang attributes on #viewAdmin only -- the rest of the app
-# (Tribe view, modals, etc.) is untranslated on purpose until later stories,
+# and scoped RTL/lang attributes on #viewAdmin only. Story 4 later added
+# Tribe view, Squad view, and the rating modal as their own i18n-supported
+# screens with their own dir/lang scoping -- see test_main_screen_language.py
+# -- but every OTHER modal, and the retro flow, are still untranslated,
 # so this test also proves the switch does NOT leak into them.
 
 out_path = build_page(out_name="_test_admin_lang_switch.html")
@@ -28,8 +30,14 @@ with sync_playwright() as p:
     print("board setup heading:", heading)
     assert heading == "Board setup"
     add_btn_text = page.eval_on_selector('#addSquadBtn', 'el => el.textContent')
-    print("add-squad button:", add_btn_text)
-    assert add_btn_text == "+ Add squad"
+    print("add-squad button:", repr(add_btn_text))
+    # t()'s {unit}/{unitPlural} substitutions are wrapped in U+2066/U+2069
+    # bidi isolate marks (see i18n.js) so an untranslated word embedded in a
+    # future RTL sentence can't scramble that sentence's word order -- see
+    # STATUS.md's Story 4 entry. Invisible and harmless in English too, but
+    # present in .textContent, so assertions strip them rather than
+    # asserting exact equality against plain ASCII.
+    assert add_btn_text.replace("⁦", "").replace("⁩", "") == "+ Add squad"
     print("English lang button starts active:", page.eval_on_selector('.lang-btn[data-lang="en"]', 'el => el.classList.contains("active")'))
     assert page.eval_on_selector('.lang-btn[data-lang="en"]', 'el => el.classList.contains("active")')
 
@@ -89,8 +97,12 @@ with sync_playwright() as p:
     print("=== rest of the app is untouched by the Admin-only switch ===")
     page.click('.view-btn[data-view="tribe"]')
     page.wait_for_timeout(150)
+    # Story 6 made the header an i18n-supported screen (h1 IS routed through
+    # t() now), but "header.appName" is a deliberate brand-name pass-through
+    # -- same literal value in every locale -- so this stays "Squad Pulse"
+    # under Hebrew too, not because the header is untranslated.
     tribe_heading = page.eval_on_selector('h1', 'el => el.textContent')
-    print("Tribe view h1 (should still be English):", tribe_heading)
+    print("Tribe view h1 (brand name, same in every locale):", tribe_heading)
     assert tribe_heading == "Squad Pulse"
     page.click('.view-btn[data-view="admin"]')
     page.wait_for_timeout(150)

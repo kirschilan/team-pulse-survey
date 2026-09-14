@@ -12,20 +12,20 @@
 
 <div class="wrap">
 
-  <header class="top">
+  <header class="top" id="appHeader">
     <div class="title-block">
-      <h1>Squad Pulse</h1>
+      <h1 data-i18n="header.appName">Squad Pulse</h1>
       <p id="tagline">A fast, visual health snapshot across your squads &mdash; so you can see at a glance where things are strong and where to invest next.</p>
       <span class="model-badge" id="modelBadge" hidden></span>
     </div>
     <div class="actions">
-      <span class="sync-note" id="syncNote"><span class="sync-dot" id="syncDot"></span><span id="syncText">Connecting&hellip;</span></span>
-      <button class="btn ghost" id="joinCodeBtn" type="button">Join a retro</button>
-      <button class="btn ghost" id="backToRetroBtn" type="button" hidden>&larr; Back to my retro</button>
+      <span class="sync-note" id="syncNote"><span class="sync-dot" id="syncDot"></span><span id="syncText" data-i18n="header.syncConnecting">Connecting&hellip;</span></span>
+      <button class="btn ghost" id="joinCodeBtn" type="button" data-i18n="header.joinRetro">Join a retro</button>
+      <button class="btn ghost" id="backToRetroBtn" type="button" hidden data-i18n="header.backToRetro">&larr; Back to my retro</button>
       <div class="view-switch" role="tablist" aria-label="View">
-        <button class="view-btn" data-view="tribe" type="button" role="tab">Tribe view</button>
-        <button class="view-btn" data-view="squad" type="button" role="tab">Squad view</button>
-        <button class="view-btn" data-view="admin" type="button" role="tab">Admin</button>
+        <button class="view-btn" data-view="tribe" type="button" role="tab" data-i18n="header.viewTribe">Tribe view</button>
+        <button class="view-btn" data-view="squad" type="button" role="tab" data-i18n="header.viewSquad">Squad view</button>
+        <button class="view-btn" data-view="admin" type="button" role="tab" data-i18n="header.viewAdmin">Admin</button>
       </div>
     </div>
   </header>
@@ -35,40 +35,40 @@
     <section class="stats" aria-label="Snapshot at a glance">
       <div class="stat">
         <div class="label" id="statAssessedLabel">Squads assessed</div>
-        <div class="value" id="statAssessed">&mdash;</div>
+        <div class="value" id="statAssessed" dir="ltr">&mdash;</div>
         <div class="sub" id="statAssessedSub">of the dimensions scored, on average</div>
       </div>
       <div class="stat">
-        <div class="label">Items at risk</div>
+        <div class="label" data-i18n="tribe.stats.riskLabel">Items at risk</div>
         <div class="value crit" id="statRisk">&mdash;</div>
-        <div class="sub" id="statRiskSub">dimensions marked red across all squads</div>
+        <div class="sub" data-i18n="tribe.stats.riskSub" id="statRiskSub">dimensions marked red across all squads</div>
       </div>
       <div class="stat">
-        <div class="label">Top systemic hotspot</div>
+        <div class="label" data-i18n="tribe.stats.hotspotLabel">Top systemic hotspot</div>
         <div class="value" id="statHotspot" style="font-size:19px;">&mdash;</div>
         <div class="sub" id="statHotspotSub">the dimension struggling most, org&#8209;wide</div>
       </div>
     </section>
 
     <div class="card">
-      <h2>Cross-squad hotspots</h2>
-      <p class="hint">Dimensions where trouble shows up in more than one squad &mdash; likely worth an org-level fix, not a squad-by-squad one. Shown in aggregate; no squad is named here by default.</p>
+      <h2 data-i18n="tribe.hotspots.heading">Cross-squad hotspots</h2>
+      <p class="hint" data-i18n="tribe.hotspots.hint">Dimensions where trouble shows up in more than one squad &mdash; likely worth an org-level fix, not a squad-by-squad one. Shown in aggregate; no squad is named here by default.</p>
       <div class="legend-mini">
-        <span class="sw"><i style="background:var(--crit)"></i>Red</span>
-        <span class="sw"><i style="background:var(--warn)"></i>Yellow</span>
-        <span class="sw"><i style="background:var(--good)"></i>Green</span>
-        <span class="sw"><i style="background:var(--unscored)"></i>Not yet scored</span>
+        <span class="sw"><i style="background:var(--crit)"></i><span data-i18n="common.color.crit">Red</span></span>
+        <span class="sw"><i style="background:var(--warn)"></i><span data-i18n="common.color.warn">Yellow</span></span>
+        <span class="sw"><i style="background:var(--good)"></i><span data-i18n="common.color.good">Green</span></span>
+        <span class="sw"><i style="background:var(--unscored)"></i><span data-i18n="common.color.unscored">Not yet scored</span></span>
       </div>
       <div id="hotspotList"></div>
     </div>
 
     <details class="legend" id="squadBreakdown">
-      <summary>Squad-by-squad breakdown <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <summary><span data-i18n="tribe.breakdown.summary">Squad-by-squad breakdown</span> <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
       <div style="padding:0 18px 18px;">
-        <p class="hint" style="margin:0 0 14px;">Collapsed by default so the headline view stays about patterns, not individual squads &mdash; expand any time to see or drill into a specific squad. Read-only here; squads enter their own ratings from Squad view.</p>
+        <p class="hint" style="margin:0 0 14px;" data-i18n="tribe.breakdown.hint">Collapsed by default so the headline view stays about patterns, not individual squads &mdash; expand any time to see or drill into a specific squad. Read-only here; squads enter their own ratings from Squad view.</p>
         <div class="card" style="margin-bottom:16px;">
-          <h2>Where to invest first</h2>
-          <p class="hint">Squads ranked by weighted risk (red counts double). Highest first.</p>
+          <h2 data-i18n="tribe.ranking.heading">Where to invest first</h2>
+          <p class="hint" data-i18n="tribe.ranking.hint">Squads ranked by weighted risk (red counts double). Highest first.</p>
           <div id="rankList"></div>
         </div>
         <div class="table-scroll">
@@ -87,8 +87,8 @@
   <!-- ================= SQUAD VIEW ================= -->
   <section id="viewSquad" hidden>
     <div class="card">
-      <h2>Choose your squad</h2>
-      <p class="hint">Pick your squad to enter or update this check-in&rsquo;s ratings. Only this squad&rsquo;s own data is shown here.</p>
+      <h2 data-i18n="squad.picker.heading">Choose your squad</h2>
+      <p class="hint" data-i18n="squad.picker.hint">Pick your squad to enter or update this check-in&rsquo;s ratings. Only this squad&rsquo;s own data is shown here.</p>
       <div class="squad-picker" id="squadPicker"></div>
     </div>
     <div id="squadDetail" style="margin-top:16px;"></div>
@@ -188,10 +188,10 @@
   <!-- ================= JOIN SCREEN (participant device, via ?session=) ================= -->
   <section id="viewJoin" hidden>
     <div class="card" id="joinCard">
-      <h2>Connecting&hellip;</h2>
+      <h2 data-i18n="join.connectingHeading">Connecting&hellip;</h2>
     </div>
     <div class="actions" style="margin-top:12px;">
-      <button class="btn ghost" id="exitJoinBtn" type="button">&larr; Back to Squad Pulse</button>
+      <button class="btn ghost" id="exitJoinBtn" type="button" data-i18n="join.backButton">&larr; Back to Squad Pulse</button>
     </div>
     <!-- "Back to Squad Pulse" above only TOGGLES this screen's visibility
          (see retro-join.js's exitJoinScreen()/returnToJoinScreen()) --
@@ -203,11 +203,11 @@
          forever, or "isn't open") without this -- see helpers.js's diag(),
          which updates every ".diag-log". -->
     <details class="legend" id="joinDiagPanel" style="margin-top:14px;">
-      <summary>Trouble joining? Tap for diagnostics <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <summary><span data-i18n="join.diagSummary">Trouble joining? Tap for diagnostics</span> <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
       <div style="padding:0 18px 16px;">
-        <p class="hint" style="margin:0 0 8px;">If this isn't connecting, copy or screenshot what appears below and send it to whoever's running the retro.</p>
+        <p class="hint" style="margin:0 0 8px;" data-i18n="join.diagHint">If this isn't connecting, copy or screenshot what appears below and send it to whoever's running the retro.</p>
         <pre id="joinDiagLog" class="mono diag-log" style="margin:0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:11px;line-height:1.6;max-height:160px;overflow:auto;white-space:pre-wrap;">(no activity yet)</pre>
-        <button class="btn ghost copy-diag-btn" type="button" data-diag-target="joinDiagLog" style="margin-top:8px;">Copy diagnostics</button>
+        <button class="btn ghost copy-diag-btn" type="button" data-diag-target="joinDiagLog" style="margin-top:8px;" data-i18n="admin.diagnostics.copyButton">Copy diagnostics</button>
       </div>
     </details>
   </section>
@@ -220,36 +220,36 @@
     <h3 id="modalTitle" dir="auto">Dimension</h3>
     <div class="squadline" id="modalSquadline" dir="auto">Squad</div>
     <div class="anchor-pair">
-      <p><b>Green looks like:</b> <span id="modalGreen" dir="auto"></span></p>
-      <p><b>Red looks like:</b> <span id="modalRed" dir="auto"></span></p>
+      <p><b data-i18n="ratingModal.greenLabel">Green looks like:</b> <span id="modalGreen" dir="auto"></span></p>
+      <p><b data-i18n="ratingModal.redLabel">Red looks like:</b> <span id="modalRed" dir="auto"></span></p>
     </div>
-    <div class="field-label">Health</div>
+    <div class="field-label" data-i18n="ratingModal.healthLabel">Health</div>
     <div class="swatches" id="swatches">
-      <button class="swatch" data-color="unscored" type="button" title="Not yet scored">
+      <button class="swatch" data-color="unscored" type="button" title="Not yet scored" data-i18n-title="common.color.unscored">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>
       </button>
-      <button class="swatch good" data-color="good" type="button" title="Green">
+      <button class="swatch good" data-color="good" type="button" title="Green" data-i18n-title="common.color.good">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 13l4 4 10-10"/></svg>
       </button>
-      <button class="swatch warn" data-color="warn" type="button" title="Yellow">
+      <button class="swatch warn" data-color="warn" type="button" title="Yellow" data-i18n-title="common.color.warn">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 12h12"/></svg>
       </button>
-      <button class="swatch crit" data-color="crit" type="button" title="Red">
+      <button class="swatch crit" data-color="crit" type="button" title="Red" data-i18n-title="common.color.crit">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
-    <div class="field-label">Trend since last check</div>
+    <div class="field-label" data-i18n="ratingModal.trendLabel">Trend since last check</div>
     <div class="trendsel" id="trendsel">
-      <button data-trend="up" type="button" title="Improving"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 15l7-7 7 7"/></svg></button>
-      <button data-trend="flat" type="button" title="Steady"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 12h14"/></svg></button>
-      <button data-trend="down" type="button" title="Declining"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 9l7 7 7-7"/></svg></button>
+      <button data-trend="up" type="button" title="Improving" data-i18n-title="common.trend.up"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 15l7-7 7 7"/></svg></button>
+      <button data-trend="flat" type="button" title="Steady" data-i18n-title="common.trend.flat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 12h14"/></svg></button>
+      <button data-trend="down" type="button" title="Declining" data-i18n-title="common.trend.down"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 9l7 7 7-7"/></svg></button>
     </div>
-    <div class="field-label">Note (optional)</div>
-    <textarea class="note" id="modalNote" placeholder="Why this rating? What's driving it?" dir="auto"></textarea>
+    <div class="field-label" data-i18n="ratingModal.noteLabel">Note (optional)</div>
+    <textarea class="note" id="modalNote" placeholder="Why this rating? What's driving it?" data-i18n-placeholder="ratingModal.notePlaceholder" dir="auto"></textarea>
     <div class="modal-actions">
       <button class="btn ghost" id="modalResetOverride" type="button" style="margin-right:auto;" hidden>Use consolidated result</button>
-      <button class="btn ghost" id="modalCancel" type="button">Cancel</button>
-      <button class="btn primary" id="modalSave" type="button">Save</button>
+      <button class="btn ghost" id="modalCancel" type="button" data-i18n="ratingModal.cancel">Cancel</button>
+      <button class="btn primary" id="modalSave" type="button" data-i18n="ratingModal.save">Save</button>
     </div>
   </div>
 </div>
@@ -257,12 +257,12 @@
 <!-- ---------- dimension manager modal ---------- -->
 <div class="backdrop" id="dimBackdrop" hidden>
   <div class="modal wide" role="dialog" aria-modal="true">
-    <h3>Edit dimensions</h3>
-    <p class="hint">These are the columns of your snapshot grid. Add, rename, reorder or remove them &mdash; changes apply to everyone viewing this board. Ratings for a removed dimension are hidden, not lost, unless you add a dimension back with the same purpose.</p>
+    <h3 data-i18n="dimManager.title">Edit dimensions</h3>
+    <p class="hint" data-i18n="dimManager.hint">These are the columns of your snapshot grid. Add, rename, reorder or remove them &mdash; changes apply to everyone viewing this board. Ratings for a removed dimension are hidden, not lost, unless you add a dimension back with the same purpose.</p>
     <div class="dim-list" id="dimList"></div>
     <div class="modal-actions split">
-      <button class="btn" id="addDimBtn" type="button">+ Add dimension</button>
-      <button class="btn primary" id="dimDoneBtn" type="button">Done</button>
+      <button class="btn" id="addDimBtn" type="button" data-i18n="dimManager.addButton">+ Add dimension</button>
+      <button class="btn primary" id="dimDoneBtn" type="button" data-i18n="dimManager.doneButton">Done</button>
     </div>
   </div>
 </div>
@@ -270,15 +270,15 @@
 <!-- ---------- templates modal ---------- -->
 <div class="backdrop" id="templatesBackdrop" hidden>
   <div class="modal wide" role="dialog" aria-modal="true">
-    <h3>Survey templates</h3>
-    <p class="hint">Swap in a ready-made set of dimensions, or save your current setup so you (or a teammate) can reuse it later.</p>
+    <h3 data-i18n="templates.title">Survey templates</h3>
+    <p class="hint" data-i18n="templates.hint">Swap in a ready-made set of dimensions, or save your current setup so you (or a teammate) can reuse it later.</p>
     <div class="tpl-list" id="tplList"></div>
     <div class="tpl-save-row">
-      <input type="text" id="tplNameInput" placeholder="Name this setup, e.g. &quot;My team's checklist&quot;" maxlength="80" dir="auto">
-      <button class="btn" id="tplSaveBtn" type="button">Save current as template</button>
+      <input type="text" id="tplNameInput" data-i18n-placeholder="templates.namePlaceholder" placeholder="Name this setup, e.g. &quot;My team's checklist&quot;" maxlength="80" dir="auto">
+      <button class="btn" id="tplSaveBtn" type="button" data-i18n="templates.saveButton">Save current as template</button>
     </div>
     <div class="modal-actions">
-      <button class="btn ghost" id="tplCloseBtn" type="button">Close</button>
+      <button class="btn ghost" id="tplCloseBtn" type="button" data-i18n="templates.closeButton">Close</button>
     </div>
   </div>
 </div>
@@ -311,15 +311,15 @@
 <!-- ---------- join-with-code modal ---------- -->
 <div class="backdrop" id="joinCodeBackdrop" hidden>
   <div class="modal" role="dialog" aria-modal="true">
-    <h3>Join a retro</h3>
-    <p class="hint">Enter the session code your Scrum Master shared. Answering a survey? Tap
+    <h3 data-i18n="join.codeModal.title">Join a retro</h3>
+    <p class="hint" data-i18n="join.codeModal.hint">Enter the session code your Scrum Master shared. Answering a survey? Tap
       Join. Co-facilitating (you'll see the live results and can finish the retro too)? Tap
       Co-facilitate instead.</p>
-    <input type="text" id="joinCodeInput" class="join-code-input" placeholder="e.g. 7K4QXB" maxlength="40" autocapitalize="characters" autocomplete="off" spellcheck="false">
+    <input type="text" id="joinCodeInput" class="join-code-input" placeholder="e.g. 7K4QXB" data-i18n-placeholder="join.codeModal.codePlaceholder" maxlength="40" autocapitalize="characters" autocomplete="off" spellcheck="false">
     <div class="modal-actions">
-      <button class="btn ghost" id="joinCodeCancel" type="button">Cancel</button>
-      <button class="btn ghost" id="coFacilitateGo" type="button">Co-facilitate</button>
-      <button class="btn primary" id="joinCodeGo" type="button">Join</button>
+      <button class="btn ghost" id="joinCodeCancel" type="button" data-i18n="join.codeModal.cancel">Cancel</button>
+      <button class="btn ghost" id="coFacilitateGo" type="button" data-i18n="join.codeModal.coFacilitate">Co-facilitate</button>
+      <button class="btn primary" id="joinCodeGo" type="button" data-i18n="join.codeModal.join">Join</button>
     </div>
   </div>
 </div>

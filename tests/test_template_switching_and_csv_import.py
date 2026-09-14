@@ -12,29 +12,30 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # No initial boot wait needed -- every action below is either click()/
+    # fill() (Playwright auto-waits for the target to become actionable) or
+    # gated by an explicit wait_for_*() right before the one non-auto-waiting
+    # read that needs it (query_selector/eval_on_selector/evaluate don't wait).
 
     # ---- rate squad-1/release (from Squad view -- rating no longer happens on the grid) ----
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(120)
     page.click('#squadDetail .cell-btn[data-squad="squad-1"][data-dim="release"]')
-    page.wait_for_timeout(120)
     page.click('.swatch.crit')
     page.click('#modalSave')
-    page.wait_for_timeout(250)
+    # evaluate() doesn't auto-wait -- poll for the actual write landing
+    # instead of guessing how long modalSave's commit takes.
+    page.wait_for_function("() => window.__FAKE_STORE__['squads/squad-1'] && window.__FAKE_STORE__['squads/squad-1'].dimensions.release && window.__FAKE_STORE__['squads/squad-1'].dimensions.release.color === 'crit'")
     print("=== after initial rating ===")
     print("squad-1:", page.evaluate("window.__FAKE_STORE__['squads/squad-1']"))
     print("errors:", errors)
 
     # ---- save current (3 dims incl 'release') as template T-Original (Admin view) ----
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
-    page.click('#templatesBtn'); page.wait_for_timeout(150)
+    page.click('#templatesBtn')
     page.fill('#tplNameInput', 'T-Original')
     page.click('#tplSaveBtn')
-    page.wait_for_timeout(200)
+    page.wait_for_function("() => Object.keys(window.__FAKE_STORE__).some(k => k.startsWith('templates/'))")
     tpl_store_keys = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k=>k.startsWith('templates/'))")
     print("template keys:", tpl_store_keys)
     orig_tpl = page.evaluate("window.__FAKE_STORE__[Object.keys(window.__FAKE_STORE__).filter(k=>k.startsWith('templates/'))[0]]")
@@ -49,9 +50,12 @@ with sync_playwright() as p:
       };
       window.__NOTIFY__('templates');
     """)
-    page.wait_for_timeout(150)
     page.click('#tplCloseBtn')
-    page.click('#templatesBtn'); page.wait_for_timeout(300)
+    page.click('#templatesBtn')
+    # eval_on_selector_all doesn't auto-wait -- wait for the injected
+    # template's own row specifically, the real signal the manual
+    # __NOTIFY__ above actually landed and re-rendered the list.
+    page.wait_for_selector('#tplList .tpl-row:has-text("T-Other")', state="attached")
     rows = page.eval_on_selector_all('#tplList .tpl-row .tname', 'els=>els.map(e=>e.textContent)')
     print("template rows visible:", rows)
     # click Load on the row whose name is T-Other
@@ -59,9 +63,10 @@ with sync_playwright() as p:
       Array.from(document.querySelectorAll('#tplList .tpl-row')).find(r => r.querySelector('.tname').textContent === 'T-Other')
         .querySelector('[data-action="load"]').click();
     """)
-    page.wait_for_timeout(150)
     page.click('#confirmOk')
-    page.wait_for_timeout(400)
+    # T-Other's own (and only) dimension header landing in the grid is the
+    # real signal the switch (store write + re-render) fully completed.
+    page.wait_for_selector('table.grid thead th:has-text("Totally different")', state="attached")
     print("=== after switching to T-Other ===")
     dim_keys_now = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k=>k.startsWith('dimensions/'))")
     print("live dimension keys:", dim_keys_now)
@@ -70,14 +75,16 @@ with sync_playwright() as p:
     print("grid columns now:", grid_cols)
 
     # ---- switch BACK to T-Original -- release rating should reappear ----
-    page.click('#templatesBtn'); page.wait_for_timeout(200)
+    page.click('#templatesBtn')
+    page.wait_for_selector('#tplList .tpl-row:has-text("T-Original")', state="attached")
     page.evaluate("""
       Array.from(document.querySelectorAll('#tplList .tpl-row')).find(r => r.querySelector('.tname').textContent === 'T-Original')
         .querySelector('[data-action="load"]').click();
     """)
-    page.wait_for_timeout(150)
     page.click('#confirmOk')
-    page.wait_for_timeout(400)
+    # release's own cell reappearing in the grid is the real signal the
+    # switch back fully completed (store write + re-render), not a guess.
+    page.wait_for_selector('.cell-btn[data-squad="squad-1"][data-dim="release"]', state="attached")
     print("=== after switching BACK to T-Original ===")
     dim_keys_final = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k=>k.startsWith('dimensions/'))")
     print("live dimension keys:", sorted(dim_keys_final))
@@ -103,11 +110,15 @@ with sync_playwright() as p:
     csv_path = test_output_path("test_import.csv")
     csv_path.write_text(csv_text)
     page.set_input_files('#csvFileInput', str(csv_path))
-    page.wait_for_timeout(250)
+    # csv.js reads the file via FileReader (genuinely async) -- poll for the
+    # parsed plan rather than guess how long the read takes.
+    page.wait_for_function("() => pendingImportPlan !== null")
     print("import modal visible:", page.eval_on_selector('#importBackdrop', 'el=>!el.hidden'))
     print("import summary html:", page.eval_on_selector('#importSummary', 'el=>el.innerText'))
     page.click('#importApplyBtn')
-    page.wait_for_timeout(300)
+    # evaluate() doesn't auto-wait -- poll for the imported note landing
+    # (from the CSV's "imported note" cell) instead of guessing.
+    page.wait_for_function("() => window.__FAKE_STORE__['squads/squad-1'] && window.__FAKE_STORE__['squads/squad-1'].dimensions.release && window.__FAKE_STORE__['squads/squad-1'].dimensions.release.note === 'imported note'")
     print("squad-1 after import:", page.evaluate("window.__FAKE_STORE__['squads/squad-1']"))
     all_squad_names = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k=>k.startsWith('squads/')).map(k=>window.__FAKE_STORE__[k].name)")
     print("all squad names after import (should include 'Squad 3'):", all_squad_names)

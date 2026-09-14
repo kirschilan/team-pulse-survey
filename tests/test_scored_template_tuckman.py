@@ -151,4 +151,45 @@ with sync_playwright() as p:
     page.screenshot(path=str(test_output_path("shot_tpl_tuckman_facilitator.png")), full_page=True)
 
     print("=== ALL ERRORS: SM=", errors, "participant=", errorsA)
+
+    # ============ Story 7: Tuckman's dimension content localizes live too ============
+    # Same mechanism as Story 5's Spotify template (state.js's
+    # localizedDimText()/localizedAttribution(), generalized in Stories 6-9
+    # to look up whichever starter template is active by name): switching
+    # to Hebrew shows Hebrew label/green/red/attribution immediately,
+    # stored data stays English always, and the ALREADY-STARTED retro
+    # session above (dimsSnapshot frozen at session start, participant-
+    # facing statement survey) stays English -- the retro flow itself is
+    # still untranslated (its own future story), same precedent already
+    # established for the Spotify template.
+    print("=== Story 7: Tuckman dimension content localizes live under Hebrew ===")
+    page.click('.view-btn[data-view="admin"]')
+    page.wait_for_timeout(100)
+    page.click('.lang-btn[data-lang="he"]')
+    page.wait_for_timeout(150)
+
+    forming_doc_he = page.evaluate("window.__FAKE_STORE__['dimensions/forming']")
+    print("stored 'forming' dimension under Hebrew (should stay English):", forming_doc_he)
+    assert forming_doc_he["label"] == "Forming"
+
+    page.click('.view-btn[data-view="tribe"]')
+    page.wait_for_timeout(150)
+    page.click('#legendSummary')
+    page.wait_for_timeout(150)
+    forming_label_he = page.eval_on_selector('.legend-item .lh', 'el=>el.textContent')
+    attribution_he = page.eval_on_selector('#legendAttrib', 'el=>el.textContent')
+    print("Tribe legend under Hebrew -- first dimension label / attribution:", forming_label_he, "|", attribution_he)
+    assert forming_label_he.strip() and forming_label_he != "Forming"
+    assert attribution_he.strip() and "Bruce Tuckman" not in attribution_he
+
+    print("=== the already-started retro session stays English (its own future story) ===")
+    stmt_row_dim_labels = pageA.eval_on_selector_all('.personal-result', 'els=>els.map(e=>e.textContent)')
+    print("participant's personal results (should still read English -- frozen at session start):", [t[:30] for t in stmt_row_dim_labels])
+    assert any("Forming" in t for t in stmt_row_dim_labels)
+
+    page.click('.view-btn[data-view="admin"]')
+    page.wait_for_timeout(100)
+    page.click('.lang-btn[data-lang="en"]')
+    page.wait_for_timeout(150)
+    print("errors:", errors)
     browser.close()

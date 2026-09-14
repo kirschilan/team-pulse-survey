@@ -4,7 +4,7 @@
 // ---------- live sync ----------
 function setSyncStatus(live){
   document.getElementById("syncDot").classList.toggle("off", !live);
-  document.getElementById("syncText").textContent = live ? "Live — synced across viewers" : "Preview only — not connected";
+  document.getElementById("syncText").textContent = live ? t("header.syncLive") : t("header.syncPreviewOnly");
 }
 
 async function initDb(){
@@ -82,6 +82,15 @@ async function initDb(){
         if(data.statements && data.statements.length) dim.statements = data.statements;
         if(data.scoreBands) dim.scoreBands = data.scoreBands;
         if(data.strategies && data.strategies.length) dim.strategies = data.strategies;
+        // Bilingual dimensions: a dimension's own Hebrew translation (see
+        // state.js's localizedDimText()) -- dropped here before this fix,
+        // which meant a just-saved translation (dimensions.js) round-tripped
+        // through this listener's own echo and vanished immediately.
+        // plainClone() (board-sync.js): data.i18n is nested inside the
+        // frozen doc.data() snapshot -- assigning it by reference would
+        // hand dimensions.js a frozen object it then tries to edit in
+        // place on the NEXT keystroke, throwing "object is not extensible".
+        if(data.i18n) dim.i18n = plainClone(data.i18n);
         return dim;
       });
       diag("Dimension snapshot #" + dimSnapCount + ": " + docs.length + " doc(s)");
@@ -98,7 +107,19 @@ async function initDb(){
       var docs = snap.docs.map(function(doc){
         var data = doc.data() || {};
         var rawDims = data.dimensions || [];
-        var dims = rawDims.map(function(d){ return { key:d.key||"", label:d.label||"", green:d.green||"", red:d.red||"", order:d.order||0 }; });
+        var dims = rawDims.map(function(d){
+          var dim = { key:d.key||"", label:d.label||"", green:d.green||"", red:d.red||"", order:d.order||0 };
+          // Carried through the same as the dimensions listener above --
+          // a custom template saved with statement content or a Hebrew
+          // translation (see saveCurrentAsTemplate() in templates.js) must
+          // still have it once loaded back, not just at the moment it was
+          // saved.
+          if(d.statements && d.statements.length) dim.statements = d.statements;
+          if(d.scoreBands) dim.scoreBands = d.scoreBands;
+          if(d.strategies && d.strategies.length) dim.strategies = d.strategies;
+          if(d.i18n) dim.i18n = plainClone(d.i18n);
+          return dim;
+        });
         return { id: doc.id, name: data.name || "Untitled template", unit: data.unit||"", unitPlural: data.unitPlural||"", attribution: data.attribution||"", dimensions: dims };
       });
       diag("Template snapshot #" + tplSnapCount + ": " + docs.length + " doc(s)");
