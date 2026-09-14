@@ -75,6 +75,76 @@ test("localizedDimText() falls back to English for a blank Hebrew translation, n
   assert.equal(localizedDimText(dim, "label"), "English");
 });
 
+// Real regression, found live in the product owner's OWN board: a
+// dimension loaded from a built-in starter template BEFORE this
+// per-dimension `i18n` redesign shipped has no `i18n` field at all (the
+// redesign only WRITES `i18n` onto a dimension when loadTemplate()/
+// startSession() actually runs, or on a brand-new seeded board -- it never
+// retroactively backfills an already-saved dimension doc). The OLD
+// mechanism this redesign replaced matched a dimension's CURRENT value
+// against STARTER_TEMPLATES regardless of when it was saved, so this used
+// to work for every existing board; the redesign silently dropped that
+// safety net for anyone who'd already loaded Tuckman/Five Dysfunctions/
+// Spotify. Falling back to a same-KEY match against STARTER_TEMPLATES's
+// own built-in dimensions (keys are stable and don't collide across the
+// three templates) restores it without needing a migration script.
+//
+// Unlike the old shadow table (which matched by fragile REFERENCE
+// equality -- the exact thing that broke for an array field round-tripping
+// through a session doc's JSON-shaped storage), this fallback is gated on
+// the field's own current VALUE still matching the built-in's English
+// default for that same field/index -- string comparison, not reference,
+// so a JSON round-trip can't break it. That gate matters: without it, a
+// field an admin has since EDITED away from the built-in default would
+// show a stale, unrelated built-in translation instead of honestly falling
+// back to English -- a worse bug than the one being fixed here.
+test("localizedDimText() falls back to a matching built-in STARTER_TEMPLATES dimension (by key) when the dimension has no i18n of its own AND its English content still matches the built-in default -- the legacy-board regression", () => {
+  resetState();
+  state.ui.locale = "he";
+  const builtin = TUCKMAN_TEMPLATE.dimensions.find((d) => d.key === "forming");
+  // A legacy dimension doc as loadTemplate() would have written it BEFORE
+  // this redesign shipped: real built-in English content, no i18n field.
+  const legacyDim = { key: "forming", label: builtin.label, green: builtin.green, red: builtin.red, statements: builtin.statements.slice(), strategies: builtin.strategies.slice() };
+  assert.equal(localizedDimText(legacyDim, "label"), builtin.i18n.he.label);
+  assert.equal(localizedDimText(legacyDim, "green"), builtin.i18n.he.green);
+  assert.equal(localizedDimText(legacyDim, "red"), builtin.i18n.he.red);
+  assert.deepEqual(localizedDimText(legacyDim, "statements"), builtin.i18n.he.statements);
+  assert.deepEqual(localizedDimText(legacyDim, "strategies"), builtin.i18n.he.strategies);
+});
+
+test("localizedDimText() does NOT apply a stale built-in translation to a field an admin has edited away from the built-in default -- falls back to English instead of a wrong/unrelated translation", () => {
+  resetState();
+  state.ui.locale = "he";
+  const dim = { key: "forming", label: "A custom renamed label", green: "g", red: "r" };
+  assert.equal(localizedDimText(dim, "label"), "A custom renamed label");
+  assert.equal(localizedDimText(dim, "green"), "g");
+  assert.equal(localizedDimText(dim, "red"), "r");
+});
+
+test("localizedDimText() still prefers the dimension's OWN i18n.he over the built-in fallback when both exist -- an admin's own translation always wins", () => {
+  resetState();
+  state.ui.locale = "he";
+  const dim = { key: "forming", label: "Forming", i18n: { he: { label: "תרגום מותאם אישית" } } };
+  assert.equal(localizedDimText(dim, "label"), "תרגום מותאם אישית");
+});
+
+test("localizedDimText() falls back to English when no built-in dimension shares this key either -- a genuinely custom dimension, not a legacy built-in one", () => {
+  resetState();
+  state.ui.locale = "he";
+  const dim = { key: "totally-custom-key-nobody-owns", label: "Custom Thing" };
+  assert.equal(localizedDimText(dim, "label"), "Custom Thing");
+});
+
+test("localizedDimText() built-in fallback for array fields is gated PER ELEMENT -- an edited/added statement at one index doesn't block translation of the untouched ones", () => {
+  resetState();
+  state.ui.locale = "he";
+  const builtin = TUCKMAN_TEMPLATE.dimensions.find((d) => d.key === "forming");
+  const legacyDim = { key: "forming", statements: [builtin.statements[0], "a custom statement added later, not in the built-in template"] };
+  const result = localizedDimText(legacyDim, "statements");
+  assert.equal(result[0], builtin.i18n.he.statements[0]);
+  assert.equal(result[1], "a custom statement added later, not in the built-in template");
+});
+
 test("localizedDimText() returns the English value unchanged when the active locale is English, regardless of any Hebrew translation present", () => {
   resetState();
   const dim = { key: "x", label: "English", i18n: { he: { label: "עברית" } } };

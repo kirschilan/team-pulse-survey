@@ -34,23 +34,44 @@ dimBackdrop.addEventListener("click", function(e){ if(e.target===dimBackdrop) cl
 // actually clicks the toggle this session).
 var openI18nPanels = {};
 
+// Effective Hebrew value for the editor's own pre-fill -- the dimension's
+// OWN stored i18n.he (an admin's real edit) if present, else state.js's
+// builtinDimTranslation() fallback for a dimension that matches a built-in
+// starter template's default but has no i18n of its own yet (a legacy
+// board that loaded that template before the per-dimension i18n redesign
+// shipped -- see state.js's own comment on builtinDimTranslation()). This
+// is deliberately locale-INDEPENDENT (unlike state.js's localizedDimText()):
+// this panel always shows/edits the Hebrew side regardless of which
+// language the admin is currently viewing the rest of the app in. Purely a
+// DISPLAY/pre-fill concern -- nothing is written to the dimension's own
+// `i18n` until an admin actually edits an input (bindDimListEvents() below).
+function effectiveHeValue(d, field, index){
+  var he = (d.i18n && d.i18n.he) || {};
+  var own = index === undefined ? he[field] : (he[field] && he[field][index]);
+  if(own !== undefined && own !== null && String(own).trim() !== "") return own;
+  var fallback = builtinDimTranslation(d, field, index, "he");
+  return (fallback !== undefined && fallback !== null && String(fallback).trim() !== "") ? fallback : "";
+}
+
 function dimHasI18n(d){
-  var he = d.i18n && d.i18n.he;
-  return !!(he && (String(he.label||"").trim() || String(he.green||"").trim() || String(he.red||"").trim()));
+  if(String(effectiveHeValue(d, "label")).trim() || String(effectiveHeValue(d, "green")).trim() || String(effectiveHeValue(d, "red")).trim()) return true;
+  return ["statements", "strategies"].some(function(field){
+    return (d[field] || []).some(function(_, i){ return String(effectiveHeValue(d, field, i)).trim() !== ""; });
+  });
 }
 
 // One row of aligned EN/HE text inputs for an array field (statements or
 // strategies) -- HE inputs are always exactly as many as the EN array has
 // (a translation, not independent content), pre-filled from
-// dim.i18n.he.<field>[i] when present. `lang` drives which update function
-// a change event calls; EN inputs live in the main (always-visible) part
-// of the row, HE inputs live inside the translation panel.
+// effectiveHeValue() (dim's own i18n, or a matching built-in default) when
+// present. `lang` drives which update function a change event calls; EN
+// inputs live in the main (always-visible) part of the row, HE inputs live
+// inside the translation panel.
 function arrayFieldEditorHtml(d, field, lang, headingKey){
   var items = d[field] || [];
   if(!items.length) return "";
-  var heItems = (d.i18n && d.i18n.he && d.i18n.he[field]) || [];
   var rows = items.map(function(_, i){
-    var value = lang==="en" ? items[i] : (heItems[i] || "");
+    var value = lang==="en" ? items[i] : effectiveHeValue(d, field, i);
     return '<input type="text" class="dim-array-item" data-field="'+field+'" data-lang="'+lang+'" data-index="'+i+'" value="'+esc(value)+'" dir="auto">';
   }).join("");
   return '<div class="field-label" style="margin-top:10px;">'+esc(t(headingKey))+'</div>' +
@@ -62,7 +83,6 @@ function i18nPanelHtml(d){
   var sourceHint = hasI18n
     ? t("dimManager.i18n.sourceDefault", {template: state.config.activeTemplateName || ""})
     : t("dimManager.i18n.sourceNone");
-  var he = (d.i18n && d.i18n.he) || {};
   var isOpen = openI18nPanels.hasOwnProperty(d.key) ? openI18nPanels[d.key] : hasI18n;
   return '<button class="i18n-toggle" type="button" aria-expanded="'+(isOpen?"true":"false")+'" data-key="'+esc(d.key)+'">' +
       (hasI18n ? esc(t("dimManager.i18n.editedToggle")) : esc(t("dimManager.i18n.addToggle"))) +
@@ -70,10 +90,10 @@ function i18nPanelHtml(d){
     '</button>' +
     '<div class="i18n-panel" data-key="'+esc(d.key)+'"'+(isOpen?"":" hidden")+'>' +
       '<p class="i18n-source">'+esc(sourceHint)+'</p>' +
-      '<input class="dim-label" data-field="label" data-lang="he" value="'+esc(he.label||"")+'" placeholder="שם הממד בעברית" dir="rtl">' +
+      '<input class="dim-label" data-field="label" data-lang="he" value="'+esc(effectiveHeValue(d, "label"))+'" placeholder="שם הממד בעברית" dir="rtl">' +
       '<div class="fields">' +
-        '<div><label class="grn">ירוק נראה כך</label><textarea data-field="green" data-lang="he" placeholder="איך נראית בריאות" dir="rtl">'+esc(he.green||"")+'</textarea></div>' +
-        '<div><label class="rd">אדום נראה כך</label><textarea data-field="red" data-lang="he" placeholder="איך נראה חוסר בריאות" dir="rtl">'+esc(he.red||"")+'</textarea></div>' +
+        '<div><label class="grn">ירוק נראה כך</label><textarea data-field="green" data-lang="he" placeholder="איך נראית בריאות" dir="rtl">'+esc(effectiveHeValue(d, "green"))+'</textarea></div>' +
+        '<div><label class="rd">אדום נראה כך</label><textarea data-field="red" data-lang="he" placeholder="איך נראה חוסר בריאות" dir="rtl">'+esc(effectiveHeValue(d, "red"))+'</textarea></div>' +
       '</div>' +
       arrayFieldEditorHtml(d, "statements", "he", "dimManager.statementsHeading") +
       arrayFieldEditorHtml(d, "strategies", "he", "dimManager.strategiesHeading") +
