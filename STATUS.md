@@ -1436,3 +1436,39 @@ not just in this repo's own tests.
   regressions. Deferred the rest of Copilot's list (other flagged files, duration-aware shard
   balancing, shared-browser-per-worker) rather than batching them in -- each file needs the same
   per-site empirical verification this one took, not a mechanical find-and-replace.
+- 2026-09-14 — **Fixed a real bug, reported from usage with screenshots: a retro participant's join
+  screen stayed English even when the facilitator had switched the whole app to Hebrew before
+  starting the session.** Root cause: `state.ui.locale` (i18n.js) is pure per-device UI state, saved
+  only to that one browser's own `localStorage` -- never part of what a session/join link carries, so
+  a brand-new device (no prior localStorage) always booted at the "en" default regardless of the
+  facilitator's own choice. The only workaround was exiting the join screen, digging into Admin,
+  switching languages, then tapping "back to my retro" to return -- real friction the product owner
+  called out directly. Fixed with the same shape as the existing team-sync-via-join-link mechanism:
+  `joinUrlFor()`/`coFacilitateUrlFor()` (`helpers.js`) now also carry the facilitator's CURRENT
+  locale as a `&lang=` param (new `langParamFor()`, omitted entirely for the "en" default so an
+  all-English board's links are unchanged); `state.js`'s boot-time `loadUiPrefs()` applies it, but
+  ONLY as a fallback default when this device has no locale of its own already saved -- an existing
+  preference always wins, and a device that picks one up this way remembers it as its own from then
+  on (persisted to `localStorage`), so it doesn't need re-discovering on a later, un-tagged visit.
+  New `tests/test_join_link_carries_language.py` covers all three cases: the link carries `&lang=he`
+  only while the facilitator is on Hebrew, a fresh device opening a Hebrew-tagged link boots straight
+  into Hebrew with no exit/switch/return needed, and a device with its own already-saved preference
+  is never overridden. Full suite verified: 65-test unit suite, 43-file Playwright suite, zero
+  regressions.
+  - **Still open, raised by the same usage report, needing a product decision rather than a code fix
+    yet:** (1) the retro survey's actual STATEMENT/strategy text (e.g. Tuckman's/Five Dysfunctions'
+    20 assessment statements) has never been translated -- Stories 5/7/8 deliberately scoped
+    dimension-content translation to label/green/red/attribution only, explicitly excluding
+    `.statements`/`.strategies` (see `state.js`'s own header comments on `TUCKMAN_DIMENSIONS_HE`/
+    `FIVE_DYSFUNCTIONS_DIMENSIONS_HE`), so there is no Hebrew statement text anywhere to show yet --
+    translating it is a real, scoped addition (new AI-translated content needing the same
+    pending-human-review treatment as the existing translations), not a bug in Stories 10/11's own
+    work. (2) The Edit Dimensions modal (Story 12) shows a dimension's name/green/red as the raw
+    STORED English value even under Hebrew, unlike Tribe/Squad view's live-localized read-only
+    display (Story 5/7/8) -- this is intentional, not an oversight: `localizedDimText()`'s safety
+    check only auto-translates a field while its stored value still exactly matches the template's
+    own English default, and Edit Dimensions is an EDIT surface -- showing translated text in an
+    editable input risks the admin saving that Hebrew text back as the new "customized" value,
+    permanently breaking the live-translation match for every other viewer (including a future
+    English-locale one). Surfaced to the product owner as a real but consciously-made tradeoff worth
+    a second look, not silently fixed either way.
