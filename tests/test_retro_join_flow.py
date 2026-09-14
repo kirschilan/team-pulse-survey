@@ -14,12 +14,12 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
 
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
+    # eval_on_selector()/query_selector() below don't auto-wait -- wait for
+    # the real "squad-1's own detail rendered" signal instead of guessing.
+    page.wait_for_selector('#startSessionBtn', state="attached")
 
     print("=== squad-1, no session yet ===")
     start_btn = page.query_selector('#startSessionBtn')
@@ -29,7 +29,10 @@ with sync_playwright() as p:
     assert page.query_selector('#closeSessionBtn') is None
 
     page.click('#startSessionBtn')
-    page.wait_for_timeout(250)
+    # evaluate() below doesn't auto-wait -- the fake store's set() writes
+    # into __FAKE_STORE__ synchronously, but poll for the real condition
+    # rather than assume that timing.
+    page.wait_for_function("() => Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/')).length === 1")
     print("=== after starting session ===")
     session_keys = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k=>k.startsWith('sessions/'))")
     print("session doc keys:", session_keys)
@@ -66,7 +69,11 @@ with sync_playwright() as p:
 
     # expand the details to confirm the QR/link content is real (still present, just collapsed)
     page.click('#squadDetail details.legend summary')
-    page.wait_for_timeout(100)
+    # query_selector() doesn't auto-wait, and expanding a native <details>
+    # is a synchronous browser toggle with nothing async in between -- the
+    # QR itself was already rendered into the (collapsed but attached)
+    # markup when the session card first rendered, not lazily on open.
+    page.wait_for_selector('#sessionQr svg', state="attached")
     svg_present = page.query_selector('#sessionQr svg') is not None
     path_d_len = page.eval_on_selector('#sessionQr svg path', 'el => el ? el.getAttribute("d").length : 0') if svg_present else 0
     print("QR svg present:", svg_present, "| path data length:", path_d_len)
@@ -74,16 +81,23 @@ with sync_playwright() as p:
 
     # copy button shouldn't throw even without real clipboard permissions
     page.click('#copyJoinLinkBtn')
+    # No DOM signal to poll here -- the click's own handler is synchronous
+    # (input.select()) but navigator.clipboard.writeText() rejects
+    # asynchronously without clipboard permissions, and that's exactly the
+    # failure mode this assertion is guarding against, so give it a moment
+    # to surface as a pageerror before checking `errors`.
     page.wait_for_timeout(100)
     print("errors after Copy click:", errors)
 
     # ---- switching to squad-2 shows ITS OWN start button, unaffected by squad-1's session ----
     page.click('.squad-pick-btn[data-id="squad-2"]')
-    page.wait_for_timeout(150)
+    # query_selector() below doesn't auto-wait -- wait for squad-2's own
+    # detail to actually render instead of guessing.
+    page.wait_for_selector('#startSessionBtn', state="attached")
     print("squad-2 has its own Start button (independent sessions):", page.query_selector('#startSessionBtn') is not None)
     assert page.query_selector('#startSessionBtn') is not None
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#closeSessionBtn', state="attached")
     print("squad-1 still shows in-progress session:", page.query_selector('#closeSessionBtn') is not None)
     assert page.query_selector('#closeSessionBtn') is not None
     # The label must make clear this does NOT save/apply any results --
@@ -95,10 +109,16 @@ with sync_playwright() as p:
 
     # ---- close the session ----
     page.click('#closeSessionBtn')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#confirmMessage', state="visible")  # real modal-open signal, not a guess
     print("confirm dialog text:", page.eval_on_selector('#confirmMessage', 'el=>el.textContent'))
     page.click('#confirmOk')
-    page.wait_for_timeout(250)
+    # evaluate() below doesn't auto-wait -- poll for the real write landing
+    # (status flips to "closed" synchronously in the fake store, but wait
+    # for the actual condition rather than assume that timing).
+    page.wait_for_function("""() => {
+      var k = Object.keys(window.__FAKE_STORE__).find(function(x){ return x.startsWith('sessions/') && x.split('/').length===2; });
+      return k && window.__FAKE_STORE__[k].status === 'closed';
+    }""")
     # closeSession() writes status:"closed" rather than deleting the doc
     # outright (so a participant already on the join screen sees a real
     # "this retro has ended" -- see renderJoinScreen()), so the doc itself
@@ -120,7 +140,10 @@ with sync_playwright() as p:
 
     # ============ start a session again so we can build join-screen scenarios ============
     page.click('#startSessionBtn')
-    page.wait_for_timeout(250)
+    # evaluate() below doesn't auto-wait -- wait for the new OPEN session to
+    # actually land (the first session's now-closed doc is still in the
+    # store too, so plain key-count isn't a real enough signal here).
+    page.wait_for_function("() => Object.keys(window.__FAKE_STORE__).some(function(k){ return k.startsWith('sessions/') && k.split('/').length===2 && window.__FAKE_STORE__[k].status === 'open'; })")
     session_doc_2 = page.evaluate("""
       (function(){
         // The FIRST session's doc is still sitting in the store too, now
@@ -153,7 +176,12 @@ with sync_playwright() as p:
     errors2 = []
     page2.on("pageerror", lambda e: errors2.append(str(e)))
     page2.goto("file://" + str(join_out.resolve()) + "?session=" + sid)
-    page2.wait_for_timeout(500)
+    # enterJoinMode()'s view-hidden toggles happen synchronously at boot,
+    # but the join card's actual CONTENT depends on state.live flipping and
+    # the session doc arriving via the fake store's onSnapshot (a real,
+    # if short, async gap) -- wait for that real end state, the same one
+    # the assertions below actually depend on, rather than guess.
+    page2.wait_for_selector('#joinCard .direct-row', state="attached")
 
     print("=== participant device A (join via URL) ===")
     print("view-switch hidden:", page2.eval_on_selector('.view-switch', 'el => el.hidden'))
@@ -194,7 +222,9 @@ with sync_playwright() as p:
     errors3 = []
     page3.on("pageerror", lambda e: errors3.append(str(e)))
     page3.goto("file://" + str(code_out.resolve()))  # NOTE: no ?session= query string at all
-    page3.wait_for_timeout(400)
+    # query_selector()/eval_on_selector() below don't auto-wait -- wait for
+    # the real "app booted" signal instead of guessing.
+    page3.wait_for_selector('#joinCodeBtn', state="attached")
 
     print("=== participant device B (join via typed code, no URL) ===")
     print("joinCodeBtn visible on plain load:", page3.query_selector('#joinCodeBtn') is not None)
@@ -203,22 +233,23 @@ with sync_playwright() as p:
     assert page3.eval_on_selector('.view-switch', 'el => el.hidden') == False
 
     page3.click('#joinCodeBtn')
-    page3.wait_for_timeout(100)
+    page3.wait_for_selector('#joinCodeBackdrop', state="visible")  # real modal-open signal, not a guess
     print("join-code modal visible:", page3.eval_on_selector('#joinCodeBackdrop', 'el => !el.hidden'))
     assert page3.eval_on_selector('#joinCodeBackdrop', 'el => !el.hidden')
 
     # ---- Escape key closes the modal without submitting/joining (check first, while still easy to reopen) ----
     page3.keyboard.press("Escape")
-    page3.wait_for_timeout(100)
+    page3.wait_for_selector('#joinCodeBackdrop', state="hidden")  # real modal-close signal, not a guess
     print("modal closed by Escape:", page3.eval_on_selector('#joinCodeBackdrop', 'el => el.hidden'))
     assert page3.eval_on_selector('#joinCodeBackdrop', 'el => el.hidden') == True
     print("still on normal board after Escape (not joined):", page3.eval_on_selector('#viewJoin', 'el => el.hidden'))
     assert page3.eval_on_selector('#viewJoin', 'el => el.hidden') == True
 
     # reopen and actually join -- type the code in lowercase with stray
-    # whitespace, submitJoinCode() should normalize it
+    # whitespace, submitJoinCode() should normalize it. fill() itself
+    # auto-waits for the input to become actionable (which only happens
+    # once the modal is open), so no separate wait is needed here.
     page3.click('#joinCodeBtn')
-    page3.wait_for_timeout(100)
     page3.fill('#joinCodeInput', "  " + sid.lower() + "  ")
     page3.click('#joinCodeGo')
     page3.wait_for_selector('#joinCard .direct-row')  # wait for the real signal, not a guessed delay
@@ -246,9 +277,10 @@ with sync_playwright() as p:
     errors4 = []
     page4.on("pageerror", lambda e: errors4.append(str(e)))
     page4.goto("file://" + str(badcode_out.resolve()))
-    page4.wait_for_timeout(400)
+    # click()/fill() below auto-wait for their own targets to become
+    # actionable, which only happens once boot has run and (for the input)
+    # the modal is open -- no separate wait needed for either step.
     page4.click('#joinCodeBtn')
-    page4.wait_for_timeout(100)
     page4.fill('#joinCodeInput', "ZZZZZZ")
     page4.click('#joinCodeGo')
     # A bad code never gets a `.direct-row` to wait on -- the real signal
@@ -283,7 +315,11 @@ with sync_playwright() as p:
     print("join diagnostics panel collapsed by default:", not join_diag_panel_open)
     assert not join_diag_panel_open
     page5.click('#joinDiagPanel summary')
-    page5.wait_for_timeout(100)
+    # eval_on_selector() below doesn't auto-wait, and expanding a native
+    # <details> is a synchronous browser toggle -- the diag log content was
+    # already written (and attached, just collapsed) by the earlier
+    # "not found" render, not populated lazily on open.
+    page5.wait_for_selector('#joinDiagLog', state="attached")
     join_diag_text = page5.eval_on_selector('#joinDiagLog', 'el => el.textContent')
     print("join diagnostics content:", join_diag_text)
     assert "not found" in join_diag_text.lower() or "does-not-exist" in join_diag_text.lower()
