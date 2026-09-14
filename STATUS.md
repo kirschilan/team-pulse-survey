@@ -466,6 +466,7 @@ recall exercise instead of something anyone could just read.
 | Save-board / Load-board-to-file | `local-store.js` already persists the board via `localStorage`, which covers the same browser/device | Once someone needs a board to move between browsers/devices without a relay |
 | Relay deployed on Vercel itself (one deployment, not two) | Deliberately rejected, not just deferred — see the locked decision above and `relay/README.md`'s "Why not a Vercel Function" | Only if Vercel's WebSocket support later guarantees same-instance routing without an external store, which would remove the reason this was rejected |
 | Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing | Once the marketing site (separate Claude Code project) is further along |
+| A third UI language (beyond English/Hebrew) | YAGNI, per the product owner's own call (2026-09-14) — `SUPPORTED_LOCALES`/`t()`'s fallback (i18n.js) are already written generically enough to add one without a redesign, and the bilingual-dimensions editor (see the session log) is a per-dimension `i18n` object keyed by locale code, not hardcoded to exactly two languages, so neither needs rework specifically to add a third | A real request for a specific third language — at that point, design its own toggle/picker UX (today's per-dimension editor hardcodes one Hebrew panel) rather than assuming the two-language shape generalizes without a look |
 
 ## Suggested next step
 
@@ -1506,3 +1507,72 @@ not just in this repo's own tests.
     a genuine architecture change (today's translation tables are hardcoded template constants, not
     editable board data) the product owner asked to see a design proposal for before any
     implementation starts.
+- 2026-09-14 — **Bilingual dimensions: made a dimension's Hebrew translation a real, editable field
+  on the dimension itself, replacing the hardcoded template-level lookup table.** Product owner
+  approved this from a working mockup (an Artifact reusing the app's real design tokens, with the
+  actual toggle/expand interaction built rather than described — see the new Delivery-workflow
+  policy this prompted, below) rather than a text proposal, then asked for it to be built along
+  with two of the mockup's own open questions resolved: survey statements/strategies get the same
+  EN+HE editing (not just label/green/red), and a third UI language is explicit backlog (YAGNI for
+  now, recorded in the "Deliberately not built yet" table).
+  - **The redesign itself** (`state.js`): `localizedDimText(dim, field)` now reads
+    `dim.i18n.he.<field>` directly off the dimension object handed to it — no more matching the
+    dimension's CURRENT value against a template's own English default to decide whether to
+    translate. That old mechanism (Stories 5/7-9's `activeStarterTemplate()`-keyed lookup, and
+    Stories 10/11's session-scoped `localizedSessionDimText()`/`starterTemplateByName()`
+    variant, both now removed) was fragile in exactly the way a real usage report eventually
+    surfaced: an array field (statements) round-tripping through a session doc's JSON-shaped
+    storage broke reference-equality matching, and it could never be extended to a custom/saved
+    template or a hand-edited dimension. The three built-in starter templates' own `dimensions[]`
+    entries now each carry their own `i18n.he` (folding in the existing
+    `SPOTIFY_DIMENSIONS_HE`/`TUCKMAN_DIMENSIONS_HE`/`FIVE_DYSFUNCTIONS_DIMENSIONS_HE` tables by
+    reference, so no translated content was retyped) — these seed a dimension's translation the
+    moment a starter template is loaded, but from there on it's the dimension's own editable data,
+    same as label/green/red, carried forward by `loadTemplate()`, `saveCurrentAsTemplate()`, and
+    `startSession()`'s session snapshot wherever the dimension itself travels. Array-field
+    fallback (statements/strategies) is per-ELEMENT, not per-whole-array — the new editor lets an
+    admin translate one statement at a time, so a real Hebrew array is very often partially
+    filled, and an all-or-nothing fallback would show a blank line for every untranslated entry
+    instead of its English text.
+  - **Two real bugs found while wiring the redesign through the LIVE (relay-shaped) write path**,
+    neither visible from the pure-logic unit tests alone: (1) `db.js`'s dimensions AND templates
+    `onSnapshot` listeners both explicitly rebuild "brand-new plain objects" from each frozen
+    `doc.data()` snapshot (deliberately, so `state.dimensions`/`state.templates` entries can be
+    edited in place later) — and both listeners' explicit field lists dropped `i18n` entirely, so
+    a just-saved translation echoed back through the device's own live subscription and vanished
+    on the very next snapshot. (2) Once (1) was fixed by copying `data.i18n` across, a SECOND edit
+    to the same dimension (e.g. green after label) started throwing, because `data.i18n` is nested
+    inside the frozen snapshot clone — assigning it by reference (rather than cloning it) handed
+    `dimensions.js` a frozen object it then tried to mutate in place on the next keystroke.
+    Fixed by reusing `board-sync.js`'s existing `plainClone()` helper (built for the identical
+    "frozen nested data, later edited in place" hazard in the opposite data-flow direction) rather
+    than inventing a second deep-clone utility.
+  - **The Edit Dimensions modal** (`dimensions.js`): every dimension row gets a collapsible
+    "🇮🇱 Add a Hebrew translation" / "Hebrew translation — added" panel (open by default once a
+    translation exists, closed by default otherwise, and the open/closed choice survives the
+    full-innerHTML-rebuild every edit already triggers via a small `openI18nPanels` map keyed by
+    dimension key) holding Hebrew label/green/red fields alongside the English ones. Survey
+    statements/strategies are no longer read-only in either language: each renders as one input
+    per item, English inline in the row and Hebrew inside the translation panel, aligned by index
+    (a Hebrew array is padded to the English array's length before writing, so translating item
+    #1 before #0 never leaves #0 as `undefined`).
+  - New `tests/test_bilingual_dimension_editor.py` (Playwright) covers the full loop: an
+    untranslated dimension's collapsed toggle and blank fields, filling one in and seeing it
+    localize live in Tribe view, a Tuckman dimension's pre-filled/already-open panel naming its
+    source template, and editing statements/strategies in both languages without disturbing
+    sibling items. Rewrote `tests/unit/test_template_locale.js` for the new, simpler
+    `localizedDimText()` contract (dropped every test of the removed session/template-matching
+    machinery, added per-element array-fallback coverage). Updated `tests/fixtures/fake_store.html`
+    and `public/local-store.js`'s seed data to carry the same per-dimension `i18n` shape a real
+    board now has (`fake_store.html` deliberately leaves two of its three seeded dimensions
+    untranslated, so tests needing a genuine "no translation yet" example still have one).
+    Fixed four now-stale assertions in existing tests that depended on the removed
+    template-level `i18n.he.dimensions` shape or the old read-only statements hint.
+  - Full suite verified: 69-test unit suite, 44-file Playwright suite, zero regressions.
+  - **New Definition-of-Done policy this round prompted** (`docs/DefinitionOfDone.md`'s Delivery
+    workflow section): a genuine architecture/UX decision gets a working, interactive mockup built
+    from the app's real design tokens before implementation starts, not a text description — this
+    is specifically why the proposal above got a fast, confident "go ahead" rather than a round of
+    clarifying questions. Also added: a new data shape must explicitly say whether it needs a
+    migration path for existing stored data, even when the honest answer (as here) is "not yet,
+    nothing real depends on the old shape."

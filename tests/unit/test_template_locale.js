@@ -18,7 +18,6 @@ const {
   SPOTIFY_ATTRIBUTION,
   localizedDimText,
   localizedAttribution,
-  localizedSessionDimText,
   state,
 } = require(path.join(__dirname, "..", "..", "public", "js", "state.js"));
 
@@ -26,53 +25,100 @@ function englishDim(key) {
   return PLACEHOLDER_DIMENSIONS.find((d) => d.key === key);
 }
 
-// Reset the shared `state` object's relevant fields before/after each test --
-// same "mutate properties in place, never reassign the binding" rule the
-// rest of this app's cross-file globals follow (see state.js's own header
-// comment), since these two functions read `state.ui.locale` and
-// `state.config.activeTemplateName` as bare globals exactly like any other
-// public/js/*.js render code would in a real page.
 function resetState(activeTemplateName) {
   state.ui.locale = "en";
   state.config.activeTemplateName = activeTemplateName || SPOTIFY_TEMPLATE.name;
 }
 
-test("localizedDimText() returns the Hebrew value when Hebrew is active, the Spotify template is active, and the field is still the untouched English default", () => {
+// Bilingual-dimensions redesign: a dimension's Hebrew translation is no
+// longer a hardcoded, template-level shadow table consulted at render time
+// by matching the dimension's CURRENT value against the template's own
+// English default (fragile: an array field round-tripping through a
+// session doc's JSON-shaped storage broke reference-equality matching, and
+// editing a dimension in Admin could never show translated content without
+// risking silently "locking in" that translation as the new stored value).
+// It's now a plain, editable field living ON the dimension itself --
+// dim.i18n.he.{label,green,red,statements,strategies} -- copied forward
+// wherever the dimension itself travels (loadTemplate(), saveCurrentAsTemplate(),
+// startSession()'s session snapshot), same as any other dimension field.
+// localizedDimText() is now a pure, template-independent lookup: no
+// activeStarterTemplate()/session-templateName distinction needed anymore,
+// since the translation is never separated from the dimension that owns it.
+test("localizedDimText() returns dim.i18n.he.<field> when Hebrew is active and it's set", () => {
   resetState();
   state.ui.locale = "he";
-  const release = englishDim("release");
-  assert.equal(localizedDimText(release, "label"), SPOTIFY_TEMPLATE.i18n.he.dimensions.release.label);
-  assert.equal(localizedDimText(release, "green"), SPOTIFY_TEMPLATE.i18n.he.dimensions.release.green);
-  assert.equal(localizedDimText(release, "red"), SPOTIFY_TEMPLATE.i18n.he.dimensions.release.red);
+  const dim = { key: "x", label: "English", green: "g", red: "r", i18n: { he: { label: "עברית", green: "ג", red: "א" } } };
+  assert.equal(localizedDimText(dim, "label"), "עברית");
+  assert.equal(localizedDimText(dim, "green"), "ג");
+  assert.equal(localizedDimText(dim, "red"), "א");
 });
 
-test("localizedDimText() returns the stored value unchanged when the active locale is English", () => {
-  resetState();
-  const release = englishDim("release");
-  assert.equal(localizedDimText(release, "label"), release.label);
-});
-
-test("localizedDimText() returns the stored value unchanged when the active template name matches nothing in STARTER_TEMPLATES", () => {
-  resetState("A template that doesn't exist");
-  state.ui.locale = "he";
-  const release = englishDim("release");
-  assert.equal(localizedDimText(release, "label"), release.label);
-});
-
-test("localizedDimText() never overrides a dimension an admin has manually customized away from the English default", () => {
+test("localizedDimText() falls back to the English value when Hebrew is active but no translation is set for that field", () => {
   resetState();
   state.ui.locale = "he";
-  const customized = Object.assign({}, englishDim("release"), { label: "Ship it fast" });
-  assert.equal(localizedDimText(customized, "label"), "Ship it fast");
-  // green/red weren't touched -- those individual fields should still localize
-  assert.equal(localizedDimText(customized, "green"), SPOTIFY_TEMPLATE.i18n.he.dimensions.release.green);
+  const dim = { key: "x", label: "English", green: "g", red: "r", i18n: { he: { label: "עברית" } } };
+  assert.equal(localizedDimText(dim, "label"), "עברית");
+  assert.equal(localizedDimText(dim, "green"), "g"); // untranslated field -- falls back
 });
 
-test("localizedDimText() falls back to the stored value for a dimension key with no Hebrew translation entry", () => {
+test("localizedDimText() falls back to English for a dimension with no i18n field at all", () => {
   resetState();
   state.ui.locale = "he";
-  const untranslated = { key: "not-a-real-spotify-key", label: "Something else", green: "g", red: "r" };
-  assert.equal(localizedDimText(untranslated, "label"), "Something else");
+  const dim = { key: "x", label: "English", green: "g", red: "r" };
+  assert.equal(localizedDimText(dim, "label"), "English");
+});
+
+test("localizedDimText() falls back to English for a blank Hebrew translation, never shows an empty string", () => {
+  resetState();
+  state.ui.locale = "he";
+  const dim = { key: "x", label: "English", i18n: { he: { label: "   " } } };
+  assert.equal(localizedDimText(dim, "label"), "English");
+});
+
+test("localizedDimText() returns the English value unchanged when the active locale is English, regardless of any Hebrew translation present", () => {
+  resetState();
+  const dim = { key: "x", label: "English", i18n: { he: { label: "עברית" } } };
+  assert.equal(localizedDimText(dim, "label"), "English");
+});
+
+test("localizedDimText() localizes array fields (statements/strategies) by returning the whole translated array", () => {
+  resetState();
+  state.ui.locale = "he";
+  const dim = {
+    key: "x", statements: ["one", "two"], strategies: ["s1"],
+    i18n: { he: { statements: ["אחד", "שתיים"], strategies: ["אסטרטגיה"] } }
+  };
+  assert.deepEqual(localizedDimText(dim, "statements"), ["אחד", "שתיים"]);
+  assert.deepEqual(localizedDimText(dim, "strategies"), ["אסטרטגיה"]);
+});
+
+test("localizedDimText() falls back to the English array when the Hebrew array is missing or empty", () => {
+  resetState();
+  state.ui.locale = "he";
+  const noHe = { key: "x", statements: ["one", "two"] };
+  assert.deepEqual(localizedDimText(noHe, "statements"), ["one", "two"]);
+  const emptyHe = { key: "x", statements: ["one", "two"], i18n: { he: { statements: [] } } };
+  assert.deepEqual(localizedDimText(emptyHe, "statements"), ["one", "two"]);
+});
+
+// The bilingual-dimensions editor (dimensions.js) lets an admin translate
+// statements one at a time, so a real Hebrew array is very often PARTIALLY
+// filled ("translated one", "", "") mid-edit -- falling back per WHOLE
+// array (any non-empty Hebrew array wins outright) would show a blank
+// line for every not-yet-translated statement instead of its English
+// text. Must fall back per ELEMENT instead.
+test("localizedDimText() falls back to the English value PER ELEMENT within a partially-translated array, not for the whole array at once", () => {
+  resetState();
+  state.ui.locale = "he";
+  const dim = { key: "x", statements: ["one", "two", "three"], i18n: { he: { statements: ["אחד", "", "   "] } } };
+  assert.deepEqual(localizedDimText(dim, "statements"), ["אחד", "two", "three"]);
+});
+
+test("localizedDimText() works identically for a plain live dimension, a retro session's frozen snapshot copy, or a starter template's own dimension entry -- it only ever looks at the dim object it's given", () => {
+  resetState("Whatever the board's current template happens to be -- irrelevant now");
+  state.ui.locale = "he";
+  const sessionSnapshotCopy = Object.assign({}, TUCKMAN_TEMPLATE.dimensions.find((d) => d.key === "forming"));
+  assert.equal(localizedDimText(sessionSnapshotCopy, "label"), TUCKMAN_TEMPLATE.dimensions.find((d) => d.key === "forming").i18n.he.label);
 });
 
 test("localizedAttribution() returns the Hebrew attribution under the same conditions", () => {
@@ -93,106 +139,50 @@ test("localizedAttribution() returns the value unchanged in English", () => {
   assert.equal(localizedAttribution(SPOTIFY_ATTRIBUTION), SPOTIFY_ATTRIBUTION);
 });
 
-// Stories 6-9's Tuckman/Five Dysfunctions template translations reuse this
-// SAME mechanism (localizedDimText()/localizedAttribution() were originally
-// hardcoded to SPOTIFY_TEMPLATE -- generalized to look up whichever starter
-// template is currently active by name and use ITS OWN .i18n table, if it
-// has one). Proven here with a throwaway synthetic template rather than
-// real Spotify/Tuckman/Five Dysfunctions content, so this test doesn't care
-// which real templates have translations yet.
-test("localizedDimText()/localizedAttribution() work for ANY starter template that declares its own i18n table, not just Spotify", () => {
+// localizedAttribution() is unchanged by this redesign -- attribution is
+// board-level config, not per-dimension data, so it keeps the
+// activeStarterTemplate()-matching mechanism Stories 6-9 already built.
+test("localizedAttribution() works for ANY starter template that declares its own i18n table, not just Spotify", () => {
   const fakeTemplate = {
     id: "starter-test-fake", starter: true, name: "Totally Fake Test Template",
     unit: "Squad", unitPlural: "Squads", attribution: "Fake English attribution",
-    dimensions: [{ key: "fakekey", label: "Fake Label", green: "Fake green", red: "Fake red", order: 1 }],
-    i18n: { he: { attribution: "תיוג מזויף", dimensions: {
-      fakekey: { label: "תווית מזויפת", green: "ירוק מזויף", red: "אדום מזויף" }
-    } } }
+    dimensions: [{ key: "fakekey", label: "Fake Label", green: "Fake green", red: "Fake red", order: 1,
+      i18n: { he: { label: "תווית מזויפת", green: "ירוק מזויף", red: "אדום מזויף" } } }],
+    i18n: { he: { attribution: "תיוג מזויף" } }
   };
   STARTER_TEMPLATES.push(fakeTemplate);
   try {
     resetState(fakeTemplate.name);
     state.ui.locale = "he";
     assert.equal(localizedDimText(fakeTemplate.dimensions[0], "label"), "תווית מזויפת");
-    assert.equal(localizedDimText(fakeTemplate.dimensions[0], "green"), "ירוק מזויף");
     assert.equal(localizedAttribution(fakeTemplate.attribution), "תיוג מזויף");
   } finally {
     STARTER_TEMPLATES.pop(); // never leak a fake template into any other test
   }
 });
 
-// localizedSessionDimText(): a retro session freezes its own dimensions
-// (including .statements/.strategies) at start time, in the session doc --
-// NOT in state.dimensions, so localizedDimText()'s activeStarterTemplate()
-// lookup (keyed off the LIVE board's state.config.activeTemplateName) is
-// the wrong template once the board has moved on to something else since
-// the session started. This sibling helper takes the session's own frozen
-// templateName explicitly instead, and additionally covers array fields
-// (statements/strategies), which localizedDimText() never needed to before
-// this -- reference equality (`!==`, correct for a string field) would
-// wrongly treat a value-identical-but-different-array-instance statements
-// list as "customized," so this must compare by VALUE.
-test("localizedSessionDimText() localizes statements/strategies via the SESSION's own templateName, not the live board's current template", () => {
-  resetState("Some other template entirely -- board moved on since the session started");
-  state.ui.locale = "he";
-  const trustEnglish = FIVE_DYSFUNCTIONS_TEMPLATE.dimensions.find((d) => d.key === "trust");
-  const heTrust = FIVE_DYSFUNCTIONS_TEMPLATE.i18n.he.dimensions.trust;
-  assert.deepEqual(localizedSessionDimText(trustEnglish, "statements", FIVE_DYSFUNCTIONS_TEMPLATE.name), heTrust.statements);
-  assert.deepEqual(localizedSessionDimText(trustEnglish, "strategies", FIVE_DYSFUNCTIONS_TEMPLATE.name), heTrust.strategies);
-});
-
-test("localizedSessionDimText() falls back to English when the active locale is English", () => {
-  resetState();
-  const trustEnglish = FIVE_DYSFUNCTIONS_TEMPLATE.dimensions.find((d) => d.key === "trust");
-  assert.deepEqual(localizedSessionDimText(trustEnglish, "statements", FIVE_DYSFUNCTIONS_TEMPLATE.name), trustEnglish.statements);
-});
-
-test("localizedSessionDimText() falls back to English when templateName matches nothing in STARTER_TEMPLATES", () => {
-  resetState();
-  state.ui.locale = "he";
-  const trustEnglish = FIVE_DYSFUNCTIONS_TEMPLATE.dimensions.find((d) => d.key === "trust");
-  assert.deepEqual(localizedSessionDimText(trustEnglish, "statements", "A template that doesn't exist"), trustEnglish.statements);
-});
-
-test("localizedSessionDimText() never overrides statements/strategies that no longer match the template's own default value-for-value", () => {
-  resetState();
-  state.ui.locale = "he";
-  const trustEnglish = FIVE_DYSFUNCTIONS_TEMPLATE.dimensions.find((d) => d.key === "trust");
-  const customized = Object.assign({}, trustEnglish, { statements: ["A completely different statement, never translated"] });
-  assert.deepEqual(localizedSessionDimText(customized, "statements", FIVE_DYSFUNCTIONS_TEMPLATE.name), customized.statements);
-  // strategies weren't touched -- that field should still localize on its own
-  assert.deepEqual(localizedSessionDimText(customized, "strategies", FIVE_DYSFUNCTIONS_TEMPLATE.name), FIVE_DYSFUNCTIONS_TEMPLATE.i18n.he.dimensions.trust.strategies);
-});
-
 // Explicit per-story markers -- these are the actual "watch it fail" targets
 // for Stories 7 and 8 (Tuckman/Five Dysfunctions dimension-content
 // translation) before either template's own i18n data is written.
-test("TUCKMAN_TEMPLATE has its own Hebrew translation table (Story 7)", () => {
-  assert.ok(TUCKMAN_TEMPLATE.i18n && TUCKMAN_TEMPLATE.i18n.he, "TUCKMAN_TEMPLATE.i18n.he is missing");
+test("every TUCKMAN_TEMPLATE dimension has its own i18n.he entry (Story 7)", () => {
+  TUCKMAN_TEMPLATE.dimensions.forEach((d) => assert.ok(d.i18n && d.i18n.he, "missing i18n.he for: " + d.key));
 });
-test("FIVE_DYSFUNCTIONS_TEMPLATE has its own Hebrew translation table (Story 8)", () => {
-  assert.ok(FIVE_DYSFUNCTIONS_TEMPLATE.i18n && FIVE_DYSFUNCTIONS_TEMPLATE.i18n.he, "FIVE_DYSFUNCTIONS_TEMPLATE.i18n.he is missing");
+test("every FIVE_DYSFUNCTIONS_TEMPLATE dimension has its own i18n.he entry (Story 8)", () => {
+  FIVE_DYSFUNCTIONS_TEMPLATE.dimensions.forEach((d) => assert.ok(d.i18n && d.i18n.he, "missing i18n.he for: " + d.key));
 });
 
 // Mechanical half of the DOD's "every locale carries every key" rule, applied
 // to template DATA instead of UI-chrome t() strings -- run generically
-// across every starter template that HAS declared an i18n table (today:
-// Spotify; Tuckman/Five Dysfunctions join automatically the moment they
-// declare their own .i18n, no test code changes needed here) so a new
-// dimension added to any of them without its Hebrew counterpart fails loudly.
-[SPOTIFY_TEMPLATE, FIVE_DYSFUNCTIONS_TEMPLATE, TUCKMAN_TEMPLATE].filter((tpl) => tpl.i18n).forEach((tpl) => {
+// across every starter template so a new dimension added to any of them
+// without its Hebrew counterpart fails loudly.
+STARTER_TEMPLATES.forEach((tpl) => {
   test(`every ${tpl.name} dimension has a non-blank Hebrew translation`, () => {
-    const heTable = tpl.i18n.he.dimensions;
     tpl.dimensions.forEach((d) => {
-      const tr = heTable[d.key];
-      assert.ok(tr, "missing Hebrew translation for dimension key: " + d.key + " in " + tpl.name);
+      const tr = d.i18n && d.i18n.he;
+      assert.ok(tr, "missing i18n.he for dimension key: " + d.key + " in " + tpl.name);
       assert.ok(String(tr.label || "").trim(), "blank Hebrew label for: " + d.key);
       assert.ok(String(tr.green || "").trim(), "blank Hebrew green for: " + d.key);
       assert.ok(String(tr.red || "").trim(), "blank Hebrew red for: " + d.key);
-      // A statement-scored dimension's survey questions/takeaway strategies
-      // need their own Hebrew counterpart too, same array length and order
-      // as the English default (statements are read by index -- see
-      // retro-join.js's interleavedStatements()), not just label/green/red.
       if (d.statements) {
         assert.ok(Array.isArray(tr.statements) && tr.statements.length === d.statements.length,
           "Hebrew statements array missing/wrong length for: " + d.key + " in " + tpl.name);
@@ -216,8 +206,7 @@ test("FIVE_DYSFUNCTIONS_TEMPLATE has its own Hebrew translation table (Story 8)"
     resetState(tpl.name);
     state.ui.locale = "he";
     const firstDim = tpl.dimensions[0];
-    const tr = tpl.i18n.he.dimensions[firstDim.key];
-    assert.equal(localizedDimText(firstDim, "label"), tr.label);
+    assert.equal(localizedDimText(firstDim, "label"), firstDim.i18n.he.label);
     assert.equal(localizedAttribution(tpl.attribution), tpl.i18n.he.attribution);
   });
 });

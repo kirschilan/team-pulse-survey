@@ -13,11 +13,12 @@ from fixtures.build_page import build_page, test_output_path
 # extends that translation to the retro survey content itself: the
 # interleaved statement questions, a direct-rating dimension's openly-shown
 # label/green/red, and the personal-result screen's label/message/
-# strategies -- using localizedSessionDimText() (state.js), which (unlike
-# localizedDimText()) is keyed off the SESSION's own frozen templateName
-# rather than the live board's current template, and handles array fields
-# (statements/strategies) with a value-based match, not the reference
-# equality that would be wrong for them.
+# strategies -- using localizedDimText() (state.js), which reads a
+# dimension's own `i18n.he` field directly (the bilingual-dimensions
+# redesign -- see STATUS.md) and works identically whether `dim` is a live
+# board dimension or a retro session's frozen snapshot copy, since the
+# `i18n` field travels with the dimension wherever it's copied (see
+# startSession() in retro-facilitator.js).
 
 out_path = build_page(out_name="_test_retro_statement_lang.html")
 
@@ -94,7 +95,7 @@ with sync_playwright() as p:
     # every dimension's Hebrew translation for its FIRST statement should be
     # among the rendered first-round rows (round-robin: dim order, idx 0 first)
     he_first_statements = page.evaluate("""
-      Object.values(TUCKMAN_TEMPLATE.i18n.he.dimensions).map(function(d){ return d.statements[0]; })
+      TUCKMAN_TEMPLATE.dimensions.map(function(d){ return d.i18n.he.statements[0]; })
     """)
     all_stmt_texts = page.eval_on_selector_all('.stmt-row .stmt-text', 'els=>els.map(e=>e.textContent)')
     print("Hebrew idx-0 statements found among rendered rows:", [s for s in he_first_statements if s in all_stmt_texts])
@@ -113,7 +114,7 @@ with sync_playwright() as p:
     assert "Forming" not in result_labels_he and any("התהוות" in l for l in result_labels_he)
 
     forming_msg_he = page.eval_on_selector('.personal-result:has(.field-label:text("התהוות")) p.hint', 'el=>el.textContent')
-    expected_green_he = page.evaluate("TUCKMAN_TEMPLATE.i18n.he.dimensions.forming.green")
+    expected_green_he = page.evaluate("TUCKMAN_TEMPLATE.dimensions.find(d=>d.key==='forming').i18n.he.green")
     print("Forming's result message (Hebrew, matches green since all answered 'Usually'/3):", forming_msg_he)
     assert forming_msg_he == expected_green_he
 

@@ -93,6 +93,11 @@ function saveCurrentAsTemplate(name){
     if(isStatementDimension(d)) spec.statements = d.statements;
     if(d.scoreBands) spec.scoreBands = d.scoreBands;
     if(d.strategies && d.strategies.length) spec.strategies = d.strategies;
+    // Carry any Hebrew translation the admin already added (dimensions.js)
+    // along too, so a custom template saved AFTER translating stays
+    // translated for anyone who loads it later -- see state.js's
+    // localizedDimText() for why this now lives directly on the dimension.
+    if(d.i18n) spec.i18n = d.i18n;
     return spec;
   });
   var payload = {
@@ -128,8 +133,10 @@ function loadTemplate(tpl){
   // something baked in here. Keeping the stored data locale-independent is
   // what makes switching languages update the board immediately, including
   // the default board that was never explicitly reloaded from the
-  // Templates modal, and lets those helpers reliably tell "still the
-  // template's own text" apart from "an admin customized this."
+  // Templates modal. Each dimension's own `i18n` (if the template has one)
+  // is carried along below too -- since the bilingual-dimensions redesign,
+  // that's a normal editable field the loaded dimension owns from here on,
+  // same as label/green/red, not a separate template-level lookup table.
   var newConfig = {
     unit: tpl.unit || state.config.unit,
     unitPlural: tpl.unitPlural || state.config.unitPlural,
@@ -146,6 +153,7 @@ function loadTemplate(tpl){
     if(isStatementDimension(d)) spec.statements = d.statements;
     if(d.scoreBands) spec.scoreBands = d.scoreBands;
     if(d.strategies && d.strategies.length) spec.strategies = d.strategies;
+    if(d.i18n) spec.i18n = d.i18n;
     return spec;
   });
 
@@ -171,11 +179,14 @@ function loadTemplate(tpl){
           return Promise.all(newDimSpecs.map(function(d){
             var payload = { label:d.label, green:d.green, red:d.red, order:d.order, updatedAt: nowIso() };
             // statements/scoreBands/strategies are optional content used by the
-            // scored-survey rating flow (not built yet) -- carried through here
-            // so a template that has them keeps them once that flow exists
+            // scored-survey rating flow -- carried through here so a template
+            // that has them keeps them. i18n (the dimension's own Hebrew
+            // translation, if the template has one -- see state.js's
+            // localizedDimText()) travels the same way.
             if(d.statements) payload.statements = d.statements;
             if(d.scoreBands) payload.scoreBands = d.scoreBands;
             if(d.strategies) payload.strategies = d.strategies;
+            if(d.i18n) payload.i18n = d.i18n;
             return state.db.collection("dimensions").doc(d.key).set(payload);
           }));
         })

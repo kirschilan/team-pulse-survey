@@ -140,63 +140,45 @@ function activeStarterTemplate(){
   return STARTER_TEMPLATES.find(function(t){ return t.name === state.config.activeTemplateName; });
 }
 
-// A retro session freezes its own dimension SNAPSHOT (sessions/{id}.dimensions,
-// including .statements/.strategies) at start time -- looking up the CURRENTLY
-// active board template (activeStarterTemplate()) is the wrong template once
-// the board has moved on to something else since the session started. Used by
-// localizedSessionDimText() below, which takes the session's own frozen
-// templateName explicitly instead.
-function starterTemplateByName(name){
-  return STARTER_TEMPLATES.find(function(t){ return t.name === name; });
-}
-
-// label/green/red are plain strings, where `!==` is already a correct
-// value comparison -- but statements/strategies are arrays, where `!==`
-// only ever compares by reference. Two arrays with identical contents but
-// different instances (exactly what happens once a value round-trips
-// through a session doc's own JSON-shaped storage/relay transport) would
-// otherwise wrongly read as "the admin customized this," permanently
-// blocking translation. Stringifying is enough here -- every element is a
-// plain string, so there's no risk of key-order ambiguity JSON.stringify
-// has for objects.
-function dimensionValuesMatch(a, b){
-  if(Array.isArray(a) || Array.isArray(b)) return JSON.stringify(a) === JSON.stringify(b);
-  return a === b;
-}
-
-// Shared by localizedDimText() (live board dimensions, keyed off whichever
-// template is CURRENTLY active) and localizedSessionDimText() (a retro
-// session's own frozen snapshot, keyed off the session's OWN templateName)
-// -- same safety check either way: only translate a field that still
-// matches ITS OWN TEMPLATE's English default value-for-value, checked per
-// field so customizing only `label` still lets `green`/`red`/`statements`
-// localize normally.
-function localizedFieldForTemplate(dim, field, tpl, locale, value){
-  if(!tpl || !tpl.i18n) return value;
-  var base = tpl.dimensions.find(function(p){ return p.key === dim.key; });
-  if(!base || !dimensionValuesMatch(base[field], value)) return value;
-  var table = tpl.i18n[locale] && tpl.i18n[locale].dimensions;
-  var tr = table && table[dim.key];
-  return (tr && tr[field]) || value;
-}
-
+// Bilingual dimensions (redesigned after real-usage feedback -- see
+// STATUS.md): a dimension's Hebrew translation used to be a hardcoded,
+// TEMPLATE-level shadow table, only ever consulted at render time by
+// matching the dimension's CURRENT value against that template's own
+// English default -- fragile (an array field round-tripping through a
+// session doc's own JSON-shaped storage broke the reference-equality
+// check that used to gate it) and unextendable (only the 3 built-in
+// starter templates could ever have one; a custom/saved template or a
+// hand-edited dimension got no translation, ever; and it could never be
+// corrected without an engineer editing state.js).
+//
+// It's now a plain, editable field living ON the dimension itself --
+// dim.i18n.he.{label,green,red,statements,strategies} -- same shape the
+// three starter templates' own dimension entries carry below, seeded from
+// their own hardcoded defaults but from here on just another field an
+// admin can edit (dimensions.js) same as label/green/red. Copied forward
+// wherever the dimension itself travels -- loadTemplate(), templates.js's
+// saveCurrentAsTemplate(), and startSession()'s session snapshot -- so
+// this ONE lookup works identically for a live board dimension, a saved
+// custom template's own dimension, and a retro session's frozen copy:
+// none of them need to know which template (if any) they came from.
 function localizedDimText(dim, field){
   var value = dim[field];
   var locale = (state.ui && state.ui.locale) || "en";
   if(locale === "en") return value;
-  return localizedFieldForTemplate(dim, field, activeStarterTemplate(), locale, value);
-}
-
-// Same translation, for a dimension living inside a retro session's own
-// frozen snapshot rather than the live board -- see starterTemplateByName()'s
-// comment above for why this can't just reuse activeStarterTemplate().
-// Handles statements/strategies (arrays) as well as label/green/red,
-// unlike localizedDimText() above, which only ever needed strings.
-function localizedSessionDimText(dim, field, templateName){
-  var value = dim[field];
-  var locale = (state.ui && state.ui.locale) || "en";
-  if(locale === "en") return value;
-  return localizedFieldForTemplate(dim, field, starterTemplateByName(templateName), locale, value);
+  var tr = dim.i18n && dim.i18n[locale] && dim.i18n[locale][field];
+  if(Array.isArray(value)){
+    // Per-ELEMENT fallback, not per-array: the bilingual-dimensions editor
+    // (dimensions.js) lets an admin translate statements one at a time, so
+    // a real Hebrew array is very often partially filled mid-edit -- an
+    // all-or-nothing fallback would show a blank line for every
+    // not-yet-translated entry instead of its English text.
+    if(!Array.isArray(tr)) return value;
+    return value.map(function(v, i){
+      var t = tr[i];
+      return (t !== undefined && t !== null && String(t).trim() !== "") ? t : v;
+    });
+  }
+  return (tr !== undefined && tr !== null && String(tr).trim() !== "") ? tr : value;
 }
 
 function localizedAttribution(attribution){
@@ -292,7 +274,8 @@ var FIVE_DYSFUNCTIONS_TEMPLATE = {
         "Team members openly admit their weaknesses and mistakes.",
         "Team members know about one another's personal lives and are comfortable discussing them."
       ],
-      strategies:[ "Identify and discuss individual strengths and weaknesses.", "Spend considerable time in face-to-face meetings and working sessions." ] },
+      strategies:[ "Identify and discuss individual strengths and weaknesses.", "Spend considerable time in face-to-face meetings and working sessions." ],
+      i18n: { he: FIVE_DYSFUNCTIONS_DIMENSIONS_HE.trust } },
     { key:"conflict", label:"Fear of Conflict", order:2,
       green:"We engage in direct, passionate debate about ideas — disagreement is normal and productive.",
       red:"We avoid friction to keep the peace, so real disagreements stay under the surface (false harmony).",
@@ -302,7 +285,8 @@ var FIVE_DYSFUNCTIONS_TEMPLATE = {
         "Team meetings are compelling, and not boring.",
         "During team meetings, the most important — and difficult — issues are put on the table to be resolved."
       ],
-      strategies:[ "Acknowledge that conflict is required for productive meetings.", "Understand individual team members' natural conflict styles, and establish common ground rules for engaging in conflict." ] },
+      strategies:[ "Acknowledge that conflict is required for productive meetings.", "Understand individual team members' natural conflict styles, and establish common ground rules for engaging in conflict." ],
+      i18n: { he: FIVE_DYSFUNCTIONS_DIMENSIONS_HE.conflict } },
     { key:"commitment", label:"Lack of Commitment", order:3,
       green:"We leave decisions clear and committed to, even after real debate — “disagree and commit.”",
       red:"Decisions stay vague or half-agreed, so the team re-litigates them later (a sense of ambiguity).",
@@ -312,7 +296,8 @@ var FIVE_DYSFUNCTIONS_TEMPLATE = {
         "Team members leave meetings confident that their peers are completely committed to the decisions that were agreed on, even if there was initial disagreement.",
         "Team members end discussions with clear and specific resolutions and calls to action."
       ],
-      strategies:[ "Review commitments at the end of each meeting to ensure all team members are aligned.", "Adopt a “disagree and commit” mentality — make sure all team members are committed regardless of initial disagreements." ] },
+      strategies:[ "Review commitments at the end of each meeting to ensure all team members are aligned.", "Adopt a “disagree and commit” mentality — make sure all team members are committed regardless of initial disagreements." ],
+      i18n: { he: FIVE_DYSFUNCTIONS_DIMENSIONS_HE.commitment } },
     { key:"accountability", label:"Avoidance of Accountability", order:4,
       green:"We hold each other accountable directly, even when it's uncomfortable.",
       red:"We tolerate low standards rather than call each other out.",
@@ -322,7 +307,8 @@ var FIVE_DYSFUNCTIONS_TEMPLATE = {
         "Team members are deeply concerned about the prospect of letting down their peers.",
         "Team members challenge one another about their plans and approaches."
       ],
-      strategies:[ "Explicitly communicate goals and standards of behavior.", "Regularly discuss performance versus goals and standards." ] },
+      strategies:[ "Explicitly communicate goals and standards of behavior.", "Regularly discuss performance versus goals and standards." ],
+      i18n: { he: FIVE_DYSFUNCTIONS_DIMENSIONS_HE.accountability } },
     { key:"results", label:"Inattention to Results", order:5,
       green:"We stay focused on the team's collective results over individual status or ego.",
       red:"Individual goals or ego quietly take priority over the team's shared results.",
@@ -332,10 +318,11 @@ var FIVE_DYSFUNCTIONS_TEMPLATE = {
         "Morale is significantly affected by the failure to achieve team goals.",
         "Team members are slow to seek credit for their own contributions, but quick to point out those of others."
       ],
-      strategies:[ "Keep the team focused on tangible group goals.", "Reward individuals based on team goals and collective success." ] }
+      strategies:[ "Keep the team focused on tangible group goals.", "Reward individuals based on team goals and collective success." ],
+      i18n: { he: FIVE_DYSFUNCTIONS_DIMENSIONS_HE.results } }
   ],
   i18n: {
-    he: { attribution: FIVE_DYSFUNCTIONS_ATTRIBUTION_HE, dimensions: FIVE_DYSFUNCTIONS_DIMENSIONS_HE }
+    he: { attribution: FIVE_DYSFUNCTIONS_ATTRIBUTION_HE }
   }
 };
 
@@ -430,7 +417,8 @@ var TUCKMAN_TEMPLATE = {
         "Team members look to the leader to provide direction and clarify expectations.",
         "Our team interactions feel polite and cautious, with members being careful about what they say."
       ],
-      strategies:[ "Invest time in team-building and getting to know one another.", "Clearly communicate goals, roles, and expectations.", "Provide strong initial leadership and structure.", "Create space for questions and clarification." ] },
+      strategies:[ "Invest time in team-building and getting to know one another.", "Clearly communicate goals, roles, and expectations.", "Provide strong initial leadership and structure.", "Create space for questions and clarification." ],
+      i18n: { he: TUCKMAN_DIMENSIONS_HE.forming } },
     { key:"storming", label:"Storming", order:2,
       green:"This stage is prominent right now — disagreements are surfacing, some resistance to the task is visible, and tension or personal agendas are showing up.",
       red:"Storming isn't strongly showing up right now — conflict and resistance aren't dominating right now.",
@@ -441,7 +429,8 @@ var TUCKMAN_TEMPLATE = {
         "Cliques, subgroups, or personal agendas are emerging within the team.",
         "Tension or emotional reactions are noticeable when decisions are made or direction is set."
       ],
-      strategies:[ "Surface disagreements and address them directly.", "Establish ground rules for productive conflict.", "Help team members understand diverse perspectives.", "Reaffirm team goals and shared purpose." ] },
+      strategies:[ "Surface disagreements and address them directly.", "Establish ground rules for productive conflict.", "Help team members understand diverse perspectives.", "Reaffirm team goals and shared purpose." ],
+      i18n: { he: TUCKMAN_DIMENSIONS_HE.storming } },
     { key:"norming", label:"Norming", order:3,
       green:"This stage is prominent right now — the team has agreed on shared norms, roles are clear, and mutual support is developing.",
       red:"Norming isn't strongly showing up right now — shared norms and role clarity may still be taking hold.",
@@ -452,7 +441,8 @@ var TUCKMAN_TEMPLATE = {
         "We are able to give and receive feedback constructively without fear.",
         "There is a sense of unity and mutual support among team members."
       ],
-      strategies:[ "Reinforce agreed-upon norms and working standards.", "Recognize and celebrate alignment and cooperation.", "Encourage peer feedback and mutual accountability.", "Build on emerging trust and cohesion." ] },
+      strategies:[ "Reinforce agreed-upon norms and working standards.", "Recognize and celebrate alignment and cooperation.", "Encourage peer feedback and mutual accountability.", "Build on emerging trust and cohesion." ],
+      i18n: { he: TUCKMAN_DIMENSIONS_HE.norming } },
     { key:"performing", label:"Performing", order:4,
       green:"This stage is prominent right now — the team operates flexibly and interdependently, with energy focused on results and strong productivity.",
       red:"Performing isn't strongly showing up right now — the team isn't operating with this level of flexibility and results focus.",
@@ -463,7 +453,8 @@ var TUCKMAN_TEMPLATE = {
         "The team produces high-quality results and maintains strong productivity.",
         "Team members take ownership and work interdependently with minimal supervision."
       ],
-      strategies:[ "Delegate decision-making and empower autonomy.", "Focus on continuous improvement and learning.", "Celebrate results and shared successes.", "Maintain psychological safety and trust." ] },
+      strategies:[ "Delegate decision-making and empower autonomy.", "Focus on continuous improvement and learning.", "Celebrate results and shared successes.", "Maintain psychological safety and trust." ],
+      i18n: { he: TUCKMAN_DIMENSIONS_HE.performing } },
     { key:"adjourning", label:"Adjourning", order:5,
       green:"This stage is prominent right now — the team is reflecting on what it accomplished and learned, and acknowledging each other's contributions as things wind down or change.",
       red:"Adjourning isn't strongly showing up right now — the team isn't in a winding-down or transition moment.",
@@ -474,10 +465,11 @@ var TUCKMAN_TEMPLATE = {
         "Team members express mixed emotions about the team ending or changing.",
         "We are taking time to celebrate successes and plan for what comes next."
       ],
-      strategies:[ "Conduct retrospectives and harvest lessons learned.", "Acknowledge individual and collective contributions.", "Recognize emotions and the value of relationships.", "Plan intentional closures and transitions." ] }
+      strategies:[ "Conduct retrospectives and harvest lessons learned.", "Acknowledge individual and collective contributions.", "Recognize emotions and the value of relationships.", "Plan intentional closures and transitions." ],
+      i18n: { he: TUCKMAN_DIMENSIONS_HE.adjourning } }
   ],
   i18n: {
-    he: { attribution: TUCKMAN_ATTRIBUTION_HE, dimensions: TUCKMAN_DIMENSIONS_HE }
+    he: { attribution: TUCKMAN_ATTRIBUTION_HE }
   }
 };
 
@@ -494,14 +486,15 @@ var SPOTIFY_TEMPLATE = {
   unit: "Squad", unitPlural: "Squads",
   attribution: SPOTIFY_ATTRIBUTION,
   dimensions: PLACEHOLDER_DIMENSIONS.map(function(d){
-    return { key:d.key, label:d.label, green:d.green, red:d.red, order:d.order };
+    return { key:d.key, label:d.label, green:d.green, red:d.red, order:d.order,
+      i18n: { he: SPOTIFY_DIMENSIONS_HE[d.key] } };
   }),
-  // Story 5: locale -> translated content, consulted only by loadTemplate()
-  // at the moment this starter template is loaded (see templates.js). Not
-  // consulted for the fresh-board seed (PLACEHOLDER_DIMENSIONS assigned
-  // directly, always English) or the Templates-modal list/name (Story 8).
+  // Board-level (not per-dimension) translation -- see loadTemplate() for
+  // when this gets copied onto a board's config, and localizedAttribution()
+  // for how it's applied live. Per-dimension translation lives on each
+  // dimension entry above instead (see localizedDimText()'s own comment).
   i18n: {
-    he: { attribution: SPOTIFY_ATTRIBUTION_HE, dimensions: SPOTIFY_DIMENSIONS_HE }
+    he: { attribution: SPOTIFY_ATTRIBUTION_HE }
   }
 };
 
@@ -614,7 +607,6 @@ if (typeof module !== "undefined" && module.exports) {
     STARTER_TEMPLATES: STARTER_TEMPLATES,
     localizedDimText: localizedDimText,
     localizedAttribution: localizedAttribution,
-    localizedSessionDimText: localizedSessionDimText,
     state: state
   };
 }

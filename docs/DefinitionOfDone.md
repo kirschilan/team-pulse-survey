@@ -132,3 +132,28 @@ and to every one already covered:
 - A real, non-trivial change gets a session-log entry in `STATUS.md` (see
   nearly every existing entry for the expected level of detail: what
   changed, why, what it fixed, and what was verified).
+- **A genuine architecture or UX decision — something the product owner
+  would want to see and react to before engineering time goes into it, not
+  a call you can make yourself — gets a working mockup, not a text
+  description, before implementation starts.** Build it as a real HTML
+  page/Artifact that reuses the app's actual design tokens (`styles.css`'s
+  CSS variables, its real fonts) and, wherever the proposal is interactive
+  (a toggle, an expand/collapse, a tab), make that interaction actually
+  work in the mockup rather than describing it in prose — a mockup the
+  product owner can click is a much shorter round-trip than a written
+  description they have to imagine and then correct. Ground it in the
+  app's own real content (an existing template's real dimension, real
+  copy) rather than lorem ipsum or a generic example. Call out open
+  questions the mockup itself doesn't resolve directly in the mockup, not
+  buried in a chat message. (Adopted 2026-09-14, after the bilingual-
+  dimensions proposal below — see STATUS.md's session log — got a clear
+  "go ahead" specifically because it was reviewed as a working page, not a
+  paragraph.)
+- **A change that introduces a new data shape (a new field, a new nesting,
+  a moved value) explicitly decides whether existing stored data needs a
+  migration path, and says so out loud — in the STATUS.md entry, or in the
+  PR/change description — rather than leaving it implicit.** Before this
+  product is out in real use, "no migration needed, nothing real depends
+  on the old shape yet" is a perfectly good answer — but it must be a
+  stated decision, not an oversight discovered later. Once real boards
+  exist, the same question needs a real answer, not the same default.

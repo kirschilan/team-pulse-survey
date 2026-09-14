@@ -26,14 +26,6 @@
 // there's no history feature beyond that brief window, matching the
 // "current snapshot only" decision made for the rest of the board, so
 // nothing is archived long-term.
-// See retro-join.js's own copy of this same helper for why a session's
-// dimensions need localizedSessionDimText() (keyed off the session's OWN
-// frozen templateName) rather than localizedDimText()/activeStarterTemplate()
-// (keyed off whichever template the live board currently has active).
-function localizedSessionText(dim, field, sess){
-  return localizedSessionDimText(dim, field, sess.templateName);
-}
-
 function openSessionForSquad(squadId){
   for(var i=0;i<state.sessions.length;i++){
     var s = state.sessions[i];
@@ -70,13 +62,16 @@ function coFacilitateSessionByCode(code){
 
 function startSession(sq){
   // snapshot dimensions the same way saveCurrentAsTemplate()/loadTemplate()
-  // do, carrying statements/scoreBands/strategies along for whichever
-  // future step reads them (nothing does yet)
+  // do, carrying statements/scoreBands/strategies (and any Hebrew
+  // translation the dimension has -- see state.js's localizedDimText())
+  // along so the retro flow can render this session correctly translated
+  // (Story 11 / the retro-statement-translation follow-up).
   var dimsSnapshot = sortedDimensions().map(function(d){
     var spec = { key:d.key, label:d.label, green:d.green||"", red:d.red||"", order:d.order||0 };
     if(isStatementDimension(d)) spec.statements = d.statements;
     if(d.scoreBands) spec.scoreBands = d.scoreBands;
     if(d.strategies && d.strategies.length) spec.strategies = d.strategies;
+    if(d.i18n) spec.i18n = d.i18n;
     return spec;
   });
   var payload = {
@@ -174,7 +169,7 @@ function renderSessionCardHtml(sq){
         var pillWord = !result ? t("retro.live.waiting") : colorWordLocalized(result.color);
         var trendHtml = (result && (result.trend==="up" || result.trend==="down"))
           ? '<span class="dim-trend '+result.trend+'" title="'+esc(trendWordLocalized(result.trend))+'">'+trendIcon(result.trend)+'</span>' : '';
-        var dimLabel = localizedSessionText(dim, "label", sess);
+        var dimLabel = localizedDimText(dim, "label");
         return '<div class="live-dim-row">' +
           '<span class="dim-name" dir="auto">'+esc(dimLabel)+'</span>' +
           '<span class="live-dim-actions">' +
@@ -192,7 +187,7 @@ function renderSessionCardHtml(sq){
       // pills above, and only reachable at all while already in live mode.
       var respTableHtml = "";
       if(responses.length){
-        var headHtml = activeDims.map(function(d){ return '<th dir="auto">'+esc(localizedSessionText(d, "label", sess))+'</th>'; }).join("");
+        var headHtml = activeDims.map(function(d){ return '<th dir="auto">'+esc(localizedDimText(d, "label"))+'</th>'; }).join("");
         var bodyHtml = responses.map(function(r, i){
           var cells = activeDims.map(function(d){
             var b = bandForResponse(d, r);
@@ -410,7 +405,7 @@ function bindSessionCardEvents(sq){
       return;
     }
     var summary = results.map(function(x){
-      return localizedSessionText(x.dim, "label", sess) + ": " + colorWordLocalized(x.result.color) + (x.result.overridden ? t("retro.confirmFinish.overriddenSuffix") : "");
+      return localizedDimText(x.dim, "label") + ": " + colorWordLocalized(x.result.color) + (x.result.overridden ? t("retro.confirmFinish.overriddenSuffix") : "");
     }).join(", ");
     openConfirm(
       t("retro.confirmFinish.title"),
@@ -476,10 +471,10 @@ function openSessionOverrideEditor(sess, dimKey){
     trend: (existingOverride && existingOverride.trend) || "flat",
     note: (existingOverride && existingOverride.note) || ""
   };
-  document.getElementById("modalTitle").textContent = localizedSessionText(d, "label", sess);
+  document.getElementById("modalTitle").textContent = localizedDimText(d, "label");
   document.getElementById("modalSquadline").textContent = t("retro.override.squadline");
-  document.getElementById("modalGreen").textContent = localizedSessionText(d, "green", sess) || "";
-  document.getElementById("modalRed").textContent = localizedSessionText(d, "red", sess) || "";
+  document.getElementById("modalGreen").textContent = localizedDimText(d, "green") || "";
+  document.getElementById("modalRed").textContent = localizedDimText(d, "red") || "";
   var noteBox = document.getElementById("modalNote");
   noteBox.value = state.editingOverride.note;
   noteBox.placeholder = t("retro.override.notePlaceholder");

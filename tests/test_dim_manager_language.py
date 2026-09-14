@@ -87,7 +87,7 @@ with sync_playwright() as p:
     page.click('#confirmCancel')  # don't actually remove
     page.wait_for_timeout(100)
 
-    print("=== statement-scored dimension shows a Hebrew hint with the count interpolated ===")
+    print("=== statement-scored dimension shows an editable statements list with a Hebrew heading ===")
     page.click('#dimDoneBtn')
     page.wait_for_timeout(100)
     page.click('#templatesBtn')
@@ -99,10 +99,11 @@ with sync_playwright() as p:
     page.click('#dimManageBtn')
     page.wait_for_timeout(150)
     stmt_count = page.evaluate("dimByKey('trust').statements.length")
-    stmt_hint_he = page.eval_on_selector('.dim-row[data-key="trust"] .hint', 'el=>el.textContent')
-    print("statement-count hint (Hebrew, expecting count", stmt_count, "):", stmt_hint_he)
-    assert stmt_hint_he.strip() and "self-assessment statements" not in stmt_hint_he
-    assert str(stmt_count) in stmt_hint_he
+    stmt_heading_he = page.eval_on_selector('.dim-row[data-key="trust"] .field-label', 'el=>el.textContent')
+    stmt_inputs = page.eval_on_selector_all('.dim-row[data-key="trust"] [data-field="statements"][data-lang="en"]', 'els=>els.length')
+    print("statements heading (Hebrew):", stmt_heading_he, "| editable statement inputs:", stmt_inputs)
+    assert stmt_heading_he.strip() and "Self-assessment statements" not in stmt_heading_he
+    assert stmt_inputs == stmt_count
 
     print("=== switching back to English restores every string above ===")
     page.click('#dimDoneBtn')

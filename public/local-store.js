@@ -42,22 +42,47 @@
     for (var i=1;i<=3;i++){
       STORE["squads/squad-"+i] = { name:"Squad "+i, order:i, dimensions:{}, updatedAt: new Date().toISOString() };
     }
+    // Hebrew translation (5th element) duplicates state.js's own
+    // SPOTIFY_DIMENSIONS_HE -- this file loads BEFORE state.js (see
+    // index.html's script order) and already deliberately duplicates every
+    // other piece of seed data it mirrors (see this file's own header
+    // comment), so referencing state.js's copy isn't an option. Kept here
+    // so a BRAND NEW board -- seeded here, never explicitly (re)loaded via
+    // the Templates modal -- still shows a translated grid the moment
+    // someone switches to Hebrew, same as state.js's localizedDimText()
+    // gives any Spotify-template dimension everywhere else (the exact gap
+    // Story 5 originally fixed, now re-guarded here after the bilingual-
+    // dimensions redesign moved translation onto the dimension itself
+    // instead of a value-matched template lookup).
     var dims = [
-      ["release","Easy to release",1,"Releasing is routine, low-risk, and low-drama.","Releases are rare, risky, or dreaded events."],
-      ["process","Suitable process",2,"Our way of working fits us, and we can tune it ourselves.","Process feels imposed, bureaucratic, or mismatched to how we work."],
-      ["techquality","Tech quality",3,"We're proud of our codebase and engineering practices.","Quality is a constant source of pain and slow-down."],
-      ["value","Value",4,"What we ship clearly matters to users and the business.","We're not confident our work is moving the needle."],
-      ["speed","Speed",5,"We get things done quickly, without cutting corners.","Progress feels slow and heavy."],
-      ["mission","Mission",6,"We know why we exist and where we're headed.","The mission is vague, or keeps shifting under us."],
-      ["fun","Fun",7,"We genuinely enjoy working together.","Coming to work feels like a grind."],
-      ["learning","Learning",8,"We're growing, trying new things, and sharing what we learn.","We're stagnant — same patterns, no time to learn."],
-      ["support","Support",9,"We get the help we need, when we need it, from the org around us.","We're on our own — blocked, or ignored."],
-      ["pawns","Pawns or players",10,"We help decide what to build and how.","We just execute a backlog someone else wrote."],
-      ["teamwork","Teamwork",11,"We function as one team, not a collection of individuals.","We're fragmented, siloed, or in open conflict."],
-      ["codebase","Codebase health",12,"The codebase is something we can safely and confidently change.","Every change feels risky, brittle, or full of surprises."]
+      ["release","Easy to release",1,"Releasing is routine, low-risk, and low-drama.","Releases are rare, risky, or dreaded events.",
+        "קלות שחרור לפרודקשן","השחרור הוא שגרתי, בסיכון נמוך וללא דרמה.","שחרורים הם נדירים, מסוכנים, או מעוררי חשש."],
+      ["process","Suitable process",2,"Our way of working fits us, and we can tune it ourselves.","Process feels imposed, bureaucratic, or mismatched to how we work.",
+        "תהליך עבודה מתאים","צורת העבודה שלנו מתאימה לנו, ואנחנו יכולים לכוונן אותה בעצמנו.","התהליך מרגיש כפוי, בירוקרטי, או לא תואם לאופן שבו אנחנו עובדים."],
+      ["techquality","Tech quality",3,"We're proud of our codebase and engineering practices.","Quality is a constant source of pain and slow-down.",
+        "איכות טכנולוגית","אנחנו גאים בקוד ובשיטות העבודה ההנדסיות שלנו.","האיכות היא מקור מתמשך לכאב ולהאטה."],
+      ["value","Value",4,"What we ship clearly matters to users and the business.","We're not confident our work is moving the needle.",
+        "ערך","ברור שמה שאנחנו משחררים חשוב למשתמשים ולעסק.","אנחנו לא בטוחים שהעבודה שלנו באמת מקדמת משהו."],
+      ["speed","Speed",5,"We get things done quickly, without cutting corners.","Progress feels slow and heavy.",
+        "מהירות","אנחנו מספקים דברים במהירות, בלי לקצר תהליכים.","ההתקדמות מרגישה איטית וכבדה."],
+      ["mission","Mission",6,"We know why we exist and where we're headed.","The mission is vague, or keeps shifting under us.",
+        "משימה","אנחנו יודעים לשם מה אנחנו קיימים ולאן אנחנו הולכים.","המשימה מעורפלת, או משתנה כל הזמן."],
+      ["fun","Fun",7,"We genuinely enjoy working together.","Coming to work feels like a grind.",
+        "כיף","אנחנו נהנים באמת לעבוד ביחד.","להגיע לעבודה מרגיש כמו התשה."],
+      ["learning","Learning",8,"We're growing, trying new things, and sharing what we learn.","We're stagnant — same patterns, no time to learn.",
+        "למידה","אנחנו מתפתחים, מנסים דברים חדשים, ומשתפים את מה שאנחנו לומדים.","אנחנו קופאים על השמרים — אותם דפוסים, בלי זמן ללמוד."],
+      ["support","Support",9,"We get the help we need, when we need it, from the org around us.","We're on our own — blocked, or ignored.",
+        "תמיכה","אנחנו מקבלים את העזרה שאנחנו צריכים, בזמן שאנחנו צריכים אותה, מהארגון שסביבנו.","אנחנו לבד — חסומים, או מתעלמים מאיתנו."],
+      ["pawns","Pawns or players",10,"We help decide what to build and how.","We just execute a backlog someone else wrote.",
+        "שחקנים או כלים במשחק","אנחנו עוזרים להחליט מה לבנות ואיך.","אנחנו רק מבצעים בקלוג שמישהו אחר כתב."],
+      ["teamwork","Teamwork",11,"We function as one team, not a collection of individuals.","We're fragmented, siloed, or in open conflict.",
+        "עבודת צוות","אנחנו מתפקדים כצוות אחד, לא כאוסף של יחידים.","אנחנו מפוצלים, מבודדים, או בקונפליקט גלוי."],
+      ["codebase","Codebase health",12,"The codebase is something we can safely and confidently change.","Every change feels risky, brittle, or full of surprises.",
+        "בריאות בסיס הקוד","בסיס הקוד הוא משהו שאנחנו יכולים לשנות בבטחה ובביטחון.","כל שינוי מרגיש מסוכן, שביר, או מלא בהפתעות."]
     ];
     dims.forEach(function(d){
-      STORE["dimensions/"+d[0]] = { label:d[1], order:d[2], green:d[3], red:d[4] };
+      STORE["dimensions/"+d[0]] = { label:d[1], order:d[2], green:d[3], red:d[4],
+        i18n: { he: { label:d[5], green:d[6], red:d[7] } } };
     });
     STORE["meta/config"] = {
       unit:"Squad", unitPlural:"Squads", activeTemplateName:"Spotify Squad Health Check",

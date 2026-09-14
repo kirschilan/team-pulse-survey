@@ -273,13 +273,24 @@ var LOCALE_EN = {
   "dimManager.redLabel": "Red looks like",
   "dimManager.greenPlaceholder": "What healthy looks like",
   "dimManager.redPlaceholder": "What unhealthy looks like",
-  "dimManager.statementsHint": "Scored from {count} self-assessment statements (not editable here yet) — rating this dimension still uses the swatches above until the statement-based entry flow ships.",
+  "dimManager.statementsHeading": "Self-assessment statements",
+  "dimManager.strategiesHeading": "Takeaway strategies",
   "dimManager.addButton": "+ Add dimension",
   "dimManager.doneButton": "Done",
   "dimManager.confirmRemoveTitle": "Remove dimension?",
   "dimManager.confirmRemoveMessage": "Remove “{name}” from the grid? Any ratings already given for it will be hidden (not deleted) unless you add it back.",
   "dimManager.confirmRemoveButton": "Remove",
-  "dimManager.untitledFallback": "this dimension"
+  "dimManager.untitledFallback": "this dimension",
+
+  // Bilingual dimensions: the per-dimension Hebrew-translation panel in
+  // Edit Dimensions. These describe the panel itself (chrome, follows the
+  // admin's own current UI language) -- the panel's OWN field labels are
+  // fixed Hebrew text regardless of UI language (you're labeling Hebrew
+  // content, not translating app chrome), so they're not t() keys.
+  "dimManager.i18n.addToggle": "🇮🇱 Add a Hebrew translation",
+  "dimManager.i18n.editedToggle": "🇮🇱 Hebrew translation — added",
+  "dimManager.i18n.sourceDefault": "Default translation from {template} — editable",
+  "dimManager.i18n.sourceNone": "No translation yet — this dimension shows English under a Hebrew UI until one is added"
 };
 
 if (typeof module !== "undefined" && module.exports) {

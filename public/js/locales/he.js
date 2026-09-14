@@ -245,13 +245,19 @@ var LOCALE_HE = {
   "dimManager.redLabel": "אדום נראה כך",
   "dimManager.greenPlaceholder": "איך נראית בריאות",
   "dimManager.redPlaceholder": "איך נראה חוסר בריאות",
-  "dimManager.statementsHint": "מדורג לפי {count} היגדי הערכה עצמית (לא ניתן לעריכה כאן עדיין) — דירוג הממד הזה עדיין משתמש בדוגמיות שלמעלה עד שתהליך ההזנה מבוסס ההיגדים ישוגר.",
+  "dimManager.statementsHeading": "היגדי הערכה עצמית",
+  "dimManager.strategiesHeading": "אסטרטגיות מפתח",
   "dimManager.addButton": "+ הוספת ממד",
   "dimManager.doneButton": "סיום",
   "dimManager.confirmRemoveTitle": "להסיר את הממד?",
   "dimManager.confirmRemoveMessage": "להסיר את “{name}” מהרשת? דירוגים שכבר ניתנו לו יוסתרו (לא יימחקו) אלא אם תוסיפו אותו בחזרה.",
   "dimManager.confirmRemoveButton": "הסרה",
-  "dimManager.untitledFallback": "הממד הזה"
+  "dimManager.untitledFallback": "הממד הזה",
+
+  "dimManager.i18n.addToggle": "🇮🇱 הוספת תרגום לעברית",
+  "dimManager.i18n.editedToggle": "🇮🇱 תרגום לעברית — נוסף",
+  "dimManager.i18n.sourceDefault": "תרגום ברירת מחדל מ-{template} — ניתן לעריכה",
+  "dimManager.i18n.sourceNone": "אין עדיין תרגום — הממד הזה יוצג באנגלית תחת ממשק בעברית עד שיתווסף תרגום"
 };
 
 if (typeof module !== "undefined" && module.exports) {
