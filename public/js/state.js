@@ -461,7 +461,25 @@ state.coFacilitateSessionId = getQueryParam("cofacilitate");
     var lang = localStorage.getItem("squadpulse:lang");
     if(v==="tribe" || v==="squad" || v==="admin") state.ui.view = v;
     if(s) state.ui.selectedSquadId = s;
-    if(lang==="en" || lang==="he") state.ui.locale = lang;
+    if(lang==="en" || lang==="he"){
+      state.ui.locale = lang;
+    } else {
+      // No preference of THIS device's own yet -- a join/co-facilitate
+      // link's own `&lang=` param (see helpers.js's langParamFor()) is the
+      // only other source, and only as a fallback default: it never
+      // overrides a preference this device already made for itself, which
+      // is exactly why this branch is reached only when `lang` above was
+      // absent/invalid. Treated as this device's own preference from here
+      // on (persisted, not just applied for this one page load) -- a
+      // participant who joined via a Hebrew link is overwhelmingly likely
+      // a Hebrew speaker, so remembering it saves them from re-discovering
+      // the language switcher on every future visit too.
+      var linkLang = getQueryParam("lang");
+      if(linkLang==="en" || linkLang==="he"){
+        state.ui.locale = linkLang;
+        try{ localStorage.setItem("squadpulse:lang", linkLang); }catch(e2){ /* per-viewer convenience only */ }
+      }
+    }
   }catch(e){ /* localStorage unavailable -- fall back to defaults */ }
 })();
 
