@@ -1507,6 +1507,49 @@ not just in this repo's own tests.
     a genuine architecture change (today's translation tables are hardcoded template constants, not
     editable board data) the product owner asked to see a design proposal for before any
     implementation starts.
+- 2026-09-14 — Second file in the condition-based-wait perf pass (see the 2026-09-14 entry above
+  on `test_hebrew_rtl_coverage.py` for the full rationale): `test_template_switching_and_csv_import.py`
+  (Copilot's #9-ranked file), on its own short-lived branch. Same treatment -- removed every
+  `wait_for_timeout()`, relying on `click()`/`fill()`'s own auto-wait where the next action was one
+  of those, and adding `wait_for_selector()`/`wait_for_function()` only where the next call was
+  `query_selector()`/`eval_on_selector()`/`evaluate()`. Unlike the RTL file, this one needed no
+  `state="attached"` correction -- clean on the first 10x stress-test pass, likely because this
+  file's post-action reads are mostly `evaluate()` polls on `window.__FAKE_STORE__` fields
+  (`wait_for_function`, no visibility concept at all) rather than `eval_on_selector()` calls whose
+  selectors happened to also match hidden markup elsewhere. Result: ~5.25s -> ~1.6-2.0s per run
+  locally, 10/10 clean, then the full 43-file suite (69-test unit suite included), zero
+  regressions.
+- 2026-09-14 — Third file in the condition-based-wait perf pass: `test_tribe_hotspots.py`
+  (Copilot's #3-ranked file), on its own short-lived branch. Same treatment. The `rate()` helper's
+  5-click chain needed no waits at all -- Playwright's `click()` auto-waits on every step, and
+  nothing reads state between the 7 calls to it, so the whole chain just needed to be left alone.
+  One read needed care beyond a plain "did the element land" check: after the 7 ratings,
+  `#statHotspot` already held content from the earlier "None yet" case, so simple selector
+  presence wasn't a real completion signal for the POST-rating value -- polled
+  (`wait_for_function`) for the actual expected text instead, the same value the assertion right
+  after it re-checks (the same pattern this repo's own `wait_for_scored()` helper already uses
+  elsewhere for a comparable "wait for the real end-state, not just some transition" case).
+  Result: ~7.2s -> ~2.3-2.6s per run locally, 10/10 clean, then the full 43-file suite, zero
+  regressions.
+- 2026-09-14 — Fourth file in the condition-based-wait perf pass: `test_tooltip_busy_overlay_and_csv_key.py`
+  (Copilot's #4-ranked file), on its own short-lived branch. This one caught a genuinely new
+  failure mode, not just a repeat of `state="attached"`: `showBusy()`/`hideBusy()` (`modals.js`)
+  bracket a Promise chain (`templates.js`'s `loadTemplate()`) that this fake store resolves fast
+  enough to complete within the SAME JS turn as the click that triggers it. A `wait_for_function`
+  polling for `busyOverlay.hidden === false` -- an EXTERNAL CDP call that only gets a turn once the
+  page's own microtask queue drains -- timed out 15/15, because by the time any external poll runs,
+  `hideBusy()` has usually already fired too. This is exactly what the file's own top-of-file
+  comment already warned about ("polling at an arbitrary later point would otherwise likely just
+  see the already-hidden end state") -- confirmed empirically the hard way instead of heeding it
+  up front. `__busyHistory`, recorded by a `MutationObserver` running on the PAGE's own timeline
+  rather than an external poll, is the only reliable record of that transient show; the fix waits
+  for the cycle to fully settle (`hidden === true`) and reads the recorded history, rather than
+  trying to catch the shown moment live. Every hover/focus/blur tooltip check got a
+  `wait_for_function` tied to `dimTooltip`'s hidden state or exact expected content (those handlers
+  run synchronously, so these resolve near-instantly); the three CSV-import waits became
+  `pendingImportPlan !== null` polls, same as the other files in this pass. Result: ~6.9s -> ~2.1-2.2s
+  per run locally, 15/15 clean (a bigger stress-test batch than the first three files, given the
+  event-timing sensitivity here), then the full 43-file suite, zero regressions.
 - 2026-09-14 — **Bilingual dimensions: made a dimension's Hebrew translation a real, editable field
   on the dimension itself, replacing the hardcoded template-level lookup table.** Product owner
   approved this from a working mockup (an Artifact reusing the app's real design tokens, with the
@@ -1576,3 +1619,46 @@ not just in this repo's own tests.
     clarifying questions. Also added: a new data shape must explicitly say whether it needs a
     migration path for existing stored data, even when the honest answer (as here) is "not yet,
     nothing real depends on the old shape."
+- 2026-09-14 — Second file in the condition-based-wait perf pass (see the 2026-09-14 entry above
+  on `test_hebrew_rtl_coverage.py` for the full rationale): `test_template_switching_and_csv_import.py`
+  (Copilot's #9-ranked file), on its own short-lived branch. Same treatment -- removed every
+  `wait_for_timeout()`, relying on `click()`/`fill()`'s own auto-wait where the next action was one
+  of those, and adding `wait_for_selector()`/`wait_for_function()` only where the next call was
+  `query_selector()`/`eval_on_selector()`/`evaluate()`. Unlike the RTL file, this one needed no
+  `state="attached"` correction -- clean on the first 10x stress-test pass, likely because this
+  file's post-action reads are mostly `evaluate()` polls on `window.__FAKE_STORE__` fields
+  (`wait_for_function`, no visibility concept at all) rather than `eval_on_selector()` calls whose
+  selectors happened to also match hidden markup elsewhere. Result: ~5.25s -> ~1.6-2.0s per run
+  locally, 10/10 clean, then the full 43-file suite (69-test unit suite included), zero
+  regressions.
+- 2026-09-14 — Third file in the condition-based-wait perf pass: `test_tribe_hotspots.py`
+  (Copilot's #3-ranked file), on its own short-lived branch. Same treatment. The `rate()` helper's
+  5-click chain needed no waits at all -- Playwright's `click()` auto-waits on every step, and
+  nothing reads state between the 7 calls to it, so the whole chain just needed to be left alone.
+  One read needed care beyond a plain "did the element land" check: after the 7 ratings,
+  `#statHotspot` already held content from the earlier "None yet" case, so simple selector
+  presence wasn't a real completion signal for the POST-rating value -- polled
+  (`wait_for_function`) for the actual expected text instead, the same value the assertion right
+  after it re-checks (the same pattern this repo's own `wait_for_scored()` helper already uses
+  elsewhere for a comparable "wait for the real end-state, not just some transition" case).
+  Result: ~7.2s -> ~2.3-2.6s per run locally, 10/10 clean, then the full 43-file suite, zero
+  regressions.
+- 2026-09-14 — Fourth file in the condition-based-wait perf pass: `test_tooltip_busy_overlay_and_csv_key.py`
+  (Copilot's #4-ranked file), on its own short-lived branch. This one caught a genuinely new
+  failure mode, not just a repeat of `state="attached"`: `showBusy()`/`hideBusy()` (`modals.js`)
+  bracket a Promise chain (`templates.js`'s `loadTemplate()`) that this fake store resolves fast
+  enough to complete within the SAME JS turn as the click that triggers it. A `wait_for_function`
+  polling for `busyOverlay.hidden === false` -- an EXTERNAL CDP call that only gets a turn once the
+  page's own microtask queue drains -- timed out 15/15, because by the time any external poll runs,
+  `hideBusy()` has usually already fired too. This is exactly what the file's own top-of-file
+  comment already warned about ("polling at an arbitrary later point would otherwise likely just
+  see the already-hidden end state") -- confirmed empirically the hard way instead of heeding it
+  up front. `__busyHistory`, recorded by a `MutationObserver` running on the PAGE's own timeline
+  rather than an external poll, is the only reliable record of that transient show; the fix waits
+  for the cycle to fully settle (`hidden === true`) and reads the recorded history, rather than
+  trying to catch the shown moment live. Every hover/focus/blur tooltip check got a
+  `wait_for_function` tied to `dimTooltip`'s hidden state or exact expected content (those handlers
+  run synchronously, so these resolve near-instantly); the three CSV-import waits became
+  `pendingImportPlan !== null` polls, same as the other files in this pass. Result: ~6.9s -> ~2.1-2.2s
+  per run locally, 15/15 clean (a bigger stress-test batch than the first three files, given the
+  event-timing sensitivity here), then the full 43-file suite, zero regressions.

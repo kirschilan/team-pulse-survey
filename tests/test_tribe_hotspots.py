@@ -29,11 +29,13 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
 
     print("=== nothing scored yet: no dimension is red across squads ===")
     page.click('.view-btn[data-view="tribe"]')
-    page.wait_for_timeout(150)
+    # eval_on_selector() doesn't auto-wait -- wait for the JS-rendered
+    # hotspot rows (the real "initial render landed" signal) rather than
+    # guess how long boot + the tribe-view render takes.
+    page.wait_for_selector('#hotspotList .hotspot-row', state="attached")
     print("statHotspot before any ratings:", page.eval_on_selector('#statHotspot', 'el=>el.textContent'))
     assert page.eval_on_selector('#statHotspot', 'el=>el.textContent') == "None yet"
     # rows still render one per dimension (unscored counts), just with 0 red --
@@ -45,24 +47,25 @@ with sync_playwright() as p:
 
     # ---- add a 3rd squad (the fake store already seeds squad-1/squad-2) ----
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('#addSquadBtn')
-    page.wait_for_timeout(200)
+    # evaluate() doesn't auto-wait -- poll for the 3rd squad actually
+    # landing in the store instead of guessing.
+    page.wait_for_function("() => Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('squads/')).length === 3")
     squad_ids = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k=>k.startsWith('squads/'))")
     print("squads after adding a 3rd:", squad_ids)
     assert len(squad_ids) == 3
     squad3_id = next(k.split("/")[1] for k in squad_ids if k not in ("squads/squad-1", "squads/squad-2"))
 
+    # Every step here is click() -- Playwright auto-waits for each target to
+    # become actionable, so the chain needs no waits of its own. The caller
+    # (below) waits once for the aggregate Tribe-view effect of all 7 calls,
+    # rather than each call waiting on its own for a state nothing reads yet.
     def rate(squad_id, dim_key, color):
         page.click('.view-btn[data-view="squad"]')
-        page.wait_for_timeout(100)
         page.click('.squad-pick-btn[data-id="%s"]' % squad_id)
-        page.wait_for_timeout(150)
         page.click('#squadDetail .cell-btn[data-squad="%s"][data-dim="%s"]' % (squad_id, dim_key))
-        page.wait_for_timeout(150)
         page.click('.swatch.%s' % color)
         page.click('#modalSave')
-        page.wait_for_timeout(200)
 
     # release: 2 of 3 squads red (squad-3 left unscored) -> weightScore 4, dimReds=2
     rate("squad-1", "release", "crit")
@@ -77,7 +80,12 @@ with sync_playwright() as p:
 
     print("=== Tribe view after cross-squad ratings ===")
     page.click('.view-btn[data-view="tribe"]')
-    page.wait_for_timeout(150)
+    # eval_on_selector() doesn't auto-wait, and #statHotspot already held
+    # content before this point (the "None yet" case above) -- so simple
+    # presence isn't a real signal here. Poll for the actual expected
+    # rollup value instead, the same causal condition the assertion below
+    # re-checks.
+    page.wait_for_function("() => document.querySelector('#statHotspot') && document.querySelector('#statHotspot').textContent === 'Easy to release'")
 
     hot_label = page.eval_on_selector('#statHotspot', 'el=>el.textContent')
     hot_sub = page.eval_on_selector('#statHotspotSub', 'el=>el.textContent')
