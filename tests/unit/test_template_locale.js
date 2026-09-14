@@ -18,6 +18,7 @@ const {
   SPOTIFY_ATTRIBUTION,
   localizedDimText,
   localizedAttribution,
+  localizedSessionDimText,
   state,
 } = require(path.join(__dirname, "..", "..", "public", "js", "state.js"));
 
@@ -120,6 +121,49 @@ test("localizedDimText()/localizedAttribution() work for ANY starter template th
   }
 });
 
+// localizedSessionDimText(): a retro session freezes its own dimensions
+// (including .statements/.strategies) at start time, in the session doc --
+// NOT in state.dimensions, so localizedDimText()'s activeStarterTemplate()
+// lookup (keyed off the LIVE board's state.config.activeTemplateName) is
+// the wrong template once the board has moved on to something else since
+// the session started. This sibling helper takes the session's own frozen
+// templateName explicitly instead, and additionally covers array fields
+// (statements/strategies), which localizedDimText() never needed to before
+// this -- reference equality (`!==`, correct for a string field) would
+// wrongly treat a value-identical-but-different-array-instance statements
+// list as "customized," so this must compare by VALUE.
+test("localizedSessionDimText() localizes statements/strategies via the SESSION's own templateName, not the live board's current template", () => {
+  resetState("Some other template entirely -- board moved on since the session started");
+  state.ui.locale = "he";
+  const trustEnglish = FIVE_DYSFUNCTIONS_TEMPLATE.dimensions.find((d) => d.key === "trust");
+  const heTrust = FIVE_DYSFUNCTIONS_TEMPLATE.i18n.he.dimensions.trust;
+  assert.deepEqual(localizedSessionDimText(trustEnglish, "statements", FIVE_DYSFUNCTIONS_TEMPLATE.name), heTrust.statements);
+  assert.deepEqual(localizedSessionDimText(trustEnglish, "strategies", FIVE_DYSFUNCTIONS_TEMPLATE.name), heTrust.strategies);
+});
+
+test("localizedSessionDimText() falls back to English when the active locale is English", () => {
+  resetState();
+  const trustEnglish = FIVE_DYSFUNCTIONS_TEMPLATE.dimensions.find((d) => d.key === "trust");
+  assert.deepEqual(localizedSessionDimText(trustEnglish, "statements", FIVE_DYSFUNCTIONS_TEMPLATE.name), trustEnglish.statements);
+});
+
+test("localizedSessionDimText() falls back to English when templateName matches nothing in STARTER_TEMPLATES", () => {
+  resetState();
+  state.ui.locale = "he";
+  const trustEnglish = FIVE_DYSFUNCTIONS_TEMPLATE.dimensions.find((d) => d.key === "trust");
+  assert.deepEqual(localizedSessionDimText(trustEnglish, "statements", "A template that doesn't exist"), trustEnglish.statements);
+});
+
+test("localizedSessionDimText() never overrides statements/strategies that no longer match the template's own default value-for-value", () => {
+  resetState();
+  state.ui.locale = "he";
+  const trustEnglish = FIVE_DYSFUNCTIONS_TEMPLATE.dimensions.find((d) => d.key === "trust");
+  const customized = Object.assign({}, trustEnglish, { statements: ["A completely different statement, never translated"] });
+  assert.deepEqual(localizedSessionDimText(customized, "statements", FIVE_DYSFUNCTIONS_TEMPLATE.name), customized.statements);
+  // strategies weren't touched -- that field should still localize on its own
+  assert.deepEqual(localizedSessionDimText(customized, "strategies", FIVE_DYSFUNCTIONS_TEMPLATE.name), FIVE_DYSFUNCTIONS_TEMPLATE.i18n.he.dimensions.trust.strategies);
+});
+
 // Explicit per-story markers -- these are the actual "watch it fail" targets
 // for Stories 7 and 8 (Tuckman/Five Dysfunctions dimension-content
 // translation) before either template's own i18n data is written.
@@ -145,6 +189,20 @@ test("FIVE_DYSFUNCTIONS_TEMPLATE has its own Hebrew translation table (Story 8)"
       assert.ok(String(tr.label || "").trim(), "blank Hebrew label for: " + d.key);
       assert.ok(String(tr.green || "").trim(), "blank Hebrew green for: " + d.key);
       assert.ok(String(tr.red || "").trim(), "blank Hebrew red for: " + d.key);
+      // A statement-scored dimension's survey questions/takeaway strategies
+      // need their own Hebrew counterpart too, same array length and order
+      // as the English default (statements are read by index -- see
+      // retro-join.js's interleavedStatements()), not just label/green/red.
+      if (d.statements) {
+        assert.ok(Array.isArray(tr.statements) && tr.statements.length === d.statements.length,
+          "Hebrew statements array missing/wrong length for: " + d.key + " in " + tpl.name);
+        tr.statements.forEach((s, i) => assert.ok(String(s || "").trim(), `blank Hebrew statement #${i} for: ` + d.key));
+      }
+      if (d.strategies) {
+        assert.ok(Array.isArray(tr.strategies) && tr.strategies.length === d.strategies.length,
+          "Hebrew strategies array missing/wrong length for: " + d.key + " in " + tpl.name);
+        tr.strategies.forEach((s, i) => assert.ok(String(s || "").trim(), `blank Hebrew strategy #${i} for: ` + d.key));
+      }
     });
   });
 

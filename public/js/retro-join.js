@@ -107,21 +107,33 @@ document.getElementById("joinCodeInput").addEventListener("keydown", function(e)
   if(e.key==="Enter") submitJoinCode();
 });
 
+// A retro session's dimensions are snapshotted at session start (see
+// startSession() in retro-facilitator.js) -- always the template's own
+// English canonical text, same "stored data is locale-independent"
+// architecture as the live board's own dimensions (state.js). Localizing
+// them for display needs the SESSION's own frozen templateName, not
+// necessarily the board's CURRENT template -- see state.js's
+// localizedSessionDimText()/starterTemplateByName() for why a session
+// can't just reuse localizedDimText()/activeStarterTemplate().
+function localizedSessionText(dim, field, sess){
+  return localizedSessionDimText(dim, field, sess.templateName);
+}
+
 // Personal result shown to a participant right after they submit one
 // dimension: their score, its band, the pyramid's characterization line
 // for anything not fully green, and the matching takeaway strategies. A
 // direct-rating (Spotify-style) dimension has a band but no numeric sum --
 // the score badge is simply omitted for those.
-function renderPersonalResultHtml(dim, result){
+function renderPersonalResultHtml(dim, result, sess){
   var band = result.band;
   var bandWord = colorWordLocalized(band);
-  var msg = band==="good" ? dim.green : dim.red;
-  var strategies = dim.strategies || [];
+  var msg = band==="good" ? localizedSessionText(dim, "green", sess) : localizedSessionText(dim, "red", sess);
+  var strategies = localizedSessionText(dim, "strategies", sess) || [];
   var showStrategies = band!=="good" && strategies.length;
   var scoreHtml = (result.sum!==undefined && result.sum!==null)
     ? '<span class="result-score '+band+'">'+result.sum+'</span>' : "";
   return '<div class="personal-result">' +
-    '<div class="field-label" style="margin-top:0;">'+esc(dim.label)+'</div>' +
+    '<div class="field-label" style="margin-top:0;">'+esc(localizedSessionText(dim, "label", sess))+'</div>' +
     '<div class="result-hero">'+scoreHtml+'<span class="pill '+band+'">'+bandWord+'</span></div>' +
     (msg ? '<p class="hint" style="margin:0 0 '+(showStrategies?'10px':'0')+';" dir="auto">'+esc(msg)+'</p>' : "") +
     (showStrategies ?
@@ -139,12 +151,15 @@ function renderPersonalResultHtml(dim, result){
 // join screen re-renders on every session-doc change (see
 // listenJoinSession), so a fresh random order on each render would
 // reshuffle the questions out from under someone mid-survey.
-function interleavedStatements(dims){
+function interleavedStatements(dims, sess){
   var maxLen = dims.reduce(function(m,d){ return Math.max(m, (d.statements||[]).length); }, 0);
   var out = [];
   for(var i=0;i<maxLen;i+=1){
     dims.forEach(function(dim){
-      if(dim.statements && dim.statements[i]!==undefined) out.push({ dim: dim, idx: i, text: dim.statements[i] });
+      if(dim.statements && dim.statements[i]!==undefined){
+        var localized = localizedSessionText(dim, "statements", sess);
+        out.push({ dim: dim, idx: i, text: (localized && localized[i]!==undefined) ? localized[i] : dim.statements[i] });
+      }
     });
   }
   return out;
@@ -203,12 +218,12 @@ function renderJoinScreen(){
     el.innerHTML =
       '<h2>'+esc(t("join.thanksHeading"))+'</h2>' +
       '<p class="hint">'+esc(t("join.retroLabel", {name: sess.templateName||"Custom"}))+'</p>' +
-      dims.map(function(d){ return renderPersonalResultHtml(d, state.joinSubmittedResults[d.key]); }).join("");
+      dims.map(function(d){ return renderPersonalResultHtml(d, state.joinSubmittedResults[d.key], sess); }).join("");
     return;
   }
 
   if(dims.length){
-    var flatStatements = interleavedStatements(stmtDims);
+    var flatStatements = interleavedStatements(stmtDims, sess);
     var statementListHtml = stmtDims.length ?
       '<div class="stmt-list">' + flatStatements.map(function(item){
         return '<div class="stmt-row" data-dim="'+esc(item.dim.key)+'" data-idx="'+item.idx+'"><div class="stmt-text" dir="auto">'+esc(item.text)+'</div>' +
@@ -222,13 +237,15 @@ function renderJoinScreen(){
       '<div class="field-label" style="margin-top:18px;">'+esc(t("join.squadHealthCheckHeading"))+'</div>' : "";
     var directListHtml = directDims.length ?
       directIntroHtml + '<div class="direct-list">' + directDims.map(function(dim){
-        var anchorsHtml = (dim.green || dim.red) ?
+        var greenText = localizedSessionText(dim, "green", sess);
+        var redText = localizedSessionText(dim, "red", sess);
+        var anchorsHtml = (greenText || redText) ?
           '<p class="hint" style="margin:0 0 10px;">' +
-            (dim.green ? '<b>'+esc(t("tribe.legend.greenLabel"))+'</b> <span dir="auto">'+esc(dim.green)+'</span> ' : '') +
-            (dim.red ? '<b>'+esc(t("tribe.legend.redLabel"))+'</b> <span dir="auto">'+esc(dim.red)+'</span>' : '') +
+            (greenText ? '<b>'+esc(t("tribe.legend.greenLabel"))+'</b> <span dir="auto">'+esc(greenText)+'</span> ' : '') +
+            (redText ? '<b>'+esc(t("tribe.legend.redLabel"))+'</b> <span dir="auto">'+esc(redText)+'</span>' : '') +
           '</p>' : "";
         return '<div class="direct-row" data-dim="'+esc(dim.key)+'">' +
-          '<div class="stmt-text" dir="auto">'+esc(dim.label)+'</div>' +
+          '<div class="stmt-text" dir="auto">'+esc(localizedSessionText(dim, "label", sess))+'</div>' +
           anchorsHtml +
           '<div class="swatches">' +
             '<button class="swatch good" data-color="good" type="button" title="'+esc(t("common.color.good"))+'"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 13l4 4 10-10"/></svg></button>' +

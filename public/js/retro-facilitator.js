@@ -26,6 +26,14 @@
 // there's no history feature beyond that brief window, matching the
 // "current snapshot only" decision made for the rest of the board, so
 // nothing is archived long-term.
+// See retro-join.js's own copy of this same helper for why a session's
+// dimensions need localizedSessionDimText() (keyed off the session's OWN
+// frozen templateName) rather than localizedDimText()/activeStarterTemplate()
+// (keyed off whichever template the live board currently has active).
+function localizedSessionText(dim, field, sess){
+  return localizedSessionDimText(dim, field, sess.templateName);
+}
+
 function openSessionForSquad(squadId){
   for(var i=0;i<state.sessions.length;i++){
     var s = state.sessions[i];
@@ -166,13 +174,14 @@ function renderSessionCardHtml(sq){
         var pillWord = !result ? t("retro.live.waiting") : colorWordLocalized(result.color);
         var trendHtml = (result && (result.trend==="up" || result.trend==="down"))
           ? '<span class="dim-trend '+result.trend+'" title="'+esc(trendWordLocalized(result.trend))+'">'+trendIcon(result.trend)+'</span>' : '';
+        var dimLabel = localizedSessionText(dim, "label", sess);
         return '<div class="live-dim-row">' +
-          '<span class="dim-name" dir="auto">'+esc(dim.label)+'</span>' +
+          '<span class="dim-name" dir="auto">'+esc(dimLabel)+'</span>' +
           '<span class="live-dim-actions">' +
             (result && result.overridden ? '<span class="override-tag">'+esc(t("retro.live.overriddenTag"))+'</span>' : '') +
             '<span class="pill'+(result?(' '+result.color):' unscored')+'">'+esc(pillWord)+'</span>' +
             trendHtml +
-            '<button class="icon-btn override-btn" data-override-dim="'+esc(dim.key)+'" type="button" title="'+esc(t("retro.live.overrideTitle"))+'" aria-label="'+esc(t("retro.live.overrideTitle"))+' '+esc(dim.label)+'">' +
+            '<button class="icon-btn override-btn" data-override-dim="'+esc(dim.key)+'" type="button" title="'+esc(t("retro.live.overrideTitle"))+'" aria-label="'+esc(t("retro.live.overrideTitle"))+' '+esc(dimLabel)+'">' +
               '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>' +
             '</button>' +
           '</span>' +
@@ -183,7 +192,7 @@ function renderSessionCardHtml(sq){
       // pills above, and only reachable at all while already in live mode.
       var respTableHtml = "";
       if(responses.length){
-        var headHtml = activeDims.map(function(d){ return '<th dir="auto">'+esc(d.label)+'</th>'; }).join("");
+        var headHtml = activeDims.map(function(d){ return '<th dir="auto">'+esc(localizedSessionText(d, "label", sess))+'</th>'; }).join("");
         var bodyHtml = responses.map(function(r, i){
           var cells = activeDims.map(function(d){
             var b = bandForResponse(d, r);
@@ -401,7 +410,7 @@ function bindSessionCardEvents(sq){
       return;
     }
     var summary = results.map(function(x){
-      return x.dim.label + ": " + colorWordLocalized(x.result.color) + (x.result.overridden ? t("retro.confirmFinish.overriddenSuffix") : "");
+      return localizedSessionText(x.dim, "label", sess) + ": " + colorWordLocalized(x.result.color) + (x.result.overridden ? t("retro.confirmFinish.overriddenSuffix") : "");
     }).join(", ");
     openConfirm(
       t("retro.confirmFinish.title"),
@@ -467,10 +476,10 @@ function openSessionOverrideEditor(sess, dimKey){
     trend: (existingOverride && existingOverride.trend) || "flat",
     note: (existingOverride && existingOverride.note) || ""
   };
-  document.getElementById("modalTitle").textContent = d.label;
+  document.getElementById("modalTitle").textContent = localizedSessionText(d, "label", sess);
   document.getElementById("modalSquadline").textContent = t("retro.override.squadline");
-  document.getElementById("modalGreen").textContent = d.green||"";
-  document.getElementById("modalRed").textContent = d.red||"";
+  document.getElementById("modalGreen").textContent = localizedSessionText(d, "green", sess) || "";
+  document.getElementById("modalRed").textContent = localizedSessionText(d, "red", sess) || "";
   var noteBox = document.getElementById("modalNote");
   noteBox.value = state.editingOverride.note;
   noteBox.placeholder = t("retro.override.notePlaceholder");

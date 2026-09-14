@@ -140,17 +140,63 @@ function activeStarterTemplate(){
   return STARTER_TEMPLATES.find(function(t){ return t.name === state.config.activeTemplateName; });
 }
 
+// A retro session freezes its own dimension SNAPSHOT (sessions/{id}.dimensions,
+// including .statements/.strategies) at start time -- looking up the CURRENTLY
+// active board template (activeStarterTemplate()) is the wrong template once
+// the board has moved on to something else since the session started. Used by
+// localizedSessionDimText() below, which takes the session's own frozen
+// templateName explicitly instead.
+function starterTemplateByName(name){
+  return STARTER_TEMPLATES.find(function(t){ return t.name === name; });
+}
+
+// label/green/red are plain strings, where `!==` is already a correct
+// value comparison -- but statements/strategies are arrays, where `!==`
+// only ever compares by reference. Two arrays with identical contents but
+// different instances (exactly what happens once a value round-trips
+// through a session doc's own JSON-shaped storage/relay transport) would
+// otherwise wrongly read as "the admin customized this," permanently
+// blocking translation. Stringifying is enough here -- every element is a
+// plain string, so there's no risk of key-order ambiguity JSON.stringify
+// has for objects.
+function dimensionValuesMatch(a, b){
+  if(Array.isArray(a) || Array.isArray(b)) return JSON.stringify(a) === JSON.stringify(b);
+  return a === b;
+}
+
+// Shared by localizedDimText() (live board dimensions, keyed off whichever
+// template is CURRENTLY active) and localizedSessionDimText() (a retro
+// session's own frozen snapshot, keyed off the session's OWN templateName)
+// -- same safety check either way: only translate a field that still
+// matches ITS OWN TEMPLATE's English default value-for-value, checked per
+// field so customizing only `label` still lets `green`/`red`/`statements`
+// localize normally.
+function localizedFieldForTemplate(dim, field, tpl, locale, value){
+  if(!tpl || !tpl.i18n) return value;
+  var base = tpl.dimensions.find(function(p){ return p.key === dim.key; });
+  if(!base || !dimensionValuesMatch(base[field], value)) return value;
+  var table = tpl.i18n[locale] && tpl.i18n[locale].dimensions;
+  var tr = table && table[dim.key];
+  return (tr && tr[field]) || value;
+}
+
 function localizedDimText(dim, field){
   var value = dim[field];
   var locale = (state.ui && state.ui.locale) || "en";
   if(locale === "en") return value;
-  var tpl = activeStarterTemplate();
-  if(!tpl || !tpl.i18n) return value;
-  var base = tpl.dimensions.find(function(p){ return p.key === dim.key; });
-  if(!base || base[field] !== value) return value;
-  var table = tpl.i18n[locale] && tpl.i18n[locale].dimensions;
-  var tr = table && table[dim.key];
-  return (tr && tr[field]) || value;
+  return localizedFieldForTemplate(dim, field, activeStarterTemplate(), locale, value);
+}
+
+// Same translation, for a dimension living inside a retro session's own
+// frozen snapshot rather than the live board -- see starterTemplateByName()'s
+// comment above for why this can't just reuse activeStarterTemplate().
+// Handles statements/strategies (arrays) as well as label/green/red,
+// unlike localizedDimText() above, which only ever needed strings.
+function localizedSessionDimText(dim, field, templateName){
+  var value = dim[field];
+  var locale = (state.ui && state.ui.locale) || "en";
+  if(locale === "en") return value;
+  return localizedFieldForTemplate(dim, field, starterTemplateByName(templateName), locale, value);
 }
 
 function localizedAttribution(attribution){
@@ -173,25 +219,60 @@ function localizedAttribution(attribution){
 // statements as a mini 1/2/3 survey and compute the color from the sum
 // instead; the data is here now so that flow has something to load.
 //
-// Story 8: Hebrew translation of this template's own dimension content,
-// same shape/status as SPOTIFY_DIMENSIONS_HE/TUCKMAN_DIMENSIONS_HE above --
-// only label/green/red (not .statements/.strategies).
+// Story 8: Hebrew translation of this template's own dimension content --
+// label/green/red, same shape/status as SPOTIFY_DIMENSIONS_HE/
+// TUCKMAN_DIMENSIONS_HE above. statements/strategies added later, once a
+// real usage report showed the retro survey itself was never translated
+// (see STATUS.md) -- same array shape/order as the English default in
+// FIVE_DYSFUNCTIONS_TEMPLATE.dimensions below, read by index (see
+// retro-join.js's interleavedStatements()), so reordering one without the
+// other would silently mismatch a translation to the wrong statement.
 var FIVE_DYSFUNCTIONS_DIMENSIONS_HE = {
   trust:          { label:"היעדר אמון",
     green:"נוח לנו להיראות פגיעים זה כלפי זה — מודים בטעויות ובחולשות, ומבקשים עזרה, בלי פחד.",
-    red:"אנחנו שומרים על עצמנו; הודאה בחולשה מרגישה לא בטוחה, ולכן אמון אמיתי אף פעם לא ממש נוצר." },
+    red:"אנחנו שומרים על עצמנו; הודאה בחולשה מרגישה לא בטוחה, ולכן אמון אמיתי אף פעם לא ממש נוצר.",
+    statements:[
+      "חברי הצוות מתנצלים זה בפני זה במהירות ובאמת כאשר הם אומרים או עושים משהו לא הולם או עלול לפגוע בצוות.",
+      "חברי הצוות מודים בגלוי בחולשות ובטעויות שלהם.",
+      "חברי הצוות יודעים על חייהם האישיים זה של זה ומרגישים בנוח לדבר עליהם."
+    ],
+    strategies:[ "זהו ודונו בחוזקות ובחולשות האישיות.", "הקדישו זמן משמעותי לפגישות פנים אל פנים ומפגשי עבודה." ] },
   conflict:       { label:"פחד מקונפליקט",
     green:"אנחנו מנהלים דיון ישיר ונלהב על רעיונות — חילוקי דעות הם דבר נורמלי ופרודוקטיבי.",
-    red:"אנחנו נמנעים מחיכוך כדי לשמור על שלווה בצוות, כך שחילוקי דעות אמיתיים נשארים מתחת לפני השטח (הרמוניה מדומה)." },
+    red:"אנחנו נמנעים מחיכוך כדי לשמור על שלווה בצוות, כך שחילוקי דעות אמיתיים נשארים מתחת לפני השטח (הרמוניה מדומה).",
+    statements:[
+      "חברי הצוות נלהבים וגלויים בדיון שלהם בסוגיות.",
+      "פגישות הצוות מרתקות, ולא משעממות.",
+      "במהלך פגישות הצוות, הסוגיות החשובות והקשות ביותר מועלות על השולחן לפתרון."
+    ],
+    strategies:[ "הכירו בכך שקונפליקט נדרש לפגישות פרודוקטיביות.", "הבינו את סגנונות הקונפליקט הטבעיים של חברי הצוות, וקבעו כללי יסוד משותפים להתמודדות עם קונפליקט." ] },
   commitment:     { label:"היעדר מחויבות",
     green:"אנחנו יוצאים מהחלטות עם בהירות ומחויבות, גם אחרי ויכוח אמיתי — \"לא להסכים ולהתחייב\".",
-    red:"החלטות נשארות מעורפלות או מוסכמות רק בחלקן, כך שהצוות חוזר ודן בהן שוב מאוחר יותר (תחושת חוסר בהירות)." },
+    red:"החלטות נשארות מעורפלות או מוסכמות רק בחלקן, כך שהצוות חוזר ודן בהן שוב מאוחר יותר (תחושת חוסר בהירות).",
+    statements:[
+      "חברי הצוות יודעים על מה עמיתיהם עובדים ואיך הם תורמים לטובת הצוות המשותפת.",
+      "חברי הצוות עוזבים פגישות בביטחון שעמיתיהם מחויבים לחלוטין להחלטות שהוסכמו, גם אם היה חילוקי דעות ראשוני.",
+      "חברי הצוות מסיימים דיונים עם החלטות ברורות וספציפיות וקריאות לפעולה."
+    ],
+    strategies:[ "סקרו התחייבויות בסוף כל פגישה כדי לוודא שכל חברי הצוות מיושרים.", "אמצו גישת \"לא להסכים ולהתחייב\" — ודאו שכל חברי הצוות מחויבים ללא קשר לחילוקי דעות ראשוניים." ] },
   accountability: { label:"הימנעות מאחריותיות",
     green:"אנחנו דורשים אחריותיות (accountability) זה מזה באופן ישיר, גם כשזה לא נוח.",
-    red:"אנחנו מוכנים לסבול סטנדרטים נמוכים במקום להעיר אחד לשני." },
+    red:"אנחנו מוכנים לסבול סטנדרטים נמוכים במקום להעיר אחד לשני.",
+    statements:[
+      "חברי הצוות מעירים זה לזה על ליקויים או התנהגויות לא פרודוקטיביות.",
+      "חברי הצוות מודאגים מאוד מהאפשרות לאכזב את עמיתיהם.",
+      "חברי הצוות מאתגרים זה את זה לגבי התוכניות והגישות שלהם."
+    ],
+    strategies:[ "תקשרו במפורש מטרות וסטנדרטים של התנהגות.", "דונו באופן קבוע בביצועים לעומת מטרות וסטנדרטים." ] },
   results:        { label:"התעלמות מתוצאות",
     green:"אנחנו נשארים ממוקדים בתוצאות המשותפות של הצוות, מעל מעמד אישי או אגו.",
-    red:"מטרות אישיות או אגו תופסים עדיפות באופן שקט על פני התוצאות המשותפות של הצוות." }
+    red:"מטרות אישיות או אגו תופסים עדיפות באופן שקט על פני התוצאות המשותפות של הצוות.",
+    statements:[
+      "חברי הצוות מוכנים ברצון לעשות ויתורים (כמו תקציב, תחום שליטה, כוח אדם) במחלקות או בתחומי המומחיות שלהם לטובת הצוות.",
+      "המורל מושפע באופן משמעותי מאי-השגת מטרות הצוות.",
+      "חברי הצוות אינם ממהרים לבקש קרדיט על תרומותיהם שלהם, אך ממהרים לציין את תרומותיהם של אחרים."
+    ],
+    strategies:[ "שמרו על מיקוד הצוות במטרות קבוצתיות מוחשיות.", "תגמלו יחידים בהתבסס על מטרות הצוות והצלחה קולקטיבית." ] }
 };
 var FIVE_DYSFUNCTIONS_ATTRIBUTION_HE = "מותאם מהערכת \"חמשת התפקודים הלקויים של צוות\" מאת פטריק לנציוני (The Table Group). טווחי הניקוד 8–9 / 6–7 / 3–5 לקוחים מההערכה המקורית; איחוד תשובות של כמה חברי צוות לדירוג לוח אחד, וההחלפה הידנית של המנחה, הם פרי פיתוחה של Dr. Agile.";
 
@@ -276,22 +357,59 @@ var FIVE_DYSFUNCTIONS_TEMPLATE = {
 // SPOTIFY_DIMENSIONS_HE above -- only label/green/red are translated (not
 // .statements/.strategies: nothing reads those yet, see the comment on
 // FIVE_DYSFUNCTIONS_TEMPLATE below for why).
+// statements/strategies added later, same reason/shape as
+// FIVE_DYSFUNCTIONS_DIMENSIONS_HE's own header comment above.
 var TUCKMAN_DIMENSIONS_HE = {
   forming:    { label:"התהוות",
     green:"השלב הזה בולט כרגע — הצוות עדיין מחפש את מקומו, המטרות עשויות להיות לא ברורות, וחברי הצוות נשענים על המנהיג כדי לקבל כיוון.",
-    red:"שלב ההתהוות לא בולט במיוחד כרגע — ייתכן שהצוות כבר עבר את ההתמצאות הראשונית, או שהוא עדיין בתהליך ההתבססות." },
+    red:"שלב ההתהוות לא בולט במיוחד כרגע — ייתכן שהצוות כבר עבר את ההתמצאות הראשונית, או שהוא עדיין בתהליך ההתבססות.",
+    statements:[
+      "חברי הצוות עדיין לומדים על התפקידים, המומחיות של זה של זה, ואיך הם משתלבים בצוות.",
+      "יש חוסר ודאות לגבי מטרות הצוות, סדרי העדיפויות, או איך להמשיך בעבודה שלנו.",
+      "חברי הצוות מצפים מהמנהיג לספק כיוון ולהבהיר ציפיות.",
+      "האינטראקציות בצוות שלנו מרגישות מנומסות וזהירות, כשחברי הצוות נזהרים במה שהם אומרים."
+    ],
+    strategies:[ "השקיעו זמן בגיבוש צוות ובהכרות הדדית.", "תקשרו בבירור מטרות, תפקידים וציפיות.", "ספקו מנהיגות ומבנה ראשוניים חזקים.", "צרו מרחב לשאלות ולהבהרות." ] },
   storming:   { label:"סערה",
     green:"השלב הזה בולט כרגע — חילוקי דעות עולים לפני השטח, ניכרת התנגדות מסוימת למשימה, ומתח או אג'נדות אישיות מתחילים להופיע.",
-    red:"שלב הסערה לא בולט במיוחד כרגע — הצוות נמנע מקונפליקט והתנגדות." },
+    red:"שלב הסערה לא בולט במיוחד כרגע — הצוות נמנע מקונפליקט והתנגדות.",
+    statements:[
+      "חילוקי דעות או קונפליקטים עולים במהלך פגישות צוות או דיונים.",
+      "חלק מחברי הצוות נראים כמתנגדים למשימה הנוכחית או מטילים ספק בגישות המוצעות.",
+      "קליקות, תת-קבוצות, או אג'נדות אישיות מתחילות להופיע בתוך הצוות.",
+      "ניכר מתח או תגובות רגשיות כאשר מתקבלות החלטות או נקבע כיוון."
+    ],
+    strategies:[ "העלו חילוקי דעות לפני השטח וטפלו בהם ישירות.", "קבעו כללי יסוד לקונפליקט פרודוקטיבי.", "עזרו לחברי הצוות להבין נקודות מבט מגוונות.", "חזקו מחדש את מטרות הצוות והמטרה המשותפת." ] },
   norming:    { label:"נירמול",
     green:"השלב הזה בולט כרגע — הצוות מסכים בהדרגה על נורמות משותפות, על התפקידים ברורים, ומתפתחת תמיכה הדדית.",
-    red:"שלב ההתכנסות לא בולט במיוחד כרגע — עדיין מוקדם לדבר על נורמות משותפות ובהירות של תפקידים." },
+    red:"שלב ההתכנסות לא בולט במיוחד כרגע — עדיין מוקדם לדבר על נורמות משותפות ובהירות של תפקידים.",
+    statements:[
+      "הצוות הסכים על סטנדרטים, נורמות, או דרכי עבודה משותפות.",
+      "חברי הצוות מבינים בבירור את התפקידים והאחריות שלהם.",
+      "אנחנו מסוגלים לתת ולקבל משוב בצורה בונה, בלי פחד.",
+      "יש תחושת אחדות ותמיכה הדדית בין חברי הצוות."
+    ],
+    strategies:[ "חזקו את הנורמות וסטנדרטים העבודה שהוסכמו.", "הכירו וחגגו יישור קו ושיתוף פעולה.", "עודדו משוב בין עמיתים ואחריותיות הדדית.", "בנו על האמון והלכידות המתפתחים." ] },
   performing: { label:"ביצועים גבוהים",
     green:"השלב הזה בולט כרגע — הצוות פועל בגמישות ובתלות הדדית, עם אנרגיה ממוקדת בתוצאות ופרודוקטיביות גבוהה.",
-    red:"שלב הביצוע לא בולט במיוחד כרגע — הצוות לא פועל בגמישות ואינו ממוקד בתוצאות." },
+    red:"שלב הביצוע לא בולט במיוחד כרגע — הצוות לא פועל בגמישות ואינו ממוקד בתוצאות.",
+    statements:[
+      "הצוות שלנו פועל בגמישות, כאשר תפקידים ואחריות משתנים לפי הצורך.",
+      "אנחנו מרכזים את האנרגיה שלנו בפתרון בעיות והשגת מטרות הצוות.",
+      "הצוות מפיק תוצאות באיכות גבוהה ושומר על פרודוקטיביות חזקה.",
+      "חברי הצוות לוקחים בעלות ועובדים בתלות הדדית עם פיקוח מינימלי."
+    ],
+    strategies:[ "האצילו סמכויות בקבלת החלטות והעצימו אוטונומיה.", "התמקדו בשיפור מתמיד ובלמידה.", "חגגו תוצאות והצלחות משותפות.", "שמרו על ביטחון פסיכולוגי ואמון." ] },
   adjourning: { label:"התפזרות",
     green:"השלב הזה בולט כרגע — הצוות מהרהר במה שהשיג ולמד, ומכיר בתרומתו של כל אחד ככל שהדברים מסתיימים או משתנים.",
-    red:"שלב ההתפזרות לא בולט במיוחד כרגע — הצוות לא נמצא ברגע של סיום או מעבר." }
+    red:"שלב ההתפזרות לא בולט במיוחד כרגע — הצוות לא נמצא ברגע של סיום או מעבר.",
+    statements:[
+      "הצוות מהרהר בהישגים ובמה שלמדנו יחד.",
+      "יש הכרה בתרומות האישיות ובערך שכל חבר הביא.",
+      "חברי הצוות מביעים רגשות מעורבים לגבי סיום או שינוי הצוות.",
+      "אנחנו לוקחים זמן לחגוג הצלחות ולתכנן את מה שבא בהמשך."
+    ],
+    strategies:[ "ערכו רטרוספקטיבות ואספו לקחים שנלמדו.", "הכירו בתרומות אישיות וקולקטיביות.", "הכירו ברגשות ובערך של מערכות היחסים.", "תכננו סיומים ומעברים מכוונים." ] }
 };
 var TUCKMAN_ATTRIBUTION_HE = "מותאם משלבי ההתפתחות הקבוצתית של ברוס טאקמן (Forming, Storming, Norming, Performing, Adjourning). טווחי הניקוד 10–12 / 8–9 / 4–7 לקוחים מההערכה המקורית; איחוד תשובות של כמה חברי צוות לדירוג לוח אחד, וההחלפה הידנית של המנחה, הם פרי פיתוחה של Dr. Agile.";
 
@@ -496,6 +614,7 @@ if (typeof module !== "undefined" && module.exports) {
     STARTER_TEMPLATES: STARTER_TEMPLATES,
     localizedDimText: localizedDimText,
     localizedAttribution: localizedAttribution,
+    localizedSessionDimText: localizedSessionDimText,
     state: state
   };
 }
