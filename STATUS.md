@@ -1472,3 +1472,37 @@ not just in this repo's own tests.
     permanently breaking the live-translation match for every other viewer (including a future
     English-locale one). Surfaced to the product owner as a real but consciously-made tradeoff worth
     a second look, not silently fixed either way.
+- 2026-09-14 — **Translated the retro survey's own statements/strategies (Tuckman + Five
+  Dysfunctions), closing the open item raised by the join-link-language usage report above.**
+  Product owner approved translating them after that report's screenshots showed the join screen's
+  chrome in Hebrew but the actual survey questions ("Team members are still learning about each
+  other's roles...") still English -- Stories 5/7/8 had deliberately scoped dimension-content
+  translation to label/green/red/attribution, explicitly excluding `.statements`/`.strategies`.
+  Added Hebrew translations for both templates' full statement/strategy arrays to
+  `TUCKMAN_DIMENSIONS_HE`/`FIVE_DYSFUNCTIONS_DIMENSIONS_HE` (`state.js`), same array shape/order as
+  the English default (read by index -- see `retro-join.js`'s `interleavedStatements()`). Extended
+  the localization mechanism itself along the way: `dimensionValuesMatch()` replaces the
+  reference-equality (`!==`) customization check with a value-based one for array fields --
+  reference equality would wrongly treat a value-identical-but-different-array-instance statements
+  list (exactly what happens once a value round-trips through a session doc's own JSON-shaped
+  storage/relay transport) as "the admin customized this," permanently blocking translation, a bug
+  class label/green/red's plain-string fields never had. New `localizedSessionDimText()` (sharing
+  `localizedFieldForTemplate()`'s core logic with `localizedDimText()`) is keyed off a retro
+  SESSION's own frozen `templateName` rather than the live board's currently active template --
+  `openSessionOverrideEditor()` already documented why a session can't just reuse
+  `activeStarterTemplate()` (the board's template may have moved on since the session started);
+  this generalizes that same reasoning into the translation lookup itself. Wired into every
+  session-scoped dimension field read in `retro-join.js` (interleaved statement text, a
+  direct-rating dimension's openly-shown label/green/red, the personal-result screen's
+  label/message/strategies) and `retro-facilitator.js` (live result dimension names, the response
+  table header, the override editor, the finish-confirm summary) -- a Hebrew-speaking facilitator
+  now sees the same consistently-translated retro their Hebrew-speaking teammates do. New
+  `tests/test_retro_statement_language.py`; extended `tests/unit/test_template_locale.js` with
+  `localizedSessionDimText()` coverage and a mechanical statements/strategies length+non-blank
+  check alongside the existing label/green/red one. Full suite verified: 69-test unit suite,
+  44-file Playwright suite, zero regressions.
+  - **Still open from the same usage report, by the product owner's own choice (not yet designed):**
+    letting an admin edit BOTH the English and Hebrew text of a dimension at the template level --
+    a genuine architecture change (today's translation tables are hardcoded template constants, not
+    editable board data) the product owner asked to see a design proposal for before any
+    implementation starts.
