@@ -1506,3 +1506,15 @@ not just in this repo's own tests.
     a genuine architecture change (today's translation tables are hardcoded template constants, not
     editable board data) the product owner asked to see a design proposal for before any
     implementation starts.
+- 2026-09-14 — Second file in the condition-based-wait perf pass (see the 2026-09-14 entry above
+  on `test_hebrew_rtl_coverage.py` for the full rationale): `test_template_switching_and_csv_import.py`
+  (Copilot's #9-ranked file), on its own short-lived branch. Same treatment -- removed every
+  `wait_for_timeout()`, relying on `click()`/`fill()`'s own auto-wait where the next action was one
+  of those, and adding `wait_for_selector()`/`wait_for_function()` only where the next call was
+  `query_selector()`/`eval_on_selector()`/`evaluate()`. Unlike the RTL file, this one needed no
+  `state="attached"` correction -- clean on the first 10x stress-test pass, likely because this
+  file's post-action reads are mostly `evaluate()` polls on `window.__FAKE_STORE__` fields
+  (`wait_for_function`, no visibility concept at all) rather than `eval_on_selector()` calls whose
+  selectors happened to also match hidden markup elsewhere. Result: ~5.25s -> ~1.6-2.0s per run
+  locally, 10/10 clean, then the full 43-file suite (69-test unit suite included), zero
+  regressions.
