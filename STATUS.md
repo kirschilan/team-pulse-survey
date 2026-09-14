@@ -1677,3 +1677,18 @@ not just in this repo's own tests.
   with it if relevant -- found no trace of it here (no other branch, no committed file referencing
   it), so this export uses its own straightforward shape for now; worth reconciling once that other
   session's work is visible here.
+- 2026-09-14 — **Fixed a real deadlock in 12 relay-backed Playwright test files**, found live: a
+  full regression run was stuck for 55+ minutes on `test_board_sync_hydrate_on_boot.py` (normally
+  finishes in under 2 minutes). Root cause: every relay-backed test's `wait_for_port()` gives the
+  `node server.js` subprocess a 5s window to start listening; on timeout, the error path calls
+  `relay_proc.stdout.read()` to include the relay's own output in the raised `RuntimeError` — but
+  `.read()` blocks until EOF, and a relay process that's simply running LATE (confirmed via `lsof`:
+  it did bind the port, just after the 5s window closed, under `-P 2` CPU contention from the
+  parallel suite) never closes its stdout, since it's a live server, not a process that exits.
+  Confirmed via `/proc/<pid>/stack` showing the Python process blocked in `anon_pipe_read`, reading
+  a pipe whose write end (`node`'s stdout/stderr) was still held open by a very-much-alive relay
+  process. Fix, applied identically to all 12 relay-backed test files: `.terminate()` (then
+  `.wait(timeout=5)`, falling back to `.kill()`) the relay process BEFORE reading its stdout, so
+  the pipe is guaranteed to hit EOF. Verified the happy path still passes standalone, then re-ran
+  the full suite fresh (69 unit tests + full Playwright regression) to confirm zero regressions from
+  the fix itself, on its own short-lived branch.
