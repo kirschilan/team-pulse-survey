@@ -6,8 +6,8 @@
 // rating modal. Story 6: the app header/nav chrome. Story 9: the Templates
 // modal. Story 10: the retro JOIN flow (participant screens + the "Join a
 // retro" code modal). Story 11: the retro FACILITATOR flow (session card,
-// override editor, confirm dialogs). Still English-only: Edit dimensions
-// and CSV import (their own future stories). RTL_SCOPED_CONTAINERS
+// override editor, confirm dialogs). Story 12: the Edit Dimensions modal.
+// Still English-only: CSV import (its own future story). RTL_SCOPED_CONTAINERS
 // below lists every container currently translated -- each gets its own
 // dir/lang flip; nothing else does, so a still-English screen never
 // visually breaks under an RTL layout it was never translated for. A
@@ -24,7 +24,7 @@ var LOCALES = { en: LOCALE_EN, he: LOCALE_HE };
 var DEFAULT_LOCALE = "en";
 var SUPPORTED_LOCALES = ["en", "he"];
 var LANG_STORAGE_KEY = "squadpulse:lang";
-var RTL_SCOPED_CONTAINERS = ["viewAdmin", "viewTribe", "viewSquad", "backdrop", "appHeader", "templatesBackdrop", "viewJoin", "joinCodeBackdrop"];
+var RTL_SCOPED_CONTAINERS = ["viewAdmin", "viewTribe", "viewSquad", "backdrop", "appHeader", "templatesBackdrop", "viewJoin", "joinCodeBackdrop", "dimBackdrop"];
 
 function t(key, vars){
   var loc = (state && state.ui && state.ui.locale) || DEFAULT_LOCALE;

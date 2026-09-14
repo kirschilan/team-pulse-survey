@@ -25,23 +25,23 @@ function renderDimList(){
   var html = dims.map(function(d, i){
     return '<div class="dim-row" data-key="'+esc(d.key)+'">' +
       '<div class="dim-row-top">' +
-        '<button class="icon-btn dim-up" title="Move up" type="button" '+(i===0?"disabled":"")+'>' +
+        '<button class="icon-btn dim-up" title="'+esc(t("dimManager.moveUpTitle"))+'" type="button" '+(i===0?"disabled":"")+'>' +
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 15l7-7 7 7"/></svg></button>' +
-        '<button class="icon-btn dim-down" title="Move down" type="button" '+(i===dims.length-1?"disabled":"")+'>' +
+        '<button class="icon-btn dim-down" title="'+esc(t("dimManager.moveDownTitle"))+'" type="button" '+(i===dims.length-1?"disabled":"")+'>' +
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 9l7 7 7-7"/></svg></button>' +
-        '<input class="dim-label" data-field="label" value="'+esc(d.label)+'" aria-label="Dimension name" placeholder="Dimension name" dir="auto">' +
-        '<button class="icon-btn danger dim-del" title="Remove dimension" type="button">' +
+        '<input class="dim-label" data-field="label" value="'+esc(d.label)+'" aria-label="'+esc(t("dimManager.nameAriaLabel"))+'" placeholder="'+esc(t("dimManager.namePlaceholder"))+'" dir="auto">' +
+        '<button class="icon-btn danger dim-del" title="'+esc(t("dimManager.removeTitle"))+'" type="button">' +
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
       '</div>' +
       '<div class="fields">' +
-        '<div><label class="grn">Green looks like</label><textarea data-field="green" placeholder="What healthy looks like" dir="auto">'+esc(d.green)+'</textarea></div>' +
-        '<div><label class="rd">Red looks like</label><textarea data-field="red" placeholder="What unhealthy looks like" dir="auto">'+esc(d.red)+'</textarea></div>' +
+        '<div><label class="grn">'+esc(t("dimManager.greenLabel"))+'</label><textarea data-field="green" placeholder="'+esc(t("dimManager.greenPlaceholder"))+'" dir="auto">'+esc(d.green)+'</textarea></div>' +
+        '<div><label class="rd">'+esc(t("dimManager.redLabel"))+'</label><textarea data-field="red" placeholder="'+esc(t("dimManager.redPlaceholder"))+'" dir="auto">'+esc(d.red)+'</textarea></div>' +
       '</div>' +
       (isStatementDimension(d) ?
-        '<p class="hint" style="margin:8px 0 0;">Scored from '+d.statements.length+' self-assessment statements (not editable here yet) — rating this dimension still uses the swatches above until the statement-based entry flow ships.</p>' : "") +
+        '<p class="hint" style="margin:8px 0 0;">'+esc(t("dimManager.statementsHint", {count: d.statements.length}))+'</p>' : "") +
     '</div>';
   }).join("");
-  document.getElementById("dimList").innerHTML = html || '<p class="hint" style="margin:0;">No dimensions yet — add your first one below.</p>';
+  document.getElementById("dimList").innerHTML = html || '<p class="hint" style="margin:0;">'+esc(t("dimManager.emptyHint"))+'</p>';
   bindDimListEvents();
 }
 
@@ -61,10 +61,10 @@ function bindDimListEvents(){
     if(delBtn) delBtn.addEventListener("click", function(){
       var d = dimByKey(key);
       openConfirm(
-        "Remove dimension?",
-        "Remove “" + (d ? d.label : "this dimension") + "” from the grid? Any ratings already given for it will be hidden (not deleted) unless you add it back.",
+        t("dimManager.confirmRemoveTitle"),
+        t("dimManager.confirmRemoveMessage", {name: d ? d.label : t("dimManager.untitledFallback")}),
         function(){ removeDimension(key); },
-        "Remove"
+        t("dimManager.confirmRemoveButton")
       );
     });
   });

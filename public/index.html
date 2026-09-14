@@ -257,12 +257,12 @@
 <!-- ---------- dimension manager modal ---------- -->
 <div class="backdrop" id="dimBackdrop" hidden>
   <div class="modal wide" role="dialog" aria-modal="true">
-    <h3>Edit dimensions</h3>
-    <p class="hint">These are the columns of your snapshot grid. Add, rename, reorder or remove them &mdash; changes apply to everyone viewing this board. Ratings for a removed dimension are hidden, not lost, unless you add a dimension back with the same purpose.</p>
+    <h3 data-i18n="dimManager.title">Edit dimensions</h3>
+    <p class="hint" data-i18n="dimManager.hint">These are the columns of your snapshot grid. Add, rename, reorder or remove them &mdash; changes apply to everyone viewing this board. Ratings for a removed dimension are hidden, not lost, unless you add a dimension back with the same purpose.</p>
     <div class="dim-list" id="dimList"></div>
     <div class="modal-actions split">
-      <button class="btn" id="addDimBtn" type="button">+ Add dimension</button>
-      <button class="btn primary" id="dimDoneBtn" type="button">Done</button>
+      <button class="btn" id="addDimBtn" type="button" data-i18n="dimManager.addButton">+ Add dimension</button>
+      <button class="btn primary" id="dimDoneBtn" type="button" data-i18n="dimManager.doneButton">Done</button>
     </div>
   </div>
 </div>

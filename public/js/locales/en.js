@@ -252,7 +252,34 @@ var LOCALE_EN = {
   "retro.confirmFinish.button": "Finish & apply",
   "retro.confirmFinish.overriddenSuffix": " (overridden)",
   "retro.override.squadline": "Overriding this retro's consolidated result",
-  "retro.override.notePlaceholder": "Why override this? (optional)"
+  "retro.override.notePlaceholder": "Why override this? (optional)",
+
+  // Story 12: the Edit Dimensions modal (Admin). The dimension NAMES/green/
+  // red text themselves are the admin's own authored content and stay
+  // untranslated -- same principle Stories 9/10/11 already applied to
+  // template names and session content. A freshly added dimension's default
+  // "New dimension" label also stays English by the SAME precedent Story 4
+  // already set for addSquad()'s "New {unit}" default -- it's editable
+  // placeholder content, not app chrome.
+  "dimManager.title": "Edit dimensions",
+  "dimManager.hint": "These are the columns of your snapshot grid. Add, rename, reorder or remove them — changes apply to everyone viewing this board. Ratings for a removed dimension are hidden, not lost, unless you add a dimension back with the same purpose.",
+  "dimManager.emptyHint": "No dimensions yet — add your first one below.",
+  "dimManager.moveUpTitle": "Move up",
+  "dimManager.moveDownTitle": "Move down",
+  "dimManager.nameAriaLabel": "Dimension name",
+  "dimManager.namePlaceholder": "Dimension name",
+  "dimManager.removeTitle": "Remove dimension",
+  "dimManager.greenLabel": "Green looks like",
+  "dimManager.redLabel": "Red looks like",
+  "dimManager.greenPlaceholder": "What healthy looks like",
+  "dimManager.redPlaceholder": "What unhealthy looks like",
+  "dimManager.statementsHint": "Scored from {count} self-assessment statements (not editable here yet) — rating this dimension still uses the swatches above until the statement-based entry flow ships.",
+  "dimManager.addButton": "+ Add dimension",
+  "dimManager.doneButton": "Done",
+  "dimManager.confirmRemoveTitle": "Remove dimension?",
+  "dimManager.confirmRemoveMessage": "Remove “{name}” from the grid? Any ratings already given for it will be hidden (not deleted) unless you add it back.",
+  "dimManager.confirmRemoveButton": "Remove",
+  "dimManager.untitledFallback": "this dimension"
 };
 
 if (typeof module !== "undefined" && module.exports) {

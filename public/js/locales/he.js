@@ -231,7 +231,27 @@ var LOCALE_HE = {
   "retro.confirmFinish.button": "סיום ויישום",
   "retro.confirmFinish.overriddenSuffix": " (נדרס ידנית)",
   "retro.override.squadline": "דריסת התוצאה המשולבת של הרטרו הזה",
-  "retro.override.notePlaceholder": "למה לדרוס את זה? (אופציונלי)"
+  "retro.override.notePlaceholder": "למה לדרוס את זה? (אופציונלי)",
+
+  "dimManager.title": "עריכת ממדים",
+  "dimManager.hint": "אלה הן העמודות של רשת התמונה שלכם. הוסיפו, שנו שם, סדרו מחדש או הסירו אותן — שינויים כאן חלים על כל מי שצופה בלוח הזה. דירוגים של ממד שהוסר מוסתרים, לא נמחקים, אלא אם תוסיפו ממד בחזרה עם אותה מטרה.",
+  "dimManager.emptyHint": "אין עדיין ממדים — הוסיפו את הראשון שלכם למטה.",
+  "dimManager.moveUpTitle": "הזזה למעלה",
+  "dimManager.moveDownTitle": "הזזה למטה",
+  "dimManager.nameAriaLabel": "שם הממד",
+  "dimManager.namePlaceholder": "שם הממד",
+  "dimManager.removeTitle": "הסרת ממד",
+  "dimManager.greenLabel": "ירוק נראה כך",
+  "dimManager.redLabel": "אדום נראה כך",
+  "dimManager.greenPlaceholder": "איך נראית בריאות",
+  "dimManager.redPlaceholder": "איך נראה חוסר בריאות",
+  "dimManager.statementsHint": "מדורג לפי {count} היגדי הערכה עצמית (לא ניתן לעריכה כאן עדיין) — דירוג הממד הזה עדיין משתמש בדוגמיות שלמעלה עד שתהליך ההזנה מבוסס ההיגדים ישוגר.",
+  "dimManager.addButton": "+ הוספת ממד",
+  "dimManager.doneButton": "סיום",
+  "dimManager.confirmRemoveTitle": "להסיר את הממד?",
+  "dimManager.confirmRemoveMessage": "להסיר את “{name}” מהרשת? דירוגים שכבר ניתנו לו יוסתרו (לא יימחקו) אלא אם תוסיפו אותו בחזרה.",
+  "dimManager.confirmRemoveButton": "הסרה",
+  "dimManager.untitledFallback": "הממד הזה"
 };
 
 if (typeof module !== "undefined" && module.exports) {
