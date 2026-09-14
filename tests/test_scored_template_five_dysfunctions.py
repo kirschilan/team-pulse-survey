@@ -6,6 +6,16 @@ from fixtures.build_page import build_page, test_output_path
 
 out_path = build_page(out_name="_test_tpl_five_dysfunctions.html")
 
+
+def strip_bidi(s):
+    # Story 12 routed the Edit Dimensions modal's statement-count hint
+    # through t(), which wraps every interpolated value (the count) in
+    # Unicode bidi isolate marks (U+2066 LRI / U+2069 PDI) -- see
+    # i18n.js/STATUS.md. Invisible and harmless, but present in
+    # .textContent, so exact-text checks here strip them rather than
+    # matching against plain ASCII.
+    return s.replace("⁦", "").replace("⁩", "")
+
 with sync_playwright() as p:
     browser = p.chromium.launch()
     page = browser.new_page(viewport={"width":1280,"height":1000})
@@ -83,7 +93,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(150)
     hint = page.eval_on_selector('.dim-row[data-key="trust"] .hint', 'el=>el ? el.textContent : null')
     print("scored-dimension hint text in Edit dimensions:", hint)
-    assert hint and "3 self-assessment statements" in hint
+    assert hint and "3 self-assessment statements" in strip_bidi(hint)
     page.click('#dimDoneBtn')
 
     # ---- re-loading the SAME starter template again reuses the same dimension keys ----

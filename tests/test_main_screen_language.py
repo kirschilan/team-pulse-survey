@@ -92,14 +92,18 @@ with sync_playwright() as p:
     page.click('.view-btn[data-view="squad"]')
     page.wait_for_timeout(200)
 
-    print("=== Squad view: dir scoping, including the still-English session card ===")
+    print("=== Squad view: dir scoping, including the now-translated session card (Story 11) ===")
     assert direction(page, '#viewSquad') == "rtl"
+    # Story 11 translated the retro facilitation flow's own chrome and
+    # dropped its dir="ltr" opt-out, so the session card now inherits
+    # #viewSquad's rtl scoping like the rest of Squad view -- see
+    # test_facilitator_language.py for the full Story 11 coverage.
     session_card_dir = page.eval_on_selector('.session-card', 'el=>el.getAttribute("dir")')
-    print("session-card dir (opt-out, still English -- Story 10's job):", session_card_dir)
-    assert session_card_dir == "ltr"
+    print("session-card dir (inherits from #viewSquad, no more opt-out):", session_card_dir)
+    assert session_card_dir != "ltr"
     session_card_text = page.eval_on_selector('.session-card h2', 'el=>el.textContent')
-    print("session-card heading (should still be English):", session_card_text)
-    assert session_card_text == "Retro session"
+    print("session-card heading (now Hebrew):", session_card_text)
+    assert session_card_text != "Retro session" and session_card_text.strip()
 
     print("=== Squad view: static + dynamic chrome ===")
     assert page.eval_on_selector('[data-i18n="squad.picker.heading"]', 'el=>el.textContent') == "בחרו את הצוות שלכם"

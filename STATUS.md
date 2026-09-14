@@ -453,9 +453,9 @@ recall exercise instead of something anyone could just read.
 | 7 | Tuckman's Team Development Stages template's dimension content translated | **DONE** (2026-09-13) |
 | 8 | The Five Dysfunctions of a Team template's dimension content translated | **DONE** (2026-09-13) |
 | 9 | Templates modal's own chrome (list labels, "Load"/"Delete" buttons, save-as-template form) — the template NAMES themselves (e.g. "Spotify Squad Health Check") stay English by design, same call already made for Story 5 | **DONE** (2026-09-13) |
-| 10 | Retro join flow (participant-facing screens) | Not started |
-| 11 | Retro facilitation flow (facilitator-facing screens, session cards, overrides) | Not started |
-| 12 | Dimension detail and Edit Dimensions modal (Admin) | Not started |
+| 10 | Retro join flow (participant-facing screens) | **DONE** (2026-09-14) |
+| 11 | Retro facilitation flow (facilitator-facing screens, session cards, overrides) | **DONE** (2026-09-14) |
+| 12 | Dimension detail and Edit Dimensions modal (Admin) | **DONE** (2026-09-14) |
 | 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass | Not started |
 
 ## Deliberately not built yet (and why)
@@ -1373,3 +1373,44 @@ not just in this repo's own tests.
   picks up the same correct state from the relay, not a regressed one. Full suite verified: 65-test
   unit suite and the full 37-file Playwright suite (1 new file), serial (`TEST_JOBS=1`), zero
   regressions.
+- 2026-09-14 — **Multi-language rollout Stories 10-12: retro join flow, retro facilitation flow,
+  and the Edit Dimensions modal.** Each done on its own short-lived branch off
+  `claude/optimistic-keller-holuql` per the new delivery workflow, merged back after full-suite
+  validation.
+  - **Story 10** (`retro-join.js`, `#viewJoin`, `#joinCodeBackdrop`): the "Join a retro" code-entry
+    modal, the join screen's connecting/ended/unreachable/not-open states, the survey form chrome
+    (scale buttons, the "Squad health check" sub-heading, Green:/Red: anchors reusing the Tribe
+    legend's own labels, swatch titles, Submit), and the personal-result screen. Replaced the join
+    heading's hardcoded `dir="ltr"` (a workaround for mixing untranslated English chrome with a
+    Hebrew squad name) with `t()`'s own bidi-isolate wrapping now that the whole sentence
+    translates and `#viewJoin`/`#joinCodeBackdrop` are RTL-scoped.
+  - **Story 11** (`retro-facilitator.js`): the session card (no-session hint + Start button,
+    session code block, live/hold reveal toggle, live results / results held, the
+    response-consolidation table, sprint-experiment note, finish/close buttons), the per-dimension
+    override editor (shares the rating modal's markup), the co-facilitate error paths, and every
+    confirm dialog. Dropped the session card's hardcoded `dir="ltr"` opt-out now that its own
+    chrome translates -- it inherits RTL scoping from `#viewSquad` (Story 4) like the rest of
+    Squad view.
+  - **Story 12** (`dimensions.js`, `#dimBackdrop`): the modal's title/hint, per-row move/remove
+    control titles, the name input's aria-label/placeholder, the Green/Red looks-like labels and
+    placeholders, the statement-count hint, Add/Done buttons, the empty-state hint, and the remove
+    confirm dialog.
+  - **Consistent scope boundary across all three**, same principle Story 9 established for
+    template names: dimension/session content itself (label/green/red/statement text, a freshly
+    added dimension's default "New dimension" label) stays untranslated -- it's the admin's own
+    authored content, not app chrome. `colorWordLocalized()`/`trendWordLocalized()` (i18n.js) --
+    previously unused outside Tribe/Squad view because Stories 10-11 weren't done yet -- are now
+    used by both retro files for band/pill/trend vocabulary, replacing hardcoded English ternaries.
+  - Four now-stale exact-text assertions in pre-existing tests needed updating, all for the same
+    reason (`t()`'s bidi-isolate wrapping around a newly-translated interpolated value, or a
+    dropped `dir="ltr"` opt-out) -- not new bugs, just tests written before these strings went
+    through `t()`: `test_hebrew_rtl_coverage.py` (join heading selector/direction),
+    `test_main_screen_language.py` (session-card dir/heading), `test_retro_override_and_response_table.py`
+    and `test_retro_reveal_mode_and_consolidation.py` (response-row-label / count-line
+    `startswith`), `test_scored_template_five_dysfunctions.py` (statement-count hint substring).
+  - New test files, one per story: `test_join_flow_language.py`, `test_facilitator_language.py`,
+    `test_dim_manager_language.py`. Full suite verified after each story and again at the end:
+    65-test unit suite, 42-file Playwright suite, zero regressions.
+  - Backlog table: Stories 1-12 now **DONE**. Story 13 (CSV import/export chrome) remains --
+    deliberately last, since `csv.js`'s column-matching/re-import logic keys off raw English
+    labels and needs its own design pass, not just a translation pass.

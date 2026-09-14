@@ -188,10 +188,10 @@
   <!-- ================= JOIN SCREEN (participant device, via ?session=) ================= -->
   <section id="viewJoin" hidden>
     <div class="card" id="joinCard">
-      <h2>Connecting&hellip;</h2>
+      <h2 data-i18n="join.connectingHeading">Connecting&hellip;</h2>
     </div>
     <div class="actions" style="margin-top:12px;">
-      <button class="btn ghost" id="exitJoinBtn" type="button">&larr; Back to Squad Pulse</button>
+      <button class="btn ghost" id="exitJoinBtn" type="button" data-i18n="join.backButton">&larr; Back to Squad Pulse</button>
     </div>
     <!-- "Back to Squad Pulse" above only TOGGLES this screen's visibility
          (see retro-join.js's exitJoinScreen()/returnToJoinScreen()) --
@@ -203,11 +203,11 @@
          forever, or "isn't open") without this -- see helpers.js's diag(),
          which updates every ".diag-log". -->
     <details class="legend" id="joinDiagPanel" style="margin-top:14px;">
-      <summary>Trouble joining? Tap for diagnostics <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <summary><span data-i18n="join.diagSummary">Trouble joining? Tap for diagnostics</span> <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
       <div style="padding:0 18px 16px;">
-        <p class="hint" style="margin:0 0 8px;">If this isn't connecting, copy or screenshot what appears below and send it to whoever's running the retro.</p>
+        <p class="hint" style="margin:0 0 8px;" data-i18n="join.diagHint">If this isn't connecting, copy or screenshot what appears below and send it to whoever's running the retro.</p>
         <pre id="joinDiagLog" class="mono diag-log" style="margin:0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:11px;line-height:1.6;max-height:160px;overflow:auto;white-space:pre-wrap;">(no activity yet)</pre>
-        <button class="btn ghost copy-diag-btn" type="button" data-diag-target="joinDiagLog" style="margin-top:8px;">Copy diagnostics</button>
+        <button class="btn ghost copy-diag-btn" type="button" data-diag-target="joinDiagLog" style="margin-top:8px;" data-i18n="admin.diagnostics.copyButton">Copy diagnostics</button>
       </div>
     </details>
   </section>
@@ -257,12 +257,12 @@
 <!-- ---------- dimension manager modal ---------- -->
 <div class="backdrop" id="dimBackdrop" hidden>
   <div class="modal wide" role="dialog" aria-modal="true">
-    <h3>Edit dimensions</h3>
-    <p class="hint">These are the columns of your snapshot grid. Add, rename, reorder or remove them &mdash; changes apply to everyone viewing this board. Ratings for a removed dimension are hidden, not lost, unless you add a dimension back with the same purpose.</p>
+    <h3 data-i18n="dimManager.title">Edit dimensions</h3>
+    <p class="hint" data-i18n="dimManager.hint">These are the columns of your snapshot grid. Add, rename, reorder or remove them &mdash; changes apply to everyone viewing this board. Ratings for a removed dimension are hidden, not lost, unless you add a dimension back with the same purpose.</p>
     <div class="dim-list" id="dimList"></div>
     <div class="modal-actions split">
-      <button class="btn" id="addDimBtn" type="button">+ Add dimension</button>
-      <button class="btn primary" id="dimDoneBtn" type="button">Done</button>
+      <button class="btn" id="addDimBtn" type="button" data-i18n="dimManager.addButton">+ Add dimension</button>
+      <button class="btn primary" id="dimDoneBtn" type="button" data-i18n="dimManager.doneButton">Done</button>
     </div>
   </div>
 </div>
@@ -311,15 +311,15 @@
 <!-- ---------- join-with-code modal ---------- -->
 <div class="backdrop" id="joinCodeBackdrop" hidden>
   <div class="modal" role="dialog" aria-modal="true">
-    <h3>Join a retro</h3>
-    <p class="hint">Enter the session code your Scrum Master shared. Answering a survey? Tap
+    <h3 data-i18n="join.codeModal.title">Join a retro</h3>
+    <p class="hint" data-i18n="join.codeModal.hint">Enter the session code your Scrum Master shared. Answering a survey? Tap
       Join. Co-facilitating (you'll see the live results and can finish the retro too)? Tap
       Co-facilitate instead.</p>
-    <input type="text" id="joinCodeInput" class="join-code-input" placeholder="e.g. 7K4QXB" maxlength="40" autocapitalize="characters" autocomplete="off" spellcheck="false">
+    <input type="text" id="joinCodeInput" class="join-code-input" placeholder="e.g. 7K4QXB" data-i18n-placeholder="join.codeModal.codePlaceholder" maxlength="40" autocapitalize="characters" autocomplete="off" spellcheck="false">
     <div class="modal-actions">
-      <button class="btn ghost" id="joinCodeCancel" type="button">Cancel</button>
-      <button class="btn ghost" id="coFacilitateGo" type="button">Co-facilitate</button>
-      <button class="btn primary" id="joinCodeGo" type="button">Join</button>
+      <button class="btn ghost" id="joinCodeCancel" type="button" data-i18n="join.codeModal.cancel">Cancel</button>
+      <button class="btn ghost" id="coFacilitateGo" type="button" data-i18n="join.codeModal.coFacilitate">Co-facilitate</button>
+      <button class="btn primary" id="joinCodeGo" type="button" data-i18n="join.codeModal.join">Join</button>
     </div>
   </div>
 </div>

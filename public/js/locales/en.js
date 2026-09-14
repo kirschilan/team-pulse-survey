@@ -110,6 +110,7 @@ var LOCALE_EN = {
   "common.ptsOnly": "{score} pts",
   "common.breakdownLine": "{crit} red · {warn} yellow",
   "common.hasNoteTitle": "Has a note",
+  "common.ok": "OK",
 
   "tribe.stats.assessedLabel": "{unitPlural} assessed",
   "tribe.stats.assessedSub": "{countUnit} tracked",
@@ -156,7 +157,129 @@ var LOCALE_EN = {
   "ratingModal.cancel": "Cancel",
   "ratingModal.save": "Save",
   "ratingModal.greenLabel": "Green looks like:",
-  "ratingModal.redLabel": "Red looks like:"
+  "ratingModal.redLabel": "Red looks like:",
+
+  // Story 10: the retro JOIN flow (participant-facing screens) -- the
+  // "Join a retro" code-entry modal, the join screen's connecting/ended/
+  // unreachable/not-open states, the survey form chrome, and the personal
+  // result screen. Dimension content itself (label/green/red/statement
+  // text) stays untranslated by the same principle Story 9 applied to
+  // template names: it's the admin's own authored content, snapshotted
+  // onto the session at start time, not app chrome.
+  "join.codeModal.title": "Join a retro",
+  "join.codeModal.hint": "Enter the session code your Scrum Master shared. Answering a survey? Tap Join. Co-facilitating (you'll see the live results and can finish the retro too)? Tap Co-facilitate instead.",
+  "join.codeModal.codePlaceholder": "e.g. 7K4QXB",
+  "join.codeModal.cancel": "Cancel",
+  "join.codeModal.coFacilitate": "Co-facilitate",
+  "join.codeModal.join": "Join",
+  "join.backButton": "← Back to Squad Pulse",
+  "join.diagSummary": "Trouble joining? Tap for diagnostics",
+  "join.diagHint": "If this isn't connecting, copy or screenshot what appears below and send it to whoever's running the retro.",
+  "join.connectingHeading": "Connecting…",
+  "join.connectingHint": "Hang tight while we connect to the board.",
+  "join.endedHeading": "This retro has ended",
+  "join.endedHint": "The facilitator closed this session. Ask them for a new link if another one is starting.",
+  "join.unavailableHeading": "Can't connect to the retro server",
+  "join.unavailableHint": "This device never reached the relay. Check your connection, or ask whoever's running the retro if it's up.",
+  "join.notOpenHeading": "This retro session isn't open",
+  "join.notOpenHint": "Check the link with whoever is running the retro — it may have already ended, or the link may be out of date.",
+  "join.thanksHeading": "Thanks — here's your results",
+  "join.retroLabel": "Retro: “{name}”.",
+  "join.joiningHeading": "You're joining {squad}'s retro",
+  "join.formHint": "Answer honestly — your answers are anonymous, and only your squad's combined result is ever shown.",
+  "join.noDimensionsHint": "This retro doesn't have any dimensions set up yet.",
+  "join.scale.rarely": "Rarely",
+  "join.scale.sometimes": "Sometimes",
+  "join.scale.usually": "Usually",
+  "join.squadHealthCheckHeading": "Squad health check",
+  "join.submitButton": "Submit",
+  "join.submittingButton": "Submitting…",
+
+  // Story 11: the retro FACILITATION flow (facilitator-facing screens) --
+  // the session card (start/start-again, session code, live tally, reveal
+  // toggle, sprint-experiment note, finish/close), the per-dimension
+  // override editor (shares the rating modal's own markup -- see
+  // modals.js's activeEditor()), and their confirm dialogs. Same scope
+  // boundary as Story 10: dimension content (label/green/red) stays
+  // untranslated, it's the admin's own authored content.
+  "retro.noSession.heading": "Retro session",
+  "retro.noSession.hint": "Start a live session using the board's current template (“{templateName}”) — teammates can join and answer on their own device.",
+  "retro.startButton": "Start retro session",
+  "retro.startingButton": "Starting…",
+  "retro.inProgressHeading": "Retro session in progress",
+  "retro.retroLabel": "Retro: “{name}”.",
+  "retro.codeBlock.heading": "Session code",
+  "retro.codeBlock.hint": "Have teammates open Squad Pulse and tap “Join a retro” up top, then type this code in.",
+  "retro.reveal.hold": "Hold results",
+  "retro.reveal.live": "Show live",
+  "retro.countLine.one": "1 teammate has submitted so far.",
+  "retro.countLine.many": "{count} teammates have submitted so far.",
+  "retro.live.heading": "Live results",
+  "retro.live.waiting": "Waiting…",
+  "retro.live.overriddenTag": "Overridden",
+  "retro.live.overrideTitle": "Override this result",
+  "retro.live.seeResponsesOne": "See all 1 response",
+  "retro.live.seeResponsesMany": "See all {count} responses",
+  "retro.live.responseRowLabel": "Response {n}",
+  "retro.held.heading": "Results held",
+  "retro.held.hint": " Switch to “Show live” any time to see the consolidated results as they come in.",
+  "retro.experiment.heading": "Sprint experiment",
+  "retro.experiment.hint": "What will the team try differently next sprint?",
+  "retro.experiment.placeholder": "e.g. Pair on the riskiest story each day",
+  "retro.experiment.saved": "Saved",
+  "retro.experiment.saveButton": "Save note",
+  "retro.finishButton": "Finish retro & apply results",
+  "retro.closeButton": "Close session without applying results",
+  "retro.shareLink.summary": "Or scan/share a link",
+  "retro.shareLink.hint": "On some phones, scanning this opens the Claude app to the regular board instead of the retro — if that happens, use the session code above instead.",
+  "retro.shareLink.linkLabel": "Join link",
+  "retro.shareLink.copy": "Copy",
+  "retro.coFacilitate.summary": "Bring in a co-facilitator",
+  "retro.coFacilitate.hint": "A different link from the join link above — opening this gets the FULL facilitator view (live tally, override, finish), not the survey.",
+  "retro.coFacilitate.linkLabel": "Co-facilitator link",
+  "retro.coFacilitate.errorTitle": "Couldn't co-facilitate that session",
+  "retro.coFacilitate.errorFallback": "Something went wrong reaching the relay. Check the diagnostic log below for details.",
+  "retro.coFacilitate.notConnected": "Not connected to the relay yet — try again in a moment.",
+  "retro.coFacilitate.codeNotOpen": "That session code isn't open.",
+  "retro.confirmStart.errorTitle": "Couldn't start the retro session",
+  "retro.confirmClose.title": "Close this retro session?",
+  "retro.confirmClose.message": "Ends the session for everyone with the link. This does not change any of {name}'s existing ratings.",
+  "retro.confirmClose.button": "Close without applying results",
+  "retro.confirmFinishEmpty.title": "Finish this retro?",
+  "retro.confirmFinishEmpty.message": "No submissions or overrides yet, so {name}'s ratings won't change. This just closes the session.",
+  "retro.confirmFinish.title": "Finish this retro?",
+  "retro.confirmFinish.message": "Writes these results into {name}'s ratings, then closes the session — {summary}",
+  "retro.confirmFinish.button": "Finish & apply",
+  "retro.confirmFinish.overriddenSuffix": " (overridden)",
+  "retro.override.squadline": "Overriding this retro's consolidated result",
+  "retro.override.notePlaceholder": "Why override this? (optional)",
+
+  // Story 12: the Edit Dimensions modal (Admin). The dimension NAMES/green/
+  // red text themselves are the admin's own authored content and stay
+  // untranslated -- same principle Stories 9/10/11 already applied to
+  // template names and session content. A freshly added dimension's default
+  // "New dimension" label also stays English by the SAME precedent Story 4
+  // already set for addSquad()'s "New {unit}" default -- it's editable
+  // placeholder content, not app chrome.
+  "dimManager.title": "Edit dimensions",
+  "dimManager.hint": "These are the columns of your snapshot grid. Add, rename, reorder or remove them — changes apply to everyone viewing this board. Ratings for a removed dimension are hidden, not lost, unless you add a dimension back with the same purpose.",
+  "dimManager.emptyHint": "No dimensions yet — add your first one below.",
+  "dimManager.moveUpTitle": "Move up",
+  "dimManager.moveDownTitle": "Move down",
+  "dimManager.nameAriaLabel": "Dimension name",
+  "dimManager.namePlaceholder": "Dimension name",
+  "dimManager.removeTitle": "Remove dimension",
+  "dimManager.greenLabel": "Green looks like",
+  "dimManager.redLabel": "Red looks like",
+  "dimManager.greenPlaceholder": "What healthy looks like",
+  "dimManager.redPlaceholder": "What unhealthy looks like",
+  "dimManager.statementsHint": "Scored from {count} self-assessment statements (not editable here yet) — rating this dimension still uses the swatches above until the statement-based entry flow ships.",
+  "dimManager.addButton": "+ Add dimension",
+  "dimManager.doneButton": "Done",
+  "dimManager.confirmRemoveTitle": "Remove dimension?",
+  "dimManager.confirmRemoveMessage": "Remove “{name}” from the grid? Any ratings already given for it will be hidden (not deleted) unless you add it back.",
+  "dimManager.confirmRemoveButton": "Remove",
+  "dimManager.untitledFallback": "this dimension"
 };
 
 if (typeof module !== "undefined" && module.exports) {
