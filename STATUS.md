@@ -1530,3 +1530,22 @@ not just in this repo's own tests.
   elsewhere for a comparable "wait for the real end-state, not just some transition" case).
   Result: ~7.2s -> ~2.3-2.6s per run locally, 10/10 clean, then the full 43-file suite, zero
   regressions.
+- 2026-09-14 — Fourth file in the condition-based-wait perf pass: `test_tooltip_busy_overlay_and_csv_key.py`
+  (Copilot's #4-ranked file), on its own short-lived branch. This one caught a genuinely new
+  failure mode, not just a repeat of `state="attached"`: `showBusy()`/`hideBusy()` (`modals.js`)
+  bracket a Promise chain (`templates.js`'s `loadTemplate()`) that this fake store resolves fast
+  enough to complete within the SAME JS turn as the click that triggers it. A `wait_for_function`
+  polling for `busyOverlay.hidden === false` -- an EXTERNAL CDP call that only gets a turn once the
+  page's own microtask queue drains -- timed out 15/15, because by the time any external poll runs,
+  `hideBusy()` has usually already fired too. This is exactly what the file's own top-of-file
+  comment already warned about ("polling at an arbitrary later point would otherwise likely just
+  see the already-hidden end state") -- confirmed empirically the hard way instead of heeding it
+  up front. `__busyHistory`, recorded by a `MutationObserver` running on the PAGE's own timeline
+  rather than an external poll, is the only reliable record of that transient show; the fix waits
+  for the cycle to fully settle (`hidden === true`) and reads the recorded history, rather than
+  trying to catch the shown moment live. Every hover/focus/blur tooltip check got a
+  `wait_for_function` tied to `dimTooltip`'s hidden state or exact expected content (those handlers
+  run synchronously, so these resolve near-instantly); the three CSV-import waits became
+  `pendingImportPlan !== null` polls, same as the other files in this pass. Result: ~6.9s -> ~2.1-2.2s
+  per run locally, 15/15 clean (a bigger stress-test batch than the first three files, given the
+  event-timing sensitivity here), then the full 43-file suite, zero regressions.
