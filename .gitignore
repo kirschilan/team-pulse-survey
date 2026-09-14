@@ -15,3 +15,8 @@ node_modules/
 # relay/storage/file-adapter.js's default RELAY_DATA_DIR -- only exists
 # locally when RELAY_STORAGE=file is opted into; never something to commit.
 relay/data/
+
+# scripts/export-template-translations.js's default output -- a scratch
+# file for the product owner's own translation review, regenerated on
+# demand from state.js; never something to commit.
+/translations-export.json

@@ -1662,3 +1662,18 @@ not just in this repo's own tests.
   `pendingImportPlan !== null` polls, same as the other files in this pass. Result: ~6.9s -> ~2.1-2.2s
   per run locally, 15/15 clean (a bigger stress-test batch than the first three files, given the
   event-timing sensitivity here), then the full 43-file suite, zero regressions.
+- 2026-09-14 — **Added a translation export script for the product owner's own review workflow**
+  (`scripts/export-template-translations.js`), the last item from the same usage-report follow-up
+  as the bilingual-dimensions work above. Every starter template's dimension content is marked
+  "AI-translated, pending human review" in `state.js`'s own comments -- this gives the product
+  owner a plain JSON file (English and Hebrew side by side, per field, for every dimension of every
+  starter template, including statements/strategies) to review and correct instead of editing
+  state.js's hardcoded JS objects directly. Deliberately export-only: applying an edited file back
+  is a Claude-assisted step (read the file, edit `state.js`), not an automated importer -- state.js
+  is source code, not data a script should rewrite unattended. Output path defaults to
+  `translations-export.json` at the repo root (gitignored -- a regenerate-on-demand scratch file,
+  never checked in). Checked this repo (both branches) for a "revised JSON export format" the
+  product owner mentioned another session was working on, specifically to align this script's shape
+  with it if relevant -- found no trace of it here (no other branch, no committed file referencing
+  it), so this export uses its own straightforward shape for now; worth reconciling once that other
+  session's work is visible here.
