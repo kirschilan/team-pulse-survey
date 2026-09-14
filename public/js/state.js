@@ -161,6 +161,58 @@ function activeStarterTemplate(){
 // this ONE lookup works identically for a live board dimension, a saved
 // custom template's own dimension, and a retro session's frozen copy:
 // none of them need to know which template (if any) they came from.
+//
+// Real regression this redesign introduced, found live in the product
+// owner's own board: `i18n` is only ever WRITTEN onto a dimension doc when
+// loadTemplate()/startSession() actually runs, or on a brand-new seeded
+// board -- an already-saved dimension doc from BEFORE this redesign
+// shipped is never retroactively backfilled, so it has no `i18n` at all.
+// The OLD mechanism this replaced matched a dimension's current VALUE
+// against STARTER_TEMPLATES regardless of when it was saved, so it kept
+// working for any pre-existing board; this redesign silently dropped that
+// safety net. builtinDimByKey() restores it as a fallback UNDER the
+// dimension's own i18n (an admin's real translation always wins), matching
+// a built-in starter template's dimension by its stable KEY -- but unlike
+// the old shadow table, which compared by fragile REFERENCE equality (the
+// exact thing that broke for an array field round-tripping through a
+// session doc's JSON-shaped storage), localizedDimText() below additionally
+// gates each use of this fallback on the field's/element's own current
+// VALUE still matching the built-in's English default -- a value (string)
+// comparison can't break on a JSON round-trip the way a reference
+// comparison can, and it also means a field an admin HAS since edited away
+// from the default correctly falls back to plain English instead of
+// showing a stale, unrelated built-in translation.
+function builtinDimByKey(key){
+  for (var i=0;i<STARTER_TEMPLATES.length;i++){
+    var dims = STARTER_TEMPLATES[i].dimensions;
+    for (var j=0;j<dims.length;j++){
+      if (dims[j].key === key) return dims[j];
+    }
+  }
+  return null;
+}
+
+// Shared by localizedDimText() below (locale-gated, used everywhere the app
+// DISPLAYS a dimension) and the bilingual-dimensions editor's own pre-fill
+// (dimensions.js -- it always shows/edits the Hebrew side of a dimension
+// regardless of the admin's own current UI locale, so it calls this
+// directly rather than through localizedDimText()). Pass `index` for an
+// array field (statements/strategies); omit it for a scalar one
+// (label/green/red). Returns undefined when no safe fallback exists --
+// caller decides what "no fallback" means for its own context.
+function builtinDimTranslation(dim, field, index, locale){
+  var builtin = builtinDimByKey(dim.key);
+  var builtinTr = builtin && builtin.i18n && builtin.i18n[locale];
+  if(!builtinTr) return undefined;
+  if(index === undefined){
+    if(builtin[field] !== dim[field]) return undefined;
+    return builtinTr[field];
+  }
+  var builtinArr = builtin[field], dimArr = dim[field];
+  if(!Array.isArray(builtinArr) || !Array.isArray(dimArr) || builtinArr[index] !== dimArr[index]) return undefined;
+  return builtinTr[field] && builtinTr[field][index];
+}
+
 function localizedDimText(dim, field){
   var value = dim[field];
   var locale = (state.ui && state.ui.locale) || "en";
@@ -171,14 +223,19 @@ function localizedDimText(dim, field){
     // (dimensions.js) lets an admin translate statements one at a time, so
     // a real Hebrew array is very often partially filled mid-edit -- an
     // all-or-nothing fallback would show a blank line for every
-    // not-yet-translated entry instead of its English text.
-    if(!Array.isArray(tr)) return value;
+    // not-yet-translated entry instead of its English text. Same logic
+    // extends one tier further to the built-in fallback, each element
+    // independently value-gated (see builtinDimTranslation()'s comment).
     return value.map(function(v, i){
-      var t = tr[i];
-      return (t !== undefined && t !== null && String(t).trim() !== "") ? t : v;
+      var t = tr && tr[i];
+      if(t !== undefined && t !== null && String(t).trim() !== "") return t;
+      var bt = builtinDimTranslation(dim, field, i, locale);
+      return (bt !== undefined && bt !== null && String(bt).trim() !== "") ? bt : v;
     });
   }
-  return (tr !== undefined && tr !== null && String(tr).trim() !== "") ? tr : value;
+  if(tr !== undefined && tr !== null && String(tr).trim() !== "") return tr;
+  var builtinTr = builtinDimTranslation(dim, field, undefined, locale);
+  return (builtinTr !== undefined && builtinTr !== null && String(builtinTr).trim() !== "") ? builtinTr : value;
 }
 
 function localizedAttribution(attribution){
@@ -607,6 +664,7 @@ if (typeof module !== "undefined" && module.exports) {
     STARTER_TEMPLATES: STARTER_TEMPLATES,
     localizedDimText: localizedDimText,
     localizedAttribution: localizedAttribution,
+    builtinDimTranslation: builtinDimTranslation,
     state: state
   };
 }

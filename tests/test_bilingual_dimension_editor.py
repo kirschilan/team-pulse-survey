@@ -27,25 +27,47 @@ with sync_playwright() as p:
     page.click('.view-btn[data-view="admin"]')
     page.wait_for_timeout(100)
 
-    print("=== a plain (Spotify) dimension has NO Hebrew yet: 'add translation' toggle, collapsed ===")
+    print("=== a genuinely custom dimension (no built-in template shares its content) has NO Hebrew yet: 'add translation' toggle, collapsed ===")
     page.click('#dimManageBtn')
     page.wait_for_timeout(150)
+    page.click('#addDimBtn')
+    page.wait_for_timeout(150)
+    custom_row = page.query_selector('.dim-row:has(input.dim-label[value="New dimension"])')
+    custom_toggle = custom_row.query_selector('.i18n-toggle')
+    print("toggle text (no translation, no built-in match):", custom_toggle.text_content())
+    assert "Add a Hebrew translation" in custom_toggle.text_content()
+    assert custom_row.query_selector('.i18n-panel').is_hidden()
+    custom_toggle.click()
+    page.wait_for_timeout(100)
+    assert custom_row.query_selector('.i18n-panel').query_selector('.dim-label').input_value() == ""
+
+    # "process" is a real regression case: it's an unmodified Spotify Squad
+    # Health Check dimension (this fixture's default board) with no i18n of
+    # its OWN -- exactly the shape a board that loaded this template BEFORE
+    # the per-dimension i18n redesign shipped would have. Its label matches
+    # the built-in default exactly, so it should show that translation as a
+    # fallback (state.js's builtinDimTranslation()); its green/red here are
+    # synthetic test content ("green process"/"red process", not Spotify's
+    # real text -- see this fixture's own header comment), so those correctly
+    # do NOT get a fallback translation -- a mismatched value must never be
+    # paired with someone else's translation.
+    print("=== a dimension with no i18n of its own, but whose content still matches a built-in default, shows that built-in translation as a fallback (the legacy-board regression fix) ===")
     process_row = page.query_selector('.dim-row[data-key="process"]')
     toggle = process_row.query_selector('.i18n-toggle')
-    print("toggle text (no translation state):", toggle.text_content())
-    assert "Add a Hebrew translation" in toggle.text_content()
-    assert process_row.query_selector('.i18n-panel').is_hidden()
-
-    print("=== expanding it shows blank Hebrew fields ===")
-    toggle.click()
-    page.wait_for_timeout(100)
+    print("toggle text (built-in fallback in effect):", toggle.text_content())
+    assert "added" in toggle.text_content().lower()
+    assert toggle.get_attribute("aria-expanded") == "true"  # a dimension with an in-effect translation starts open
     panel = process_row.query_selector('.i18n-panel')
     assert panel.is_visible()
     he_label_input = panel.query_selector('.dim-label')
-    print("blank Hebrew label value:", he_label_input.input_value())
-    assert he_label_input.input_value() == ""
+    print("pre-filled Hebrew label (built-in fallback, no i18n stored yet):", he_label_input.input_value())
+    assert he_label_input.input_value() == "תהליך עבודה מתאים"
+    he_green_readonly = panel.query_selector('textarea[data-field="green"]')
+    print("Hebrew green (should stay blank -- English green here doesn't match the built-in default):", he_green_readonly.input_value())
+    assert he_green_readonly.input_value() == ""
+    assert page.evaluate("dimByKey('process').i18n") is None  # fallback is display-only -- nothing written until an actual edit
 
-    print("=== filling in a Hebrew translation persists to dim.i18n.he and localizes live ===")
+    print("=== filling in a Hebrew translation persists to dim.i18n.he (an explicit edit always wins over the fallback) and localizes live ===")
     # renderDimList() fully rebuilds #dimList's innerHTML on every change --
     # earlier element handles go stale, so re-query after each edit.
     he_label_input.fill("קלות שחרור")

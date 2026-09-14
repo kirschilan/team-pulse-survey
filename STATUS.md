@@ -1735,3 +1735,38 @@ not just in this repo's own tests.
   preview branch after the relay-deadlock fix above landed concurrently; re-verified the merged
   state: 5x stress-test rerun clean, full 44-file Playwright suite, and the 69-test unit suite, zero
   regressions.
+- 2026-09-14 — **Fixed a real regression in the bilingual-dimensions redesign**, reported live by
+  the product owner: "the HE template from state.js is not loading, neither to the squad/team/retro
+  view, nor to the edit dimensions modal." Root cause: `i18n` is only ever WRITTEN onto a dimension
+  doc when `loadTemplate()`/`startSession()` actually runs, or on a brand-new seeded board -- an
+  already-saved dimension doc from BEFORE the redesign shipped is never retroactively backfilled, so
+  it has no `i18n` at all. The OLD mechanism the redesign replaced matched a dimension's current
+  VALUE against `STARTER_TEMPLATES` regardless of when it was saved, so it kept working for any
+  pre-existing board; the redesign silently dropped that safety net -- confirmed by reproducing it
+  directly against `public/local-store.js` (the real, non-test backend) with a simulated
+  pre-redesign-shaped board: Tribe/Squad view and Edit Dimensions all showed plain English under
+  Hebrew for a legacy Tuckman dimension, a fresh board showed Hebrew correctly everywhere.
+  Fixed with `state.js`'s new `builtinDimTranslation(dim, field, index, locale)`: a fallback tier
+  UNDER the dimension's own `i18n` (an admin's real translation always wins), matching a built-in
+  starter template's dimension by its stable KEY -- but unlike the old shadow table, which compared
+  by fragile REFERENCE equality (the exact thing that broke for an array field round-tripping
+  through a session doc's JSON-shaped storage), this fallback is additionally gated on the field's/
+  element's own current VALUE still matching the built-in's English default: a string comparison
+  can't break on a JSON round-trip, and it also means a field an admin HAS since edited away from
+  the default correctly falls back to plain English instead of showing a stale, unrelated built-in
+  translation. `localizedDimText()` now calls this shared helper (used by every display site --
+  Tribe/Squad/Retro), and `dimensions.js`'s Edit Dimensions panel gained its own locale-independent
+  `effectiveHeValue()` built on the same helper, so a legacy dimension's translation panel shows the
+  same in-effect Hebrew content the rest of the app does, pre-filled and still freely editable --
+  closing the third place the product owner named. Purely a display/pre-fill fallback: nothing is
+  written to a dimension's own `i18n` until an admin actually edits a field.
+  Found a real test-fixture coupling while fixing this: `tests/fixtures/fake_store.html`'s "process"/
+  "value" dimensions (used elsewhere as a "genuinely untranslated" example) turned out to be
+  unmodified Spotify Squad Health Check defaults by label, so they now correctly pick up the built-in
+  fallback too -- `test_bilingual_dimension_editor.py` updated to use a freshly-added custom
+  dimension for the "no built-in match at all" case, and to assert the new partial-fallback behavior
+  (label translated via fallback, synthetic green/red correctly NOT translated since their test
+  content doesn't match Spotify's real text) as its own explicit scenario. Test-first throughout
+  (5 new unit tests in `test_template_locale.js` proving the fallback, its value-gating, and its
+  per-element array behavior, written and confirmed failing before the `state.js` change). Full
+  74-test unit suite + 44-file Playwright suite green, on its own short-lived branch.
