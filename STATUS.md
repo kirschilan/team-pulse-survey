@@ -2206,3 +2206,16 @@ not just in this repo's own tests.
   verified output byte-for-byte identical to their originals, each stress-tested 10x clean. Full
   suite green: 74/74 unit tests, 45/45 Playwright tests (test count grew by one from the merged
   About & help PR) via `tests/run_all.sh` (67.7s). 16 files remain in this batch.
+- 2026-09-15 — Batch 2/5 of the remaining wait-condition files: `test_admin_language_switch.py`
+  (10 waits -> 0, standard boot marker + synchronous setView()/setLocale()/openConfirm() treatment;
+  a real `page.reload()` correctly kept its own boot-marker wait, since a reload genuinely re-runs
+  the whole async boot sequence, unlike every other click in the file), `test_view_switch_refreshes_
+  stale_state.py` (6 waits -> 0, the simplest file in the batch -- this is the file guarding the
+  exact bug this whole methodology depends on staying fixed, setView() calling renderAll() on every
+  switch, so it got read carefully rather than assumed), and `test_csv_import_column_matching.py`
+  (9 waits -> 0, the one genuinely new async mechanism found so far in this batch: `csvFileInput`'s
+  change handler reads the file via `FileReader.readAsText()`, a real async I/O callback rather than
+  a promise/microtask, before rendering the preview and unhiding `#importBackdrop` -- both CSV-import
+  scenarios now wait on that backdrop instead of guessing). Verified output byte-for-byte identical
+  to each original, each stress-tested 10x clean. Full suite green: 74/74 unit tests, 45/45
+  Playwright tests via `tests/run_all.sh` (66.0s). 13 files remain in this batch.
