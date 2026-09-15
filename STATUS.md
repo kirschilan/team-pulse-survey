@@ -2563,3 +2563,15 @@ not just in this repo's own tests.
   `test_dim_manager_language.py`'s existing remove-confirm-dialog scenario with both assertions,
   confirmed failing before either fix, passing after. Full 81-test unit suite + 47-file Playwright
   suite green.
+- 2026-09-15 — Follow-up (PR #6 review): replaced that fix's `page.wait_for_timeout(25)`
+  with a deterministic flush of the browser's own macrotask queue. The race is a specific,
+  named mechanism -- `local-store.js`'s `onSnapshot()` schedules its snapshot delivery via
+  `setTimeout(fn, 0)`, and a stray re-render's fresh subscription can fire that stale
+  snapshot between the test's `fill()` and its `click()` -- so it can be waited on exactly,
+  not guessed at: `page.evaluate("() => new Promise(r => setTimeout(r, 0))")` resolves only
+  once any already-scheduled zero-delay timer inside the page has run, which holds
+  regardless of how loaded the machine running the suite is, unlike a fixed wall-clock
+  duration measured from the test driver across a CDP round-trip. Verified with 10 focused
+  runs of `test_retro_experiment_note_and_finish.py` (all clean), the full 47-file
+  Playwright suite via `run_all.sh` (TEST_JOBS=4, 3 shards, 48s), and the 82/82 Node unit
+  suite -- zero regressions, only this one line changed in test code.

@@ -76,10 +76,15 @@ with sync_playwright() as p:
       arg=sid,
     )
     # The fake store delivers the initial sessions snapshot on a delayed
-    # callback even though startSession() already notified the listener. There
-    # is no exposed completion signal for that second render; yield briefly
-    # before typing so it cannot replace the textarea with the empty snapshot.
-    page.wait_for_timeout(25)
+    # callback (local-store.js's onSnapshot() schedules it via
+    # setTimeout(fn, 0)) even though startSession() already notified the
+    # listener synchronously. That second, stale-snapshot render has no
+    # exposed completion signal to poll for -- but the race is specifically
+    # a pending zero-delay timer inside the page, so flush the browser's own
+    # macrotask queue instead of guessing a wall-clock duration: this
+    # resolves only once any already-scheduled setTimeout(..., 0) has run,
+    # which holds regardless of how loaded the machine running this is.
+    page.evaluate("() => new Promise(r => setTimeout(r, 0))")
     dim_keys = [d["key"] for d in session_info["doc"]["dimensions"]]
     print("=== session started ===", sid, dim_keys)
     print("experimentNote defaults to empty string:", repr(session_info["doc"].get("experimentNote")))
