@@ -1840,3 +1840,21 @@ not just in this repo's own tests.
   again after a clean fast-forward onto the preview branch (5x rerun).
 
   This closes out all 10 of Copilot's flagged test-performance files.
+- 2026-09-15 — Copilot's re-run (after syncing to the pulled branch) flagged a fresh top-10 slowest
+  list; started a new pass on the 8 local-fake-store files it flagged (deferring the one relay-
+  backed file in that list to its own careful pass, and deprioritizing
+  `test_relay_error_handling.py`, which deliberately times a real bounded-retry/give-up window
+  against an unreachable relay rather than working around a missing signal). File 1/8:
+  `test_facilitator_language.py` (23 waits, the highest count in the new list). Same treatment as
+  the rest of this pass: click chains needed no wait, including a modal-closing click immediately
+  followed by clicking a target the modal's backdrop was covering (actionability itself waits for
+  the backdrop to close); `wait_for_selector(state="attached"/"visible")` for native `<details>`
+  content, session-card renders, and the rating/override modal (`#backdrop`) plus confirm dialogs;
+  `wait_for_function()` polling the store for template-load/session-creation writes. Two spots had
+  a checked reason for no wait: saving the sprint-experiment note sets its "Saved" hint's
+  `hidden=false` SYNCHRONOUSLY in the click handler (the `setTimeout` it also schedules only
+  re-hides it 1800ms later), and the manual store write + `window.__NOTIFY__()` call needed none
+  either, matching the by-now-established synchronous-listener finding. Verified output identical
+  to the original (aside from the randomized session code), then stress-tested 10x clean at
+  ~2.3-2.4s per run (down from ~5.7s). Full 44-file Playwright suite + 74-test unit suite green,
+  zero regressions.
