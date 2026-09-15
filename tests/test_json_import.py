@@ -324,6 +324,54 @@ with sync_playwright() as p:
     page.click('#importJsonCancel')
     page.wait_for_selector('#importJsonBackdrop[hidden]', state="attached")
 
+    # ---- PR #12 review finding (P1): a combined squads+dimensions import
+    # dropped ratings whenever the rating's dimension key didn't literally
+    # exist on THIS board -- true for every cross-board import, since
+    # dimensions match by LABEL (not key, per item 3b's own design) and two
+    # boards/devices never share a dimension's random "local-dim-"+Date.now()
+    # key even for "the same" labeled dimension. Reproduced with the real
+    # browser import UI: a file with a brand-new custom dimension AND an
+    # existing dimension referenced under the SOURCE board's own (different)
+    # key, both with real ratings -- both must land under the DESTINATION's
+    # real key, not be silently skipped. ----
+    print("=== item 3b: combined import resolves ratings for a NEW dimension and an existing dimension under a different source key ===")
+    combined_file = {
+        "formatVersion": 1,
+        "squads": [
+            {"name": "Squad 1", "dimensions": {
+                "src_new_dim_key": {"color": "good", "note": "brand new dimension rating"},
+                "src_release_key": {"color": "warn"},
+            }},
+        ],
+        "dimensions": [
+            {"key": "src_new_dim_key", "label": "Team autonomy"},
+            {"key": "src_release_key", "label": "Easy to release"},
+        ],
+    }
+    open_with_file(json.dumps(combined_file), "combined.json")
+    page.wait_for_selector('#importJsonBody .mode-btn.active[data-mode="merge"]')
+
+    ratings_chip_combined = strip_bidi(page.eval_on_selector('#importJsonBody .chip.ok', 'el => el.textContent'))
+    print("ratings chip (must show BOTH ratings, not 0):", ratings_chip_combined)
+    assert "2 ratings to import" in ratings_chip_combined
+
+    page.click('#importJsonApplyBtn')
+    page.wait_for_function("() => window.state.dimensions.some(d => d.label === 'Team autonomy')")
+
+    new_dim_key = page.evaluate("() => (window.state.dimensions.find(d => d.label === 'Team autonomy') || {}).key")
+    print("new dimension's real (destination) key:", new_dim_key)
+    assert new_dim_key and "pending-dimension:" not in new_dim_key
+
+    store_sq1_combined = store_squad_by_name("Squad 1")
+    print("persisted Squad 1 after combined import:", store_sq1_combined)
+    assert store_sq1_combined["dimensions"].get(new_dim_key, {}).get("color") == "good", \
+        "a rating for a dimension created in the SAME import must land under its real destination key"
+    assert store_sq1_combined["dimensions"].get(new_dim_key, {}).get("note") == "brand new dimension rating"
+    assert store_sq1_combined["dimensions"].get("release", {}).get("color") == "warn", \
+        "a rating for an EXISTING dimension referenced under a different source key must resolve by label"
+    assert not any("pending-dimension:" in k for k in store_sq1_combined["dimensions"].keys()), \
+        "no unresolved pending-dimension marker should ever reach the persisted store"
+
     print("=== item 3b: merge adds + updates a dimension, adds a saved template, changes a config field ===")
     before_labels = current_dimension_labels()
     print("board dimension labels before:", before_labels)

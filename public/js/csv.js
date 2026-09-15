@@ -252,9 +252,55 @@ function parseBoardImportFile(text){
 // each rating's dimension by KEY against the board's CURRENT dimension set.
 // A rating for a key not found today is reported, not guessed at, exactly
 // like buildImportPlan()'s CSV equivalent.
-function buildSquadImportPlan(data, mode){
+// PR #12 review finding: two boards/devices never share a dimension's key
+// (item 3b's own design -- see buildDimensionImportPlan()'s comment), so
+// once a file also carries its own `dimensions` section, a rating's KEY is
+// only ever meaningful to the SOURCE board. A destination board's real
+// match is by LABEL -- either an already-existing dimension (resolved
+// immediately here) or one about to be created in the same operation
+// (resolved once it exists, via the pendingDimensionKey()/
+// resolvePendingDimensionKeys() pair below).
+var PENDING_DIMENSION_PREFIX = "pending-dimension:";
+function pendingDimensionKey(label){ return PENDING_DIMENSION_PREFIX + label; }
+function resolvePendingDimensionKeys(fileDims){
+  var byLabel = {};
+  sortedDimensions().forEach(function(d){ byLabel[d.label.trim().toLowerCase()] = d; });
+  var resolved = {};
+  Object.keys(fileDims).forEach(function(key){
+    if(key.indexOf(PENDING_DIMENSION_PREFIX) === 0){
+      var label = key.slice(PENDING_DIMENSION_PREFIX.length);
+      var dim = byLabel[label.trim().toLowerCase()];
+      if(dim) resolved[dim.key] = fileDims[key];
+      // still doesn't exist (e.g. its own creation failed) -- dropped,
+      // same as any other "dimension not found" case.
+    } else {
+      resolved[key] = fileDims[key];
+    }
+  });
+  return resolved;
+}
+
+// extraDimensionLabels (optional): buildDimensionImportPlan()'s own
+// `added` list, passed in ONLY when that plan will actually be applied in
+// the same operation (the Templates scope is checked) -- a rating whose
+// file-key resolves to one of these labels is counted as a real import
+// (pendingDimensionKey() marker) rather than reported as missing, since it
+// genuinely will exist by the time this squad plan is applied. Omitted
+// (e.g. Templates scope unchecked), such a rating still correctly reports
+// "not found" -- nothing will create that dimension this round.
+function buildSquadImportPlan(data, mode, extraDimensionLabels){
   var dimByKeyMap = {};
-  sortedDimensions().forEach(function(d){ dimByKeyMap[d.key] = d; });
+  var dimByLabelMap = {};
+  sortedDimensions().forEach(function(d){
+    dimByKeyMap[d.key] = d;
+    dimByLabelMap[d.label.trim().toLowerCase()] = d;
+  });
+  var fileDimKeyToLabel = {};
+  (data.dimensions || []).forEach(function(fd){
+    if(fd && typeof fd.key === "string" && typeof fd.label === "string") fileDimKeyToLabel[fd.key] = fd.label;
+  });
+  var extraLabelSet = {};
+  (extraDimensionLabels || []).forEach(function(label){ extraLabelSet[label.trim().toLowerCase()] = true; });
   var existingByName = {};
   state.squads.forEach(function(s){ existingByName[s.name.trim().toLowerCase()] = s; });
 
@@ -267,8 +313,16 @@ function buildSquadImportPlan(data, mode){
     var existing = existingByName[name.toLowerCase()] || null;
     var fileDims = {};
     Object.keys(fs.dimensions || {}).forEach(function(key){
-      if(!dimByKeyMap[key]){ skipped.push({ squad:name, dimension:key, reason:"dimension not found" }); return; }
-      fileDims[key] = fs.dimensions[key];
+      var dim = dimByKeyMap[key];
+      var label = fileDimKeyToLabel[key];
+      if(!dim && label) dim = dimByLabelMap[label.trim().toLowerCase()];
+      if(!dim && label && extraLabelSet[label.trim().toLowerCase()]){
+        fileDims[pendingDimensionKey(label)] = fs.dimensions[key];
+        ratingCount++;
+        return;
+      }
+      if(!dim){ skipped.push({ squad:name, dimension:key, reason:"dimension not found" }); return; }
+      fileDims[dim.key] = fs.dimensions[key];
       ratingCount++;
     });
     patches.push({ name:name, existing:existing, order:fs.order, fileDims:fileDims });
@@ -477,10 +531,15 @@ function entityChipsHtml(plan, newKeyBase, updatedKeyBase, removedKeyBase){
 function renderJsonImportPreview(fileData){
   var mode = pendingSquadImportMode;
   var scope = pendingImportScope;
-  var squadPlan = buildSquadImportPlan(fileData, mode);
   var dimPlan = buildDimensionImportPlan(fileData.dimensions, mode);
   var tplPlan = buildTemplateImportPlan(fileData.templates, mode);
   var configChanges = buildConfigImportPlan(fileData.config);
+  // dimPlan.added is only a real promise once the Templates scope is
+  // actually going to be applied -- otherwise no dimension will be
+  // created this round, and a rating for one must still report "not
+  // found" rather than claim a count it can't deliver (see
+  // buildSquadImportPlan()'s own comment on extraDimensionLabels).
+  var squadPlan = buildSquadImportPlan(fileData, mode, scope.templates ? dimPlan.added : undefined);
   pendingSquadImportPlan = squadPlan;
   pendingDimensionImportPlan = dimPlan;
   pendingTemplateImportPlan = tplPlan;
@@ -586,9 +645,29 @@ function renderJsonImportPreview(fileData){
   });
   document.getElementById("importJsonCancel").addEventListener("click", closeSquadImport);
   document.getElementById("importJsonApplyBtn").addEventListener("click", function(){
-    if(pendingImportScope.squads) applySquadImportPlan(pendingSquadImportPlan);
-    if(pendingImportScope.templates){
-      applyDimensionTemplateConfigImportPlan(pendingDimensionImportPlan, pendingTemplateImportPlan, pendingConfigImportChanges, pendingSquadImportMode);
+    // Captured locally, not read back off the pending* module vars inside
+    // applySquadsNow() -- closeSquadImport() (below) nulls those out
+    // immediately, but when the Templates scope is checked,
+    // applySquadsNow() itself doesn't run until AFTER
+    // applyDimensionTemplateConfigImportPlan()'s own async new-dimension
+    // creation resolves, by which point the module vars would already be
+    // gone.
+    var scope = pendingImportScope, squadPlan = pendingSquadImportPlan;
+    function applySquadsNow(){
+      if(!scope.squads || !squadPlan) return;
+      // PR #12 review finding: a rating for a dimension this SAME import
+      // is about to create was tracked as a pendingDimensionKey() marker
+      // (see buildSquadImportPlan()) rather than a real key, precisely
+      // because that key doesn't exist until the dimension import above
+      // has actually run -- resolve it now, using the board's dimensions
+      // as they stand after that.
+      squadPlan.patches.forEach(function(p){ p.fileDims = resolvePendingDimensionKeys(p.fileDims); });
+      applySquadImportPlan(squadPlan);
+    }
+    if(scope.templates){
+      applyDimensionTemplateConfigImportPlan(pendingDimensionImportPlan, pendingTemplateImportPlan, pendingConfigImportChanges, pendingSquadImportMode, applySquadsNow);
+    } else {
+      applySquadsNow();
     }
     closeSquadImport();
   });
@@ -735,7 +814,13 @@ function templateImportFields(ft){
 // applySquadImportPlan()'s own two-phase shape (create any brand-new
 // entities first, since their ids only exist once the write returns; then
 // apply every matched update, removal, and the config diff together).
-function applyDimensionTemplateConfigImportPlan(dimPlan, tplPlan, configChanges, mode){
+// onDone (optional): called once every write here has been issued and
+// state.dimensions/state.templates reflect the final result, including any
+// newly-created dimension's real key -- the squads/ratings import (a
+// separate plan/apply pair) uses this to resolve a rating for a
+// dimension THIS call just created before writing that rating out (see
+// the Apply-button handler and resolvePendingDimensionKeys()).
+function applyDimensionTemplateConfigImportPlan(dimPlan, tplPlan, configChanges, mode, onDone){
   if(!dimPlan || !tplPlan) return;
   function applyMatchedAndConfig(){
     dimPlan.patches.forEach(function(p){
@@ -788,6 +873,7 @@ function applyDimensionTemplateConfigImportPlan(dimPlan, tplPlan, configChanges,
       tplPlan.patches.filter(function(p){ return p.existing; }).length + " template(s) updated, " + tplPlan.added.length + " new" +
       (mode==="replace" ? ", " + tplPlan.toRemove.length + " removed" : "") + "; " +
       (configChanges ? configChanges.length : 0) + " board setting(s) changed.");
+    if(onDone) onDone();
   }
 
   var newDims = dimPlan.patches.filter(function(p){ return !p.existing; });
@@ -1045,7 +1131,8 @@ if (typeof module !== "undefined" && module.exports) {
     parseBoardImportFile: parseBoardImportFile, buildSquadImportPlan: buildSquadImportPlan,
     mergeSquadDimensions: mergeSquadDimensions, planHasChanges: planHasChanges,
     buildDimensionImportPlan: buildDimensionImportPlan, buildTemplateImportPlan: buildTemplateImportPlan,
-    buildConfigImportPlan: buildConfigImportPlan, entityImportPlanHasChanges: entityImportPlanHasChanges
+    buildConfigImportPlan: buildConfigImportPlan, entityImportPlanHasChanges: entityImportPlanHasChanges,
+    pendingDimensionKey: pendingDimensionKey, resolvePendingDimensionKeys: resolvePendingDimensionKeys
   };
 }
 
