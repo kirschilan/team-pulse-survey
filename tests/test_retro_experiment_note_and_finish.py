@@ -75,16 +75,22 @@ with sync_playwright() as p:
       "sid => state.sessions.some(s => s.id === sid)",
       arg=sid,
     )
-    # The fake store delivers the initial sessions snapshot on a delayed
-    # callback (local-store.js's onSnapshot() schedules it via
-    # setTimeout(fn, 0)) even though startSession() already notified the
-    # listener synchronously. That second, stale-snapshot render has no
-    # exposed completion signal to poll for -- but the race is specifically
-    # a pending zero-delay timer inside the page, so flush the browser's own
-    # macrotask queue instead of guessing a wall-clock duration: this
-    # resolves only once any already-scheduled setTimeout(..., 0) has run,
-    # which holds regardless of how loaded the machine running this is.
-    page.evaluate("() => new Promise(r => setTimeout(r, 0))")
+    # Starting the session synchronously renders the session card, which
+    # subscribes a FRESH responses-subcollection listener for this session
+    # (retro-facilitator.js's subscribeSessionResponses(), created once per
+    # new session id). The fake store (tests/fixtures/fake_store.html)
+    # delivers that listener's first snapshot via setTimeout(..., 10) --
+    # and its callback re-renders the whole squad view, which would
+    # overwrite the textarea with the still-empty stored note if that
+    # delivery lands after fill() but before Save is clicked. Wait for that
+    # exact, named delivery (fake_store.html's per-path delivery counter)
+    # instead of guessing at a duration -- see STATUS.md for the review
+    # that caught the previous fix here waiting on the wrong listener.
+    responses_path = "sessions/%s/responses" % sid
+    page.wait_for_function(
+      "path => window.__FAKE_STORE_DELIVERY_COUNTS__ && window.__FAKE_STORE_DELIVERY_COUNTS__[path] >= 1",
+      arg=responses_path,
+    )
     dim_keys = [d["key"] for d in session_info["doc"]["dimensions"]]
     print("=== session started ===", sid, dim_keys)
     print("experimentNote defaults to empty string:", repr(session_info["doc"].get("experimentNote")))
