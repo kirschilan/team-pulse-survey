@@ -1970,3 +1970,44 @@ not just in this repo's own tests.
   of the 79.5s/81.1s figures above -- this pass's 8 local-fake-store files are now all done; only
   the relay-backed `test_retro_join_link_carries_team_sync.py` remains from Copilot's second-pass
   list).
+- 2026-09-15 — Copilot pass file 9/9 (the last one): `test_retro_join_link_carries_team_sync.py`
+  (13 waits, the only relay-backed file in this second pass). Analyzed in full before touching
+  anything, per explicit instruction, then applied at a 15x stress-test bar (not the usual 10x)
+  given the relay/multi-device stakes. Replaced 12 of 13 waits: the team-link boot wait collapsed
+  into the established `wait_for_function` on `#teamLinkInput`'s value; click chains and the
+  direct-rating swatch loop needed none (same synchronous-handler findings as every join-screen
+  file in this pass); `teamDisconnectBtn` needed none either, confirmed by reading
+  `setTeamSecret("")`/`stopTeamBoardSubscription()` -- both purely local, no relay ack required to
+  disconnect your own subscription. One removal needed real justification beyond a category match:
+  the squad-1 rename's 400ms margin on device A, before device B opens the join link. `renameSquad()`
+  updates local state synchronously before the relay write even starts, and the actual condition
+  that margin stood in for (the rename reaching the relay before B connects) is already re-checked,
+  far more patiently, by B's own `wait_for_function` two lines later -- and a single WebSocket
+  connection preserves message order regardless, so the rename/session-start writes can't arrive at
+  the relay out of order just because the local pause is gone. Verified this specifically holds
+  under the 15x repetition, not just once. Kept exactly 1 wait: device C's fresh join-link open,
+  the same "no documented device-adoption signal" precedent as `test_cofacilitator_join.py` and the
+  board-sync convergence file. Verified output structurally identical to the original (aside from
+  randomized codes/secrets), stress-tested 15x clean at ~3.5-3.6s per run (down from ~5.3-5.6s).
+  Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+  Full-suite `tests/run_all.sh` now **77.2s**.
+
+  **Coverage audit** (requested explicitly, covering all 19 files touched across this whole
+  wait-condition pass, from `test_hebrew_rtl_coverage.py` through this file): diffed the exact set
+  of `assert` statements -- not just their count -- between each file's state immediately before
+  and immediately after its own conversion commit. Zero assertions were added, removed, or
+  reworded anywhere; the only non-`wait_for_timeout` lines ever touched were a handful of
+  pre-existing comments absorbed into more detailed replacement comments alongside the wait
+  changes. Coverage is unchanged from before this pass began -- the only behavior change anywhere
+  was HOW each test waits, never WHAT it checks. (Two files, `test_dimension_and_template_admin.py`
+  and `test_template_switching_and_csv_import.py`, have zero `assert` statements of their own even
+  before this pass -- a pre-existing property relying on `page.on("pageerror")`/console-error
+  capture instead, unrelated to and unchanged by this work.)
+
+  This closes out Copilot's second-pass list in full (9 files: `test_facilitator_language.py`,
+  `test_view_navigation_and_squad_admin.py`, `test_bilingual_dimension_editor.py`,
+  `test_starter_template_spotify.py`, `test_retro_statement_language.py`,
+  `test_retro_join_exit_and_return.py`, `test_retro_experiment_note_and_finish.py`,
+  `test_dimension_and_template_admin.py`, `test_retro_join_link_carries_team_sync.py`) on top of
+  the first pass's 10 -- 19 files total, `tests/run_all.sh` down from 102.5s to 77.2s (~25% faster)
+  despite the suite growing by 6 files across that span from unrelated concurrent work.
