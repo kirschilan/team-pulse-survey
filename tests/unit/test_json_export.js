@@ -88,11 +88,19 @@ test("buildBoardExport() excludes sessions and any team-sync secret -- never pre
   });
 });
 
-test("toJSON() produces pretty-printed, parseable JSON matching buildBoardExport()", () => {
+test("toJSON() produces pretty-printed, parseable JSON matching buildBoardExport()'s shape", () => {
   withBoard({ dimensions: [{ key: "trust", label: "Trust", order: 1, green: "", red: "" }] }, () => {
     const text = csv.toJSON();
     assert.match(text, /\n/, "pretty-printed, not minified");
     const parsed = JSON.parse(text);
-    assert.deepEqual(parsed, csv.buildBoardExport());
+    const fresh = csv.buildBoardExport();
+    // toJSON() and this second buildBoardExport() call each capture their own
+    // nowIso() independently -- comparing exportedAt directly would be a real
+    // (if rare) flake if the two calls straddle a millisecond boundary.
+    // Checked separately below; excluded from the structural comparison.
+    assert.match(parsed.exportedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, "a real ISO timestamp");
+    delete parsed.exportedAt;
+    delete fresh.exportedAt;
+    assert.deepEqual(parsed, fresh);
   });
 });
