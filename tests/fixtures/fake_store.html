@@ -12,6 +12,16 @@
   var STORE = {};
   var LISTENERS = [];
   var DOC_LISTENERS = [];
+  // Per-path count of every onSnapshot delivery actually fired (both the
+  // async setTimeout(..., 10) deliveries below and every notify()-triggered
+  // synchronous one) -- lets a test wait for one specific listener's next
+  // delivery precisely (e.g. "the responses subcollection listener created
+  // when this session started has now delivered its first snapshot")
+  // instead of guessing how long that takes. Exposed as
+  // window.__FAKE_STORE_DELIVERY_COUNTS__, keyed by the same collection/doc
+  // path onSnapshot() was called on.
+  var DELIVERY_COUNTS = {};
+  function recordDelivery(path){ DELIVERY_COUNTS[path] = (DELIVERY_COUNTS[path]||0) + 1; }
 
   function seed(){
     for (var i=1;i<=2;i++){
@@ -60,12 +70,14 @@
   }
   function notify(collectionPath){
     LISTENERS.filter(function(l){ return l.collectionPath===collectionPath; }).forEach(function(l){
+      recordDelivery(collectionPath);
       l.cb(buildSnapshot(collectionPath));
     });
   }
   function notifyDoc(path){
     DOC_LISTENERS.filter(function(l){ return l.docPath===path; }).forEach(function(l){
       var d = STORE[path];
+      recordDelivery(path);
       l.cb({ id: path.split("/").pop(), exists: !!d, data: function(){ return d ? deepFreezeClone(d) : undefined; } });
     });
   }
@@ -99,6 +111,7 @@
         DOC_LISTENERS.push(l);
         setTimeout(function(){
           var d = STORE[path];
+          recordDelivery(path);
           next({ id: path.split("/").pop(), exists: !!d, data: function(){ return d ? deepFreezeClone(d) : undefined; } });
         }, 10);
         return function(){ DOC_LISTENERS = DOC_LISTENERS.filter(function(x){ return x!==l; }); };
@@ -115,7 +128,7 @@
       onSnapshot: function(next, err){
         var l = { collectionPath: path, cb: next };
         LISTENERS.push(l);
-        setTimeout(function(){ next(buildSnapshot(path)); }, 10);
+        setTimeout(function(){ recordDelivery(path); next(buildSnapshot(path)); }, 10);
         return function(){ LISTENERS = LISTENERS.filter(function(x){ return x!==l; }); };
       }
     };
@@ -172,6 +185,7 @@
   }
   window.__FAKE_STORE__ = STORE;
   window.__NOTIFY__ = notify;
+  window.__FAKE_STORE_DELIVERY_COUNTS__ = DELIVERY_COUNTS;
   window.claude = {
     use: function(name){
       if (name==="db") return Promise.resolve({

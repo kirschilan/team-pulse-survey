@@ -28,25 +28,35 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('#templatesBtn')
-    page.wait_for_timeout(150)
+    # eval_on_selector()/click() below don't auto-wait for a not-yet-
+    # attached element -- wait for the real "templates list rendered"
+    # signal instead of guessing.
+    page.wait_for_selector('#tplList .tpl-row', state="attached")
     page.click('#tplList .tpl-row[data-id="starter-tuckman"] [data-action="load"]')
-    page.wait_for_timeout(100)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     page.click('#confirmOk')
-    page.wait_for_timeout(300)
+    # evaluate() below doesn't auto-wait -- wait for the real "Tuckman's
+    # dimensions landed" signal (loadTemplate()'s own Promise chain) instead
+    # of guessing how long it takes.
+    page.wait_for_function("() => window.__FAKE_STORE__['dimensions/forming'] !== undefined")
+    # setLocale() (i18n.js) is fully synchronous -- no wait needed here.
     page.click('.lang-btn[data-lang="he"]')
-    page.wait_for_timeout(150)
 
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
     page.click('#startSessionBtn')
-    page.wait_for_timeout(250)
+    # evaluate() below doesn't auto-wait -- the fake store's set() writes
+    # into __FAKE_STORE__ synchronously, but poll for the real condition
+    # rather than assume that timing.
+    page.wait_for_function("() => Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/')).length === 1")
 
     session_info = page.evaluate("""
       (function(){
@@ -63,27 +73,40 @@ with sync_playwright() as p:
       window.__FAKE_STORE__['sessions/%s/responses/r0'] = %r;
       window.__NOTIFY__('sessions/%s/responses');
     """ % (sid, responses[0], sid))
-    page.wait_for_timeout(200)
+    # No wait needed here -- window.__NOTIFY__() calls the fake store's
+    # notify() SYNCHRONOUSLY (unlike a real onSnapshot's first delivery,
+    # which the fixture delays), which synchronously updates
+    # state.sessionResponses inside retro-facilitator.js's listener before
+    # this evaluate() call even returns.
     page.click('.reveal-btn[data-reveal="live"]')
-    page.wait_for_timeout(200)
+    # eval_on_selector_all() below doesn't auto-wait -- wait for the real
+    # "live rows rendered" signal instead of guessing.
+    page.wait_for_selector('.live-dim-row', state="attached")
     live_dim_names_he = page.eval_on_selector_all('.live-dim-row .dim-name', 'els=>els.map(e=>e.textContent)')
     print("live dimension names (Hebrew):", live_dim_names_he)
     assert "Forming" not in live_dim_names_he and any("התהוות" in n for n in live_dim_names_he)
 
     print("=== override editor: dimension title/green/red are Hebrew now (session-scoped template) ===")
     page.click('.override-btn[data-override-dim="forming"]')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#backdrop', state="visible")  # real modal-open signal, not a guess
     modal_title_he = page.eval_on_selector('#modalTitle', 'el=>el.textContent')
     modal_green_he = page.eval_on_selector('#modalGreen', 'el=>el.textContent')
     print("override modal title / green (Hebrew):", modal_title_he, "|", modal_green_he)
     assert modal_title_he == "התהוות"
     assert modal_green_he.strip() and modal_green_he != forming_en["green"]
+    # No wait needed here -- closing the modal doesn't affect the
+    # unrelated joinSessionByCode() call below.
     page.click('#modalCancel')
-    page.wait_for_timeout(100)
 
     # ============ participant device joins the SAME session, own tab (fake store shared) ============
+    # joinSessionByCode() renders the "Connecting..." placeholder
+    # synchronously (state.joinSession starts null), and only shows the
+    # real statement form once listenJoinSession()'s onSnapshot listener
+    # delivers its FIRST snapshot -- a genuine async gap the fake store
+    # deliberately delays (unlike its later, synchronous notify() calls) --
+    # so wait for the real "form rendered" signal instead of guessing.
     page.evaluate("joinSessionByCode('%s')" % sid)
-    page.wait_for_timeout(300)
+    page.wait_for_selector('.stmt-row', state="attached")
 
     print("=== participant: interleaved statement text is Hebrew, in the right order ===")
     first_stmt_he = page.eval_on_selector('.stmt-row:first-child .stmt-text', 'el=>el.textContent')
@@ -102,12 +125,14 @@ with sync_playwright() as p:
     assert all(s in all_stmt_texts for s in he_first_statements)
 
     print("=== answering and submitting shows a Hebrew personal-result screen with the right green/red message ===")
+    # refreshSubmitEnabled() (retro-join.js) runs synchronously inside each
+    # scale-btn's own click handler, so no wait is needed between clicks.
     for btn in page.query_selector_all('.stmt-row .scale-btn[data-value="3"]'):
         btn.click()
-        page.wait_for_timeout(10)
-    page.wait_for_timeout(50)
     page.click('#stmtSubmitBtn')
-    page.wait_for_timeout(300)
+    # eval_on_selector_all() below doesn't auto-wait -- wait for the real
+    # "personal results rendered" signal instead of guessing.
+    page.wait_for_selector('.personal-result', state="attached")
 
     result_labels_he = page.eval_on_selector_all('.personal-result .field-label', 'els=>els.map(e=>e.textContent)')
     print("personal-result dimension labels (Hebrew):", result_labels_he)

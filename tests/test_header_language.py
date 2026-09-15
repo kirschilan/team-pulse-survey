@@ -29,7 +29,11 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
     print("=== defaults to English on first load ===")
     assert page.eval_on_selector("h1", "el=>el.textContent") == "Squad Pulse"
@@ -45,12 +49,11 @@ with sync_playwright() as p:
     print("sync status (English):", sync_text_en)
     assert sync_text_en in ("Live — synced across viewers", "Preview only — not connected")
 
+    # setView()/setLocale() are both synchronous (established across this
+    # pass) -- no wait needed for any of these three clicks.
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="he"]')
-    page.wait_for_timeout(200)
     page.click('.view-btn[data-view="tribe"]')
-    page.wait_for_timeout(150)
 
     print("=== switched to Hebrew: #appHeader scopes dir/lang, document root untouched ===")
     assert page.eval_on_selector("#appHeader", 'el=>el.getAttribute("dir")') == "rtl"
@@ -78,13 +81,14 @@ with sync_playwright() as p:
     assert f"{LRI}squads{PDI}" in tagline_he, "the interpolated English unit word must stay bidi-isolated inside the Hebrew sentence"
 
     print("=== sync status text is translated too (both live and preview-only phrasing) ===")
+    # setSyncStatus() (db.js) is a two-line, fully synchronous DOM update --
+    # evaluate() awaits the full script execution, so no wait is needed
+    # before reading its effect right after.
     page.evaluate("setSyncStatus(true)")
-    page.wait_for_timeout(50)
     sync_live_he = page.eval_on_selector("#syncText", "el=>el.textContent")
     print("sync status, live (Hebrew):", sync_live_he)
     assert sync_live_he != "Live — synced across viewers" and sync_live_he.strip()
     page.evaluate("setSyncStatus(false)")
-    page.wait_for_timeout(50)
     sync_preview_he = page.eval_on_selector("#syncText", "el=>el.textContent")
     print("sync status, preview-only (Hebrew):", sync_preview_he)
     assert sync_preview_he != "Preview only — not connected" and sync_preview_he.strip()
@@ -96,14 +100,12 @@ with sync_playwright() as p:
     assert badge_text == "Spotify Squad Health Check"
 
     print("=== switching back to English fully restores the header ===")
+    # Same synchronous setView()/setLocale()/setSyncStatus() reasoning as
+    # above -- no wait needed for any of these three clicks or the evaluate().
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="en"]')
-    page.wait_for_timeout(200)
     page.click('.view-btn[data-view="tribe"]')
-    page.wait_for_timeout(150)
     page.evaluate("setSyncStatus(true)")
-    page.wait_for_timeout(50)
     assert page.eval_on_selector("#appHeader", 'el=>el.getAttribute("dir")') != "rtl"
     assert page.eval_on_selector("#joinCodeBtn", "el=>el.textContent") == "Join a retro"
     assert page.eval_on_selector('.view-btn[data-view="admin"]', "el=>el.textContent") == "Admin"

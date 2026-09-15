@@ -21,16 +21,21 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
+    # setView()/setLocale() are both synchronous (established across this
+    # pass), and #joinCodeBtn's click handler (retro-join.js) just resets
+    # the input and unhides the backdrop, also synchronous -- no wait needed
+    # for any of these three clicks.
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="he"]')
-    page.wait_for_timeout(150)
 
     print("=== join-code modal chrome is Hebrew ===")
     page.click('#joinCodeBtn')
-    page.wait_for_timeout(150)
     assert page.eval_on_selector('#joinCodeBackdrop', 'el=>el.getAttribute("dir")') == "rtl"
     title_he = page.eval_on_selector('#joinCodeBackdrop h3', 'el=>el.textContent')
     hint_he = page.eval_on_selector('#joinCodeBackdrop .hint', 'el=>el.textContent')
@@ -48,8 +53,14 @@ with sync_playwright() as p:
 
     print("=== a bad/unknown code shows the Hebrew 'not open' state ===")
     page.fill('#joinCodeInput', 'ZZZZZZ')
+    # joinSessionByCode() (retro-join.js) is itself fully synchronous --
+    # it sets state.joinSession=null then calls enterJoinMode(), which
+    # renders synchronously -- and for a code that never existed, that
+    # FIRST synchronous render already shows the "not open" state (sess is
+    # null both before and after listenJoinSession()'s own async first
+    # delivery, since the doc never exists either way), so no wait is
+    # needed here, unlike the two scenarios below that pre-seed a real doc.
     page.click('#joinCodeGo')
-    page.wait_for_timeout(250)
     assert page.eval_on_selector('#viewJoin', 'el=>el.getAttribute("dir")') == "rtl"
     not_open_h = page.eval_on_selector('#joinCard h2', 'el=>el.textContent')
     not_open_hint = page.eval_on_selector('#joinCard .hint', 'el=>el.textContent')
@@ -66,8 +77,10 @@ with sync_playwright() as p:
     assert diag_summary_he.strip() and "diagnostics" not in diag_summary_he.lower()
 
     print("=== forcing the 'unavailable' (never reached relay) state shows its own Hebrew message ===")
+    # evaluate() awaits the full synchronous execution of the given script --
+    # renderJoinScreen() is called directly, inline, so the render is
+    # already done by the time evaluate() returns. No wait needed.
     page.evaluate("state.joinUnavailable = true; renderJoinScreen();")
-    page.wait_for_timeout(100)
     unavail_h = page.eval_on_selector('#joinCard h2', 'el=>el.textContent')
     unavail_hint = page.eval_on_selector('#joinCard .hint', 'el=>el.textContent')
     print(unavail_h, "|", unavail_hint)
@@ -87,7 +100,12 @@ with sync_playwright() as p:
       };
       joinSessionByCode('CLOSEDX');
     """)
-    page.wait_for_timeout(250)
+    # evaluate() above doesn't auto-wait -- unlike the bad-code scenario
+    # above, this doc DOES exist, so listenJoinSession()'s FIRST onSnapshot
+    # delivery (a genuine async gap this pass has established everywhere)
+    # is what actually lands the "closed" status into state.joinSession;
+    # wait for that real condition instead of guessing.
+    page.wait_for_function("() => state.joinSession && state.joinSession.status === 'closed'")
     ended_h = page.eval_on_selector('#joinCard h2', 'el=>el.textContent')
     ended_hint = page.eval_on_selector('#joinCard .hint', 'el=>el.textContent')
     print(ended_h, "|", ended_hint)
@@ -107,7 +125,8 @@ with sync_playwright() as p:
       };
       joinSessionByCode('MIXEDXX');
     """)
-    page.wait_for_timeout(250)
+    # Same genuine-async-gap reasoning as the CLOSEDX scenario above.
+    page.wait_for_function("() => state.joinSession && state.joinSession.status === 'open'")
 
     joining_h = page.eval_on_selector('#joinCard h2', 'el=>el.textContent')
     form_hint = page.eval_on_selector('#joinCard > .hint', 'el=>el.textContent')
@@ -137,14 +156,20 @@ with sync_playwright() as p:
     assert submit_text_he != "Submit" and submit_text_he.strip()
 
     print("=== answering and submitting shows the Hebrew personal-result screen ===")
+    # refreshSubmitEnabled() (retro-join.js) runs synchronously inside each
+    # scale-btn/swatch's own click handler, so no wait is needed between
+    # clicks or before reading it right after (same finding as
+    # test_retro_direct_rating_flow.py's identical loop).
     for btn in page.query_selector_all('.stmt-row .scale-btn[data-value="3"]'):
         btn.click()
-        page.wait_for_timeout(15)
     page.click('.direct-row .swatch.good')
-    page.wait_for_timeout(50)
     assert page.eval_on_selector('#stmtSubmitBtn', 'el=>el.disabled') == False
     page.click('#stmtSubmitBtn')
-    page.wait_for_timeout(300)
+    # eval_on_selector() below doesn't auto-wait -- the submit handler's
+    # store write resolves via a real (if already-settled) Promise chain
+    # before afterSubmit() renders the personal-result screen, so wait for
+    # that real signal instead of guessing.
+    page.wait_for_selector('.personal-result', state="attached")
 
     thanks_h = page.eval_on_selector('#joinCard h2', 'el=>el.textContent')
     retro_line = page.eval_on_selector('#joinCard > .hint', 'el=>el.textContent')
@@ -161,12 +186,12 @@ with sync_playwright() as p:
     # joinCodeBtn stays hidden forever once a device has joined once, so
     # read the (hidden but still real) modal DOM directly rather than
     # re-opening it by click.
+    # exitJoinScreen() (retro-join.js) is fully synchronous (established
+    # across this pass), same as setView()/setLocale() -- no wait needed
+    # for any of these three clicks.
     page.click('#exitJoinBtn')
-    page.wait_for_timeout(100)
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="en"]')
-    page.wait_for_timeout(150)
     assert page.eval_on_selector('#joinCodeBackdrop h3', 'el=>el.textContent') == "Join a retro"
     assert page.eval_on_selector('#joinCodeGo', 'el=>el.textContent') == "Join"
     assert page.eval_on_selector('#joinCodeBackdrop', 'el=>el.getAttribute("dir")') != "rtl"

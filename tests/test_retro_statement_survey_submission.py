@@ -20,23 +20,28 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
 
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('#templatesBtn')
-    page.wait_for_timeout(150)
+    # eval_on_selector()/click() below don't auto-wait for a not-yet-attached
+    # element -- wait for the real "templates list rendered" signal instead
+    # of guessing.
+    page.wait_for_selector('#tplList .tpl-row', state="attached")
     page.click('#tplList .tpl-row[data-id="starter-5dysfunctions"] [data-action="load"]')
-    page.wait_for_timeout(100)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     page.click('#confirmOk')
-    page.wait_for_timeout(300)
+    # evaluate() below doesn't auto-wait -- wait for the real "Five
+    # Dysfunctions' dimensions landed" signal (loadTemplate()'s own Promise
+    # chain) instead of guessing how long it takes.
+    page.wait_for_function("() => window.__FAKE_STORE__['dimensions/trust'] !== undefined")
 
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
     page.click('#startSessionBtn')
-    page.wait_for_timeout(250)
+    # evaluate() below doesn't auto-wait -- the fake store's set() writes
+    # into __FAKE_STORE__ synchronously, but poll for the real condition
+    # rather than assume that timing.
+    page.wait_for_function("() => Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/')).length === 1")
 
     session_info = page.evaluate("""
       (function(){
@@ -67,7 +72,10 @@ with sync_playwright() as p:
     errorsA = []
     pageA.on("pageerror", lambda e: errorsA.append(str(e)))
     pageA.goto("file://" + str(good_out.resolve()) + "?session=" + sid)
-    pageA.wait_for_timeout(500)
+    # query_selector_all() below doesn't auto-wait -- wait for the real
+    # "join screen rendered the statement form" signal instead of guessing
+    # how long boot + the session-doc fetch take.
+    pageA.wait_for_selector('.stmt-list .stmt-row', state="attached")
 
     print("=== participant A: full 15-statement form across 5 dimensions, interleaved (not grouped/titled by dimension) ===")
     stmt_lists = pageA.query_selector_all('.stmt-list')
@@ -96,21 +104,25 @@ with sync_playwright() as p:
     groups = pageA.query_selector_all('.scale-btns')
     print("total answer-groups across all dimensions (should be 15):", len(groups))
     assert len(groups) == 15
+    # refreshSubmitEnabled() (retro-join.js) runs synchronously inside each
+    # scale-btn's own click handler -- submitBtn.disabled is already
+    # up-to-date the instant click() returns, so no wait is needed between
+    # clicks or before reading it right after.
     for i, g in enumerate(groups):
         if i == len(groups) - 1:
             continue  # leave the very last statement unanswered for now
         g.query_selector('.scale-btn[data-value="3"]').click()
-        pageA.wait_for_timeout(15)
     print("submit still disabled with 14/15 answered:", pageA.eval_on_selector('#stmtSubmitBtn', 'el => el.disabled'))
     assert pageA.eval_on_selector('#stmtSubmitBtn', 'el => el.disabled') == True
 
     groups[-1].query_selector('.scale-btn[data-value="3"]').click()
-    pageA.wait_for_timeout(50)
     print("submit enabled once all 15/15 answered:", pageA.eval_on_selector('#stmtSubmitBtn', 'el => el.disabled') == False)
     assert pageA.eval_on_selector('#stmtSubmitBtn', 'el => el.disabled') == False
 
     pageA.click('#stmtSubmitBtn')
-    pageA.wait_for_timeout(300)
+    # evaluate() below doesn't auto-wait -- wait for the real "response
+    # doc written" signal instead of guessing.
+    pageA.wait_for_function("() => Object.keys(window.__FAKE_STORE__).some(k => k.indexOf('sessions/%s/responses/')===0)" % sid)
 
     stored = pageA.evaluate("""
       (function(){
@@ -153,11 +165,18 @@ with sync_playwright() as p:
         window.__NOTIFY__('sessions/%s/responses');
       })();
     """ % (sid, json.dumps(stored), sid))
-    pageA.wait_for_timeout(50)
+    # No wait needed here -- window.__NOTIFY__() calls the fake store's
+    # notify() SYNCHRONOUSLY (unlike a real onSnapshot's first delivery,
+    # which the fixture delays), which synchronously updates
+    # state.sessionResponses inside retro-facilitator.js's listener before
+    # this evaluate() call even returns.
 
     print("=== facilitator card: switched to live reveal mode ===")
     page.click('.reveal-btn[data-reveal="live"]')
-    page.wait_for_timeout(250)
+    # eval_on_selector()/query_selector_all() below don't auto-wait -- poll
+    # for the exact expected content (the same condition asserted right
+    # below) instead of guessing how long the click's re-render takes.
+    page.wait_for_function("() => document.querySelectorAll('.live-dim-row').length === 5")
     live_label = page.eval_on_selector('.live-block .field-label', 'el => el.textContent')
     print("live-block label:", live_label)
     assert live_label.strip() == "Live results"

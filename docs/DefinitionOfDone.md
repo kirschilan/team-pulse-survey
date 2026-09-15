@@ -28,6 +28,35 @@ duplicated or contradicted elsewhere:
   (`node --test tests/unit/test_*.js` and `tests/run_all.sh`), not just
   whatever test you added or touched — zero regressions, zero JavaScript
   errors.
+- **When the full suite's total serial wall-clock time is measured and has
+  moved meaningfully since the last figure recorded in STATUS.md, log the
+  new number there.** This isn't a gate — no change is blocked on it — but
+  a rising trend is the signal to suggest a dedicated performance pass, the
+  same way the 2026-09-15 wait-condition pass above got started: Copilot's
+  own serial timing (146.910s, then corrected after a stale-checkout
+  re-run) is what named the slowest files worth looking at, not a hunch.
+- **That signal needed a real trigger, not just a note to log — this
+  is the growth-budget agreement.** The bullet above stayed passive too
+  long: `run_all.sh` grew from ~102.5s to over 5 minutes, one
+  individually-defensible `wait_for_timeout()` at a time, added to one
+  new test after another, before anyone stopped to treat the trend
+  itself as a problem — the eventual fix (the 2026-09-15 wait-condition
+  pass, run in two sessions) cost far more than catching each file would
+  have at the time it was written. `tests/run_all.sh` now times itself
+  and checks the result against `tests/.timing_baseline`, printing a loud
+  warning if the full suite runs more than 15% over that number — so the
+  signal shows up on every run, for every contributor, without anyone
+  having to remember to time it by hand. If you see that warning: grep
+  `tests/test_*.py` for new `wait_for_timeout()` calls added since the
+  baseline was last set and fix the ones lacking the justification the
+  next bullet requires, before adding more Playwright files in the same
+  pattern. If the growth is legitimate (a real increase in file count,
+  not slop), update `tests/.timing_baseline` to the new number and say so
+  in STATUS.md. **This applies equally to every contributor working in
+  this repo — Copilot, Codex, Claude Code, or a human writing a test by
+  hand** — none of them can be expected to notice a compounding trend
+  from their own one new test in isolation, so the check has to live
+  where the suite itself runs, not in any one tool's own habits.
 - A Playwright test earns its slower cost only when it covers something a
   unit test structurally can't (real DOM, `localStorage`, a real WebSocket,
   `crypto.subtle`) — see `tests/README.md`'s "Performance" section before
@@ -35,6 +64,28 @@ duplicated or contradicted elsewhere:
 - Build any Playwright test page via `tests/fixtures/build_page.py`'s
   `build_page()` / `write_plain_index()` / `build_custom_page()` — never by
   hand-splicing `public/index.html`.
+- **A Playwright wait uses a real, causally-correct condition —
+  `wait_for_selector`, `wait_for_function`, or Playwright's own auto-wait on
+  `click()`/`fill()` — never a fixed `wait_for_timeout()`, unless no
+  positive signal can exist** (proving an absence — a rainy-day check that
+  something never arrives — or a genuinely undocumented async gap with no
+  better option). Any wait that stays fixed carries a comment explaining
+  why, not just what. (Adopted 2026-09-15 after a pass converting roughly
+  130 fixed sleeps across 13 test files caught two real bugs a
+  passing-but-sleep-padded test had been silently hiding: a
+  `wait_for_selector`'s default `state="visible"` failing on a hidden
+  duplicate element, and a busy-overlay transition that completes within
+  the same JS turn as the click triggering it — invisible to any external
+  CDP-based poll. Neither would have surfaced without actually removing the
+  sleep and asking what condition it was standing in for. See STATUS.md's
+  session log for both.)
+- **Changing a test's wait/timing logic (not just adding a new assertion)
+  gets stress-tested at least 10x clean (15x for relay-backed or
+  multi-device tests) before it's considered done.** This is a check on the
+  file you're changing, during that change's own dev cycle — it does not
+  lengthen the standing full-suite regression run. A single clean pass is
+  not evidence a timing change is correct: both bugs in the rule above
+  passed clean on their first run and only surfaced under repetition.
 
 ## 2. Multi-language support
 
@@ -125,6 +176,28 @@ and to every one already covered:
   two concurrent sessions and a local checkout all committing straight to
   `claude/optimistic-keller-holuql` at once, needing repeated manual merges
   to untangle. See STATUS.md's session log for the incident.)
+- **Before acting on another agent's or tool's analysis of "current" repo
+  state — a bot-generated performance ranking, a static-analysis report,
+  anything claiming to describe what's slow/broken/present right now —
+  confirm it was generated against the current tip of the shared branch,
+  not a stale checkout.** (Adopted 2026-09-15 after Copilot handed back a
+  "top 10 slowest tests" ranking computed before syncing to a pull, with
+  timings and file names that no longer matched what had already shipped —
+  harmless here since it self-corrected on its own re-check, but exactly
+  the kind of stale read that could otherwise send real effort at an
+  already-solved problem.)
+- **When a test-timing report from another machine can't be reproduced,
+  check both environments' Playwright/Chromium versions (`pip show
+  playwright`, or `playwright --version`) before concluding it's a real
+  bug, a flake, or a harness artifact.** `tests/requirements.txt` pins the
+  version this repo expects, precisely so that question has a fast answer
+  instead of staying an open guess. (Adopted 2026-09-15 after two
+  same-day cross-machine disputes over `test_retro_experiment_note_and_
+  finish.py` -- one environment's own request for a fully-instrumented
+  reproduction, wrapping the actual `db.collection().doc().update()` call
+  chain, still couldn't reproduce the reported failure after 26 clean
+  runs, which pointed at a silently unpinned Playwright/Chromium version
+  as the more likely explanation than a real code bug.)
 - **`main` only moves when the product owner explicitly says so** — never
   push to `main` on your own judgment. This is unchanged by the branching
   model above: `claude/optimistic-keller-holuql` is a PREVIEW branch, not a

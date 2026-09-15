@@ -31,6 +31,27 @@ def wait_for_port(port, timeout=5.0):
     return False
 
 
+def poll_pushed_board(page, secret, predicate, timeout=5.0):
+    """Repeatedly re-fetches the board doc straight from the relay until
+    predicate(data) is true, instead of guessing how long a real relay
+    round trip (roomIdFor() + a WebSocket push) takes to land. Each call is
+    a fresh read, so this genuinely waits for the push to arrive rather
+    than trusting a cached/local view."""
+    deadline = time.time() + timeout
+    result = None
+    while time.time() < deadline:
+        result = page.evaluate("""async (secret) => {
+          const roomId = await SquadPulseCrypto.roomIdFor(secret);
+          const db = await window.claude.use("db");
+          const snap = await db.doc("boards/" + roomId, secret).get();
+          return snap.exists ? snap.data() : null;
+        }""", secret)
+        if predicate(result):
+            return result
+        time.sleep(0.05)
+    return result
+
+
 relay_env = dict(os.environ)
 relay_env["PORT"] = str(RELAY_PORT)
 relay_proc = subprocess.Popen(
@@ -67,9 +88,15 @@ try:
         a_errors = []
         a.on("pageerror", lambda e: a_errors.append(str(e)))
         a.goto(INDEX_URL, wait_until="domcontentloaded")
-        a.wait_for_timeout(400)
+        # eval_on_selector()/query_selector() below don't auto-wait --
+        # renderAdminSquadList() only populates this once the async store load +
+        # first render() pass lands, so this is the real boot-complete marker
+        # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+        a.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
+        # ensureDefaultTeamSecret()/renderTeamSyncStatus() (board-sync.js) both
+        # run synchronously at script-load time -- device A's team link is
+        # already populated the instant goto() returns, no wait needed.
         a.click('.view-btn[data-view="admin"]')
-        a.wait_for_timeout(150)
 
         connected_hidden = a.eval_on_selector("#teamSyncConnected", "el=>el.hidden")
         not_connected_hidden = a.eval_on_selector("#teamSyncNotConnected", "el=>el.hidden")
@@ -88,15 +115,13 @@ try:
         name_input = a.query_selector('.admin-squad-name[data-id="squad-1"]')
         name_input.fill("Auto-synced squad")
         name_input.dispatch_event("change")
-        a.wait_for_timeout(400)
         import re
         a_secret = re.search(r"[?&]team=([^&]+)", a_link).group(1)
-        pushed = a.evaluate("""async (secret) => {
-          const roomId = await SquadPulseCrypto.roomIdFor(secret);
-          const db = await window.claude.use("db");
-          const snap = await db.doc("boards/" + roomId, secret).get();
-          return snap.exists ? snap.data() : null;
-        }""", a_secret)
+        # renameSquad() (squads.js) triggers a real relay round trip
+        # (pushBoardSnapshotIfConnected() -> roomIdFor() -> a real WebSocket
+        # write) -- poll the relay's own doc directly instead of guessing
+        # how long that takes.
+        pushed = poll_pushed_board(a, a_secret, lambda data: data is not None and any(s["name"] == "Auto-synced squad" for s in data["squads"]))
         print("board actually on the relay for A's default team:", pushed and [s["name"] for s in pushed["squads"]])
         assert pushed is not None
         assert any(s["name"] == "Auto-synced squad" for s in pushed["squads"])
@@ -108,9 +133,8 @@ try:
         b_errors = []
         b.on("pageerror", lambda e: b_errors.append(str(e)))
         b.goto(INDEX_URL, wait_until="domcontentloaded")
-        b.wait_for_timeout(400)
+        b.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
         b.click('.view-btn[data-view="admin"]')
-        b.wait_for_timeout(150)
         b_link = b.eval_on_selector("#teamLinkInput", "el=>el.value")
         print("device A's link:", a_link)
         print("device B's link:", b_link)
@@ -134,20 +158,26 @@ try:
         assert "Auto-synced squad" in b_names_after
 
         print("=== RAINY DAY: 'stop syncing' is respected -- no silent auto-regeneration on the next reload ===")
+        # stopTeamBoardSubscription()/setTeamSecret("")/renderTeamSyncStatus()
+        # (board-sync.js) are all synchronous -- no wait needed after this click.
         b.click("#teamDisconnectBtn")
-        b.wait_for_timeout(200)
         assert b.eval_on_selector("#teamSyncNotConnected", "el=>el.hidden") is False
         b.reload(wait_until="domcontentloaded")
-        b.wait_for_timeout(400)
+        # A real reload re-runs the whole async boot sequence -- wait for the
+        # real boot-complete marker again, not a guessed sleep.
+        b.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
         b.click('.view-btn[data-view="admin"]')
-        b.wait_for_timeout(150)
         still_not_connected = b.eval_on_selector("#teamSyncNotConnected", "el=>el.hidden")
         print("device B still shows 'not connected' after a reload following an explicit disconnect (should be False):", still_not_connected)
         assert still_not_connected is False, "an explicit stop-syncing must survive a reload, not silently re-enable itself"
 
         print("=== device B can still manually re-enable syncing from the disconnected state ===")
+        # connectWithSecret() (board-sync.js) calls setTeamSecret()/
+        # renderTeamSyncStatus() synchronously before kicking off its
+        # (un-awaited) hydrate/push/subscribe chain -- the new link and
+        # connected-panel visibility checked right below are already
+        # correct the instant this click's handler returns.
         b.click("#teamCreateBtn")
-        b.wait_for_timeout(300)
         assert b.eval_on_selector("#teamSyncConnected", "el=>el.hidden") is False
         b_link_new = b.eval_on_selector("#teamLinkInput", "el=>el.value")
         print("device B's freshly re-created link:", b_link_new)

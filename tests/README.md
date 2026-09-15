@@ -30,9 +30,18 @@ or clicks needs a Playwright test.
 ## Setup
 
 ```
-pip install playwright
+pip install -r tests/requirements.txt
 playwright install chromium
 ```
+
+The pinned version in `tests/requirements.txt` matters: Playwright ties
+its Chromium build to the exact package version, so an unpinned `pip
+install playwright` can silently put two contributors' machines on
+different Chromium builds with no way to tell from the repo. If you ever
+report a test-timing discrepancy that another environment can't
+reproduce, check `pip show playwright` (or `playwright --version`) on
+both sides before assuming it's a code bug or a flake — see
+`docs/DefinitionOfDone.md`.
 
 (`tests/unit/` needs nothing beyond Node itself.)
 
@@ -54,6 +63,13 @@ for f in tests/test_*.py; do python3 "$f" || echo "FAILED: $f"; done
 Every test prints its own findings and asserts as it goes — a clean run ends
 with zero uncaught exceptions and an `errors: []` (or similar) line confirming
 no JavaScript errors were thrown in the page.
+
+`tests/run_all.sh` (unlike the plain shell loop above) times itself and warns
+if the full suite runs more than 15% over the number in
+`tests/.timing_baseline` — this is the growth-budget check in
+`docs/DefinitionOfDone.md`, catching a rising trend in fixed sleeps (or
+anything else slow) before it compounds across every new test added
+afterward, the way it did before 2026-09-15.
 
 ## How a test builds its page
 

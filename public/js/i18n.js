@@ -7,7 +7,9 @@
 // modal. Story 10: the retro JOIN flow (participant screens + the "Join a
 // retro" code modal). Story 11: the retro FACILITATOR flow (session card,
 // override editor, confirm dialogs). Story 12: the Edit Dimensions modal.
-// Still English-only: CSV import (its own future story). RTL_SCOPED_CONTAINERS
+// Story 13: the JSON board export button and the JSON import preview modal
+// (#importJsonBackdrop) -- item 1/3a, translated from the start; CSV export/
+// import remain English-only (their own future item 4). RTL_SCOPED_CONTAINERS
 // below lists every container currently translated -- each gets its own
 // dir/lang flip; nothing else does, so a still-English screen never
 // visually breaks under an RTL layout it was never translated for. A
@@ -24,7 +26,7 @@ var LOCALES = { en: LOCALE_EN, he: LOCALE_HE };
 var DEFAULT_LOCALE = "en";
 var SUPPORTED_LOCALES = ["en", "he"];
 var LANG_STORAGE_KEY = "squadpulse:lang";
-var RTL_SCOPED_CONTAINERS = ["viewAdmin", "viewTribe", "viewSquad", "backdrop", "appHeader", "templatesBackdrop", "viewJoin", "joinCodeBackdrop", "dimBackdrop"];
+var RTL_SCOPED_CONTAINERS = ["viewAdmin", "viewTribe", "viewSquad", "backdrop", "appHeader", "templatesBackdrop", "viewJoin", "joinCodeBackdrop", "dimBackdrop", "aboutDialog", "importJsonBackdrop", "confirmBackdrop"];
 
 function t(key, vars){
   var loc = (state && state.ui && state.ui.locale) || DEFAULT_LOCALE;
@@ -52,12 +54,13 @@ function t(key, vars){
 }
 
 // Applies every [data-i18n] element's textContent, every
-// [data-i18n-placeholder] element's placeholder, and every
-// [data-i18n-title] element's title attribute from the active locale --
-// called once at boot and again on every setLocale(). Static markup only;
-// strings built in JS (dynamic rows, confirm dialogs, aria-labels) call
-// t() directly instead, since their own render function already re-runs on
-// every relevant change.
+// [data-i18n-placeholder] element's placeholder, every [data-i18n-title]
+// element's title attribute, and every [data-i18n-aria-label] element's
+// aria-label from the active locale -- called once at boot and again on
+// every setLocale(). Static markup only; strings built in JS (dynamic
+// rows, confirm dialogs, a handful of aria-labels on JS-rendered markup)
+// call t() directly instead, since their own render function already
+// re-runs on every relevant change.
 function applyStaticTranslations(){
   document.querySelectorAll("[data-i18n]").forEach(function(el){
     el.textContent = t(el.getAttribute("data-i18n"));
@@ -67,6 +70,9 @@ function applyStaticTranslations(){
   });
   document.querySelectorAll("[data-i18n-title]").forEach(function(el){
     el.title = t(el.getAttribute("data-i18n-title"));
+  });
+  document.querySelectorAll("[data-i18n-aria-label]").forEach(function(el){
+    el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria-label")));
   });
 }
 

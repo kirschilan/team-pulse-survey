@@ -72,12 +72,16 @@ try:
         fac_errors = []
         fac.on("pageerror", lambda e: fac_errors.append(str(e)))
         fac.goto(INDEX_URL, wait_until="domcontentloaded")
-        fac.wait_for_timeout(500)
+        # eval_on_selector()/query_selector() below don't auto-wait --
+        # renderAdminSquadList() only populates this once the async store load +
+        # first render() pass lands, so this is the real boot-complete marker
+        # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+        fac.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
+        # setView()/selectSquad() are both synchronous (established across
+        # this pass) -- no wait needed for either of these two clicks.
         fac.click('.view-btn[data-view="squad"]')
-        fac.wait_for_timeout(100)
         fac.click('.squad-pick-btn[data-id="squad-1"]')
-        fac.wait_for_timeout(150)
         fac.click('#startSessionBtn')
         fac.wait_for_selector('.session-code')  # real relay round trip -- wait for it, don't guess how long
 
@@ -96,10 +100,11 @@ try:
         team_errors = []
         team.on("pageerror", lambda e: team_errors.append(str(e)))
         team.goto(INDEX_URL, wait_until="domcontentloaded")
-        team.wait_for_timeout(400)
+        team.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
+        # #joinCodeBtn's click handler (retro-join.js) just resets the
+        # input and unhides the backdrop, synchronous -- no wait needed.
         team.click('#joinCodeBtn')
-        team.wait_for_timeout(100)
         team.fill('#joinCodeInput', code)
         team.click('#joinCodeGo')
         team.wait_for_selector('#joinCard .direct-row')  # real relay round trip -- wait for it, don't guess how long
@@ -114,12 +119,13 @@ try:
         print("errors so far:", team_errors)
 
         # participant answers every dimension: last one red, rest green
+        # refreshSubmitEnabled() (retro-join.js) runs synchronously inside
+        # each swatch's own click handler, so no wait is needed between
+        # clicks or before reading it right after.
         rows = team.query_selector_all('.direct-row')
         for row in rows[:-1]:
             row.query_selector('.swatch.good').click()
-            team.wait_for_timeout(20)
         rows[-1].query_selector('.swatch.crit').click()
-        team.wait_for_timeout(50)
         assert team.eval_on_selector('#stmtSubmitBtn', 'el=>el.disabled') == False
         team.click('#stmtSubmitBtn')
         team.wait_for_selector('.personal-result .pill')
@@ -143,7 +149,7 @@ try:
 
         print("=== facilitator finishes the retro; results land in their own squad ===")
         fac.click('#finishSessionBtn')
-        fac.wait_for_timeout(150)
+        fac.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
         fac.click('#confirmOk')
         fac.wait_for_selector('#startSessionBtn')
         assert fac.query_selector('#startSessionBtn') is not None, "the session card should show 'start a new session' again once finished"
