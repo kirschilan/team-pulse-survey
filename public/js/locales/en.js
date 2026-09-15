@@ -15,6 +15,21 @@
 // itself translated here; that's a separate, deeper feature this story
 // doesn't attempt.
 var LOCALE_EN = {
+  "about.participantTitle": "Joining a retro?",
+  "about.participantText": "Open your facilitator’s invitation or enter their six-character code. Answer each statement or choose a color, then submit. Follow the discussion; results may be held until the facilitator reveals them.",
+  "about.join": "Join a retro",
+  "about.return": "Back to my retro",
+  "about.facilitatorTitle": "Running a retro?",
+  "about.setup": "In Admin, set up your squads and choose or customize a template.",
+  "about.start": "In Squad view, choose a squad and start a retro. Share the participant link, QR code, or session code.",
+  "about.discuss": "Choose live or held results. Discuss the responses, adjust the consolidated rating if needed, and record an improvement experiment.",
+  "about.finish": "Finish retro & apply results saves the consolidated ratings to the squad’s board.",
+  "about.links": "A team link shares the board for ongoing collaboration. A retro invitation opens a particular session; participant invitations also carry the team link when team sync is enabled. Use the separate co-facilitator invitation for someone helping run the session.",
+  "about.resultsTitle": "How to read the results",
+  "about.colors": "Green: going well. Yellow: mixed or needs attention. Red: a challenge to discuss. Gray: not yet scored. Read the selected template’s dimension descriptions: some assessments use score bands with their own meaning.",
+  "about.trends": "Trend arrows record whether things are improving or declining; they are separate from the current color.",
+  "about.views": "Squad view focuses on one team. Tribe view highlights dimensions that are red or yellow across squads; expand the squad breakdown for details. Use these signals to start a conversation and choose where to help.",
+
   "about.open": "About & help",
   "about.title": "Welcome to Squad Pulse",
   "about.tagline": "Understand your team. Choose what to improve.",
