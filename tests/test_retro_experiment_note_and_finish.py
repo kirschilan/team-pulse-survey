@@ -23,21 +23,28 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('#templatesBtn')
-    page.wait_for_timeout(150)
+    # eval_on_selector()/click() below don't auto-wait for a not-yet-
+    # attached element -- wait for the real "templates list rendered"
+    # signal instead of guessing.
+    page.wait_for_selector('#tplList .tpl-row', state="attached")
     page.click('#tplList .tpl-row[data-id="starter-5dysfunctions"] [data-action="load"]')
-    page.wait_for_timeout(100)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     page.click('#confirmOk')
-    page.wait_for_timeout(300)
+    # evaluate() below doesn't auto-wait -- wait for the real "Five
+    # Dysfunctions' dimensions landed" signal (loadTemplate()'s own Promise
+    # chain) instead of guessing how long it takes.
+    page.wait_for_function("() => window.__FAKE_STORE__['dimensions/trust'] !== undefined")
 
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
 
     # squad-1 shouldn't have any existing ratings yet on a freshly loaded
     # template -- confirm the baseline so the "did finishing actually write"
@@ -51,7 +58,10 @@ with sync_playwright() as p:
     print("baseline squad-1 dimensions before any retro:", baseline)
 
     page.click('#startSessionBtn')
-    page.wait_for_timeout(250)
+    # evaluate() below doesn't auto-wait -- the fake store's set() writes
+    # into __FAKE_STORE__ synchronously, but poll for the real condition
+    # rather than assume that timing.
+    page.wait_for_function("() => Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/')).length === 1")
 
     session_info = page.evaluate("""
       (function(){
@@ -68,8 +78,11 @@ with sync_playwright() as p:
     print("=== Story 8: writing and saving the sprint-experiment note ===")
     page.fill('#experimentNoteBox', "Pair on the riskiest story every day this sprint")
     assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == True
+    # No wait needed here -- saveExperimentNote() (retro-facilitator.js)
+    # writes to the store synchronously, and the "Saved" hint's
+    # hidden=false is also set synchronously in the click handler (the
+    # setTimeout it schedules only re-hides it later).
     page.click('#saveExperimentNoteBtn')
-    page.wait_for_timeout(150)
     stored_note = page.evaluate("window.__FAKE_STORE__['sessions/%s'].experimentNote" % sid)
     print("stored note:", stored_note)
     assert stored_note == "Pair on the riskiest story every day this sprint"
@@ -83,12 +96,14 @@ with sync_playwright() as p:
 
     print("=== Story 9: 'Finish retro' with nothing submitted just closes, no squad changes ===")
     page.click('#finishSessionBtn')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     confirm_msg_empty = page.eval_on_selector('#confirmMessage', 'el => el.textContent')
     print("confirm message with zero submissions/overrides:", confirm_msg_empty)
     assert "won" in confirm_msg_empty and "change" in confirm_msg_empty
+    # closeConfirm() is a synchronous hidden-attribute toggle with no store
+    # write -- #closeSessionBtn's presence is unaffected by it either way,
+    # so no wait is needed before the query_selector below.
     page.click('#confirmCancel')
-    page.wait_for_timeout(100)
     # session should still be open since we cancelled
     assert page.query_selector('#closeSessionBtn') is not None
 
@@ -106,29 +121,46 @@ with sync_playwright() as p:
         window.__NOTIFY__('sessions/%s/responses');
       })(%s);
     """ % (sid, sid, json.dumps(responses)))
-    page.wait_for_timeout(150)
+    # No wait needed here -- window.__NOTIFY__() calls the fake store's
+    # notify() SYNCHRONOUSLY (unlike a real onSnapshot's first delivery,
+    # which the fixture delays), which synchronously updates
+    # state.sessionResponses inside retro-facilitator.js's listener before
+    # this evaluate() call even returns.
+    #
+    # Same reasoning for the reveal-mode click below: unlike a real relay
+    # (where the write genuinely round-trips before this device's own
+    # listener reflects it -- see test_board_sync_finish_retro_convergence.py),
+    # this fake store's ongoing sessions listener (subscribed once at boot
+    # in db.js) fires synchronously on every .update(), so
+    # setRevealMode()'s write and the resulting re-render (including the
+    # .override-btn the next click needs) are both already done by the
+    # time click() returns.
     page.click('.reveal-btn[data-reveal="live"]')
-    page.wait_for_timeout(150)
 
     # manually override 'results' (Inattention to Results) to Yellow/improving,
     # even though every response scored it green -- this is exactly the "team
     # can choose the more severe (or different) read by hand" escape hatch
     page.click('.override-btn[data-override-dim="results"]')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#backdrop', state="visible")  # real modal-open signal, not a guess
     page.click('.swatch[data-color="warn"]')
     page.click('#trendsel button[data-trend="up"]')
+    # setSessionOverride() (retro-facilitator.js) writes to the store and
+    # re-renders synchronously, same reasoning as above -- no wait needed
+    # before the next click.
     page.click('#modalSave')
-    page.wait_for_timeout(150)
 
     print("=== finishing now shows a real summary and, on confirm, writes to the squad ===")
     page.click('#finishSessionBtn')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     confirm_msg = page.eval_on_selector('#confirmMessage', 'el => el.textContent')
     print("confirm message with real results:", confirm_msg)
     assert "Absence of Trust: Green" in confirm_msg
     assert "Inattention to Results: Yellow (overridden)" in confirm_msg
     page.click('#confirmOk')
-    page.wait_for_timeout(250)
+    # evaluate()/eval_on_selector() below don't auto-wait -- poll for the
+    # real "finishRetroAndApply() landed" signal (it writes to the squad's
+    # dimensions and closes the session synchronously) instead of guessing.
+    page.wait_for_function("() => { var d = window.__FAKE_STORE__['squads/squad-1'].dimensions; return d.results && d.results.color === 'warn' && d.results.trend === 'up'; }")
 
     print("=== session is gone, squad's ratings now reflect the retro ===")
     assert page.query_selector('#closeSessionBtn') is None
