@@ -40,6 +40,20 @@ def wait_for_port(port, timeout=5.0):
     return False
 
 
+def wait_for_new_frame(capture, baseline_count, timeout=5.0):
+    """Poll the Python-side WebSocket capture for a genuinely new frame,
+    instead of guessing how long a real relay round trip takes. More
+    precise than the old fixed-sleep-then-check approach too: it proves
+    traffic for THIS action actually happened, rather than assuming a
+    frame arrived somewhere inside an arbitrary window."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if len(capture.frames) > baseline_count:
+            return True
+        time.sleep(0.02)
+    return False
+
+
 class WireCapture:
     """Collects every raw WebSocket frame this page sends/receives."""
     def __init__(self, page):
@@ -97,18 +111,28 @@ try:
         a.on("pageerror", lambda e: a_errors.append(str(e)))
         capture = WireCapture(a)
         a.goto(INDEX_URL, wait_until="domcontentloaded")
-        a.wait_for_timeout(300)
+        # eval_on_selector()/query_selector() below don't auto-wait --
+        # renderAdminSquadList() only populates this once the async store load +
+        # first render() pass lands, so this is the real boot-complete marker
+        # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+        a.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
+        # ensureDefaultTeamSecret()/renderTeamSyncStatus() (board-sync.js) both
+        # run synchronously at script-load time -- device A's team link is
+        # already populated the instant goto() returns, no click or wait
+        # needed for step 7's default-on behavior.
         a.click('.view-btn[data-view="admin"]')
-        a.wait_for_timeout(300)  # step 7: default-on -- device A already has its own team link, no click needed
 
         print("=== renaming a squad to a distinctive, unmistakable plaintext name ===")
-        a.click('.view-btn[data-view="admin"]')
-        a.wait_for_timeout(100)
+        frames_before_rename = len(capture.frames)
         name_input = a.query_selector('.admin-squad-name[data-id="squad-1"]')
         name_input.fill(SECRET_SQUAD_NAME)
         name_input.dispatch_event("change")
-        a.wait_for_timeout(400)  # let the push to the relay land
+        # renameSquad() (squads.js) triggers a real relay round trip
+        # (pushBoardSnapshotIfConnected() -> roomIdFor() -> a real WebSocket
+        # write) -- poll the actual capture for a new frame instead of
+        # guessing how long that takes.
+        assert wait_for_new_frame(capture, frames_before_rename), "no new WebSocket frame arrived after renaming the squad"
 
         capture.assert_saw_traffic()
         print("frames captured so far:", len(capture.frames))
@@ -124,16 +148,20 @@ try:
 
         # ============ retro session traffic ============
         print("=== starting a retro and saving a distinctive sprint-experiment note ===")
+        # setView()/selectSquad() are both synchronous (established across
+        # this pass) -- no wait needed for either of these two clicks.
         a.click('.view-btn[data-view="squad"]')
-        a.wait_for_timeout(100)
         a.click('.squad-pick-btn[data-id="squad-2"]')
-        a.wait_for_timeout(150)
         a.click("#startSessionBtn")
         a.wait_for_selector("#experimentNoteBox")  # real relay round trip -- wait for it, don't guess how long
         note_box = a.query_selector("#experimentNoteBox")
         note_box.fill(SECRET_NOTE)
+        frames_before_note = len(capture.frames)
         a.click("#saveExperimentNoteBtn")
-        a.wait_for_timeout(400)
+        # saveExperimentNote() (retro-facilitator.js) writes through the
+        # real relay too -- poll for the actual new frame instead of
+        # guessing how long that round trip takes.
+        assert wait_for_new_frame(capture, frames_before_note), "no new WebSocket frame arrived after saving the experiment note"
 
         capture.assert_never_contains(SECRET_NOTE)
         print("confirmed: the sprint-experiment note never appears in plaintext on the session wire either")
@@ -150,7 +178,7 @@ try:
         wrong_errors = []
         wrong_page.on("pageerror", lambda e: wrong_errors.append(str(e)))
         wrong_page.goto(INDEX_URL, wait_until="domcontentloaded")
-        wrong_page.wait_for_timeout(300)
+        wrong_page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
         real_link = a.eval_on_selector("#teamLinkInput", "el=>el.value") if a.query_selector("#teamLinkInput") else None
         # deliberately connect with a WRONG secret pointed at the room id
         # derived from a guess -- proves the isolation holds from a fresh,
