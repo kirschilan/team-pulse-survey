@@ -1770,3 +1770,18 @@ not just in this repo's own tests.
   (5 new unit tests in `test_template_locale.js` proving the fallback, its value-gating, and its
   per-element array behavior, written and confirmed failing before the `state.js` change). Full
   74-test unit suite + 44-file Playwright suite green, on its own short-lived branch.
+- 2026-09-15 — Copilot perf pass, file 7/9: `test_scored_template_tuckman.py`. Removed every
+  `wait_for_timeout()` call. Most click-then-click chains needed no wait at all (`click()`/`fill()`
+  auto-wait for their own next target); reads via `query_selector()`/`eval_on_selector()`/
+  `evaluate()` got real conditions instead: `wait_for_selector(state="attached")` for native
+  `<details>` content and per-view renders that are synchronous once the target lands,
+  `state="visible"` for the confirm modal's open toggle, and `wait_for_function()` polling
+  `window.__FAKE_STORE__` for the template-load and session-creation writes. One spot needed no
+  wait for a non-obvious reason: directly writing to `window.__FAKE_STORE__` and calling
+  `window.__NOTIFY__()` (simulating a relay push) invokes the fake store's listener callbacks
+  SYNCHRONOUSLY -- unlike a real `onSnapshot`'s first delivery, which the fixture intentionally
+  delays via `setTimeout` -- so `state.sessionResponses` is already updated by the time that
+  `evaluate()` call returns, before the facilitator even clicks to reveal the live tally. Verified
+  output identical to the original (aside from a timestamp), then stress-tested 10x clean at
+  ~3.1-3.4s per run (down from ~6.5s). Landed via a clean fast-forward (no concurrent changes to
+  this file), full 44-file Playwright suite + 74-test unit suite green, zero regressions.
