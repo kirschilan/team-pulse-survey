@@ -2579,3 +2579,31 @@ not just in this repo's own tests.
   `test_dim_manager_language.py`'s existing remove-confirm-dialog scenario with both assertions,
   confirmed failing before either fix, passing after. Full 81-test unit suite + 47-file Playwright
   suite green.
+- 2026-09-15 — Follow-up (PR #6 review), first attempt was wrong, caught by a second
+  review before merge. First pass replaced that fix's `page.wait_for_timeout(25)` with
+  `page.evaluate("() => new Promise(r => setTimeout(r, 0))")`, reasoning the stray
+  re-render came from `local-store.js`'s `onSnapshot()` (a `setTimeout(fn, 0)`). Wrong on
+  both counts: Playwright tests never load `local-store.js` at all -- `build_page()`
+  splices in `tests/fixtures/fake_store.html` instead, whose every `onSnapshot()`
+  delivers via `setTimeout(fn, 10)`, not 0. A second review (Codex) reproduced the gap
+  directly: the zero-delay flush can resolve before that real 10ms delivery fires, so
+  the original race stays possible; the first attempt's own 10/10 clean local runs never
+  caught it because enough real time had already elapsed from preceding CDP round-trips
+  to mask it, which is exactly the kind of false confidence a wall-clock-shaped wait
+  produces. Traced the actual mechanism instead of guessing again:
+  `retro-facilitator.js`'s `subscribeSessionResponses()` creates a fresh
+  `sessions/<id>/responses` collection listener the FIRST time a new session's card
+  renders (guarded so it never re-subscribes for the same id); that listener's callback
+  re-renders the whole squad view, and the fake store's `setTimeout(..., 10)` for its
+  first delivery is the actual pending timer that can land between `fill()` and `click()`.
+  Fixed for real this time with a named, path-specific signal instead of any timer at
+  all: `fake_store.html` now exposes `window.__FAKE_STORE_DELIVERY_COUNTS__`, a per-path
+  delivery counter incremented at every `onSnapshot` callback invocation (both the
+  delayed initial one and every `notify()`-triggered one), purely additive so every other
+  test's behavior is unchanged. The test waits for
+  `__FAKE_STORE_DELIVERY_COUNTS__['sessions/'+sid+'/responses'] >= 1` before typing --
+  verified this is a real, non-vacuous condition (transitions 0 -> 1, not already-true
+  from some unrelated delivery) via a standalone repro before trusting it. Verified with
+  10 focused runs of `test_retro_experiment_note_and_finish.py` (all clean), the full
+  47-file Playwright suite via `run_all.sh` (TEST_JOBS=4, 3 shards, 48s), and the 82/82
+  Node unit suite -- zero regressions from the shared fixture's added instrumentation.

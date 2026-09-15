@@ -75,11 +75,22 @@ with sync_playwright() as p:
       "sid => state.sessions.some(s => s.id === sid)",
       arg=sid,
     )
-    # The fake store delivers the initial sessions snapshot on a delayed
-    # callback even though startSession() already notified the listener. There
-    # is no exposed completion signal for that second render; yield briefly
-    # before typing so it cannot replace the textarea with the empty snapshot.
-    page.wait_for_timeout(25)
+    # Starting the session synchronously renders the session card, which
+    # subscribes a FRESH responses-subcollection listener for this session
+    # (retro-facilitator.js's subscribeSessionResponses(), created once per
+    # new session id). The fake store (tests/fixtures/fake_store.html)
+    # delivers that listener's first snapshot via setTimeout(..., 10) --
+    # and its callback re-renders the whole squad view, which would
+    # overwrite the textarea with the still-empty stored note if that
+    # delivery lands after fill() but before Save is clicked. Wait for that
+    # exact, named delivery (fake_store.html's per-path delivery counter)
+    # instead of guessing at a duration -- see STATUS.md for the review
+    # that caught the previous fix here waiting on the wrong listener.
+    responses_path = "sessions/%s/responses" % sid
+    page.wait_for_function(
+      "path => window.__FAKE_STORE_DELIVERY_COUNTS__ && window.__FAKE_STORE_DELIVERY_COUNTS__[path] >= 1",
+      arg=responses_path,
+    )
     dim_keys = [d["key"] for d in session_info["doc"]["dimensions"]]
     print("=== session started ===", sid, dim_keys)
     print("experimentNote defaults to empty string:", repr(session_info["doc"].get("experimentNote")))
