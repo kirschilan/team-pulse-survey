@@ -20,6 +20,7 @@
     </div>
     <div class="actions">
       <span class="sync-note" id="syncNote"><span class="sync-dot" id="syncDot"></span><span id="syncText" data-i18n="header.syncConnecting">Connecting&hellip;</span></span>
+      <button class="btn ghost" id="aboutHelpBtn" type="button" data-i18n="about.open">About &amp; help</button>
       <button class="btn ghost" id="joinCodeBtn" type="button" data-i18n="header.joinRetro">Join a retro</button>
       <button class="btn ghost" id="backToRetroBtn" type="button" hidden data-i18n="header.backToRetro">&larr; Back to my retro</button>
       <div class="view-switch" role="tablist" aria-label="View">
@@ -375,6 +376,20 @@
 <script src="js/csv.js"></script>
 <script src="js/board-sync.js"></script>
 <script src="js/db.js"></script>
+<dialog id="aboutDialog" aria-labelledby="aboutTitle" aria-describedby="aboutIntro">
+  <p class="about-brand" data-i18n="header.appName">Squad Pulse</p>
+  <h2 id="aboutTitle" tabindex="-1" autofocus data-i18n="about.title">Welcome to Squad Pulse</h2>
+  <p class="about-tagline" data-i18n="about.tagline">Understand your team. Choose what to improve.</p>
+  <p id="aboutIntro" data-i18n="about.intro">Take a quick team health check, guide a retrospective, and spot patterns across squads.</p>
+  <div class="about-summary">
+    <p data-i18n="about.squad">Squad view brings a team's health ratings and retrospective together.</p>
+    <p data-i18n="about.tribe">Tribe view highlights shared challenges across squads to help focus improvement.</p>
+    <p data-i18n="about.admin">Admin lets you set up squads and customize assessment templates.</p>
+  </div>
+  <p class="hint" data-i18n="about.credit">Built by Dr. Agile</p>
+  <button class="btn" id="aboutCloseBtn" type="button" data-i18n="about.close">Back to the app</button>
+</dialog>
+<script src="js/about.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

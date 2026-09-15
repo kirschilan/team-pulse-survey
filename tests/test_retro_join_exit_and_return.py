@@ -61,6 +61,12 @@ with sync_playwright() as p:
     draft_before = part.evaluate("JSON.stringify(state.joinDraftAnswers)")
     print("draft before exit:", draft_before)
 
+    # Opening help during an actual live survey preserves the selected answer.
+    part.click("#aboutHelpBtn")
+    part.click("#aboutCloseBtn")
+    assert part.evaluate("JSON.stringify(state.joinDraftAnswers)") == draft_before
+    assert part.locator(".direct-row .swatch.good").first.is_visible()
+
     exit_btn = part.query_selector("#exitJoinBtn")
     print("exit button present on the join screen:", exit_btn is not None)
     assert exit_btn is not None
