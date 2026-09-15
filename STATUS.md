@@ -2039,3 +2039,12 @@ not just in this repo's own tests.
   full `saveExperimentNote()` call chain found no deferred step anywhere in it. No code change was
   made pending the specific failure detail (exact assertion value, traceback, Copilot's own
   Playwright/Chromium version) that would let this be reproduced rather than taken on report alone.
+- 2026-09-15 — File 2/6 of the remaining local candidates from Copilot's third top-10 list:
+  `test_retro_override_and_response_table.py` (15 waits). Same established Five Dysfunctions-load
+  setup treatment as earlier files, plus the session-override editor got the same finding as
+  `test_retro_statement_language.py`'s identical flow: `setSessionOverride()`/
+  `clearSessionOverride()` (retro-facilitator.js) both write to the store and re-render
+  synchronously in their click handlers. Verified output identical to the original (aside from the
+  randomized session code), then stress-tested 10x clean at ~1.9-2.1s per run (down from
+  ~4.4-4.6s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+  Full-suite `tests/run_all.sh` now **74.7s**.
