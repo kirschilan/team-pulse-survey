@@ -21,16 +21,21 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
+    # setView()/setLocale() are both synchronous (established across this
+    # pass), and openDimManager() (dimensions.js) calls renderDimList()
+    # synchronously before unhiding the backdrop -- no wait needed for any
+    # of these three clicks.
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="he"]')
-    page.wait_for_timeout(150)
 
     print("=== Edit Dimensions modal chrome is Hebrew ===")
     page.click('#dimManageBtn')
-    page.wait_for_timeout(150)
     assert page.eval_on_selector('#dimBackdrop', 'el=>el.getAttribute("dir")') == "rtl"
     title_he = page.eval_on_selector('#dimBackdrop h3', 'el=>el.textContent')
     hint_he = page.eval_on_selector('#dimBackdrop > .modal > .hint', 'el=>el.textContent')
@@ -76,7 +81,7 @@ with sync_playwright() as p:
 
     print("=== remove confirm dialog is Hebrew, dimension name embedded as-is ===")
     row.query_selector('.dim-del').click()
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     confirm_title_he = page.eval_on_selector('#confirmTitle', 'el=>el.textContent')
     confirm_msg_he = page.eval_on_selector('#confirmMessage', 'el=>el.textContent')
     confirm_btn_he = page.eval_on_selector('#confirmOk', 'el=>el.textContent')
@@ -84,20 +89,25 @@ with sync_playwright() as p:
     assert confirm_title_he != "Remove dimension?" and confirm_title_he.strip()
     assert "Easy to release" in confirm_msg_he and "hidden (not deleted)" not in confirm_msg_he
     assert confirm_btn_he != "Remove" and confirm_btn_he.strip()
+    # closeConfirm()/closeDimManager() are synchronous hidden-attribute
+    # toggles with no store write -- no wait needed before the next click.
     page.click('#confirmCancel')  # don't actually remove
-    page.wait_for_timeout(100)
 
     print("=== statement-scored dimension shows an editable statements list with a Hebrew heading ===")
     page.click('#dimDoneBtn')
-    page.wait_for_timeout(100)
     page.click('#templatesBtn')
-    page.wait_for_timeout(150)
+    # eval_on_selector()/click() below don't auto-wait for a not-yet-
+    # attached element -- wait for the real "templates list rendered"
+    # signal instead of guessing.
+    page.wait_for_selector('#tplList .tpl-row', state="attached")
     page.click('#tplList .tpl-row[data-id="starter-5dysfunctions"] [data-action="load"]')
-    page.wait_for_timeout(100)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     page.click('#confirmOk')
-    page.wait_for_timeout(300)
+    # evaluate() below doesn't auto-wait -- wait for the real "Five
+    # Dysfunctions' dimensions landed" signal (loadTemplate()'s own Promise
+    # chain) instead of guessing how long it takes.
+    page.wait_for_function("() => window.__FAKE_STORE__['dimensions/trust'] !== undefined")
     page.click('#dimManageBtn')
-    page.wait_for_timeout(150)
     stmt_count = page.evaluate("dimByKey('trust').statements.length")
     stmt_heading_he = page.eval_on_selector('.dim-row[data-key="trust"] .field-label', 'el=>el.textContent')
     stmt_inputs = page.eval_on_selector_all('.dim-row[data-key="trust"] [data-field="statements"][data-lang="en"]', 'els=>els.length')
@@ -106,12 +116,11 @@ with sync_playwright() as p:
     assert stmt_inputs == stmt_count
 
     print("=== switching back to English restores every string above ===")
+    # Same synchronous closeDimManager()/setLocale()/openDimManager()
+    # reasoning as above -- no wait needed for any of these three clicks.
     page.click('#dimDoneBtn')
-    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="en"]')
-    page.wait_for_timeout(150)
     page.click('#dimManageBtn')
-    page.wait_for_timeout(150)
     assert page.eval_on_selector('#dimBackdrop h3', 'el=>el.textContent') == "Edit dimensions"
     assert page.eval_on_selector('#addDimBtn', 'el=>el.textContent') == "+ Add dimension"
     assert page.eval_on_selector('#dimBackdrop', 'el=>el.getAttribute("dir")') != "rtl"
