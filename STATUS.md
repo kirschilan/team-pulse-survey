@@ -2503,3 +2503,25 @@ not just in this repo's own tests.
   from 14 to 20 tests (`invalid-squad` validation, `planHasChanges()`). Full suite green: 101/101
   unit tests, all 48 Playwright files, relay's own protocol suite. Pushed to the same
   `story13-json-import-squads` branch/PR rather than opening a new one.
+- **2026-09-15 — Story 13, item 3a: a fifth review finding on PR #7, on re-review of the fix
+  above, real and more severe than it first reads.** `parseBoardImportFile()`'s new validation
+  checked the squad/dimensions CONTAINERS but not a rating's own field types -- a file with
+  `{color:"good", note:123}` passed validation, got persisted, then crashed rendering
+  (`render.js`'s/`squads.js`'s `cell.note && cell.note.trim()` assumes a string). Verified the
+  repro directly before fixing. **Found something broader while fixing it**: `color`/`trend` are
+  interpolated UNESCAPED into a CSS class attribute in both of those same files
+  (`'cell-btn '+color+'"'`) -- always safe before because every existing writer (the rating-modal
+  UI, CSV's `colorFromWord()`) only ever produces one of a fixed enum, but this JSON import path
+  copied whatever string a file contained, which is real attribute-injection room for a
+  color/trend value containing a `"`. Fixed both with the same check: `isValidRating()`
+  restricts `color` to the app's actual 4-value enum and `trend` to its actual 3-value enum (not
+  just "must be a string"), `note` to a string, applied per-rating inside
+  `parseBoardImportFile()`'s existing squad-shape loop. 6 new unit tests (bad container, bad
+  note/color/trend, and two "still accepts a well-formed/empty rating" negatives so the check
+  isn't just permissive-by-accident). New Playwright regression, per the review's explicit ask:
+  imports the exact `note:123` repro, confirms the friendly error shows, zero uncaught page
+  errors, AND (the part that actually proves the fix, not just the symptom) an EXACT equality
+  snapshot of the target squad's persisted `dimensions` before vs. after the rejected import --
+  catching a partial/silent write, not just "the literal bad value isn't there." Stress-tested
+  10x clean. Full suite green: 107/107 unit tests, all 48 Playwright files, relay's own protocol
+  suite. Same branch/PR again.

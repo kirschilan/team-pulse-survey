@@ -121,15 +121,33 @@ document.getElementById("exportJsonBtn").addEventListener("click", async functio
 // "download a backup first" instead (same toJSON() this file already has).
 var SUPPORTED_BOARD_FORMAT_VERSION = 1;
 
-// Validates each squad entry's shape at the parse boundary -- found missing
-// in review (PR #7): buildSquadImportPlan() ran directly inside
-// FileReader.onload with no try/catch, so a null entry or a non-string
-// `name` threw an uncaught exception instead of showing the malformed-file
-// error UI. `dimensions` isn't required (a squad can have none yet), but if
-// present must be a plain object -- individual rating VALUES are still
-// whatever the caller wrote, matched against real dimensions/colors by
-// buildSquadImportPlan() itself, same as CSV import already tolerates.
+// Validates each squad entry's shape, AND each of its ratings' shape, at the
+// parse boundary -- found missing in review (PR #7), in two rounds:
+// (1) buildSquadImportPlan() ran directly inside FileReader.onload with no
+// try/catch, so a null squad entry or a non-string `name` threw an uncaught
+// exception instead of showing the malformed-file error UI; (2) a rating's
+// OWN fields went unchecked, so e.g. {color:"good", note:123} passed
+// straight through into the persisted store and then crashed rendering --
+// render.js's/squads.js's `cell.note && cell.note.trim()` assumes a string.
+// Worse than just a crash: `color`/`trend` are interpolated UNESCAPED into a
+// CSS class attribute in both of those files (`'cell-btn '+color+'"'`) --
+// always safe before because every existing writer (the rating-modal UI,
+// CSV's colorFromWord()) only ever produces one of a fixed enum, but a raw
+// JSON import copied whatever string was in the file, opening real
+// attribute-injection room for a color/trend containing a `"`. Restricting
+// color/trend to the app's real enum (not just "must be a string") closes
+// both problems with the same check.
 function isPlainObject(v){ return !!v && typeof v === "object" && !Array.isArray(v); }
+var VALID_RATING_COLORS = { good:true, warn:true, crit:true, unscored:true };
+var VALID_RATING_TRENDS = { up:true, down:true, flat:true };
+
+function isValidRating(r){
+  if(!isPlainObject(r)) return false;
+  if(r.color !== undefined && !VALID_RATING_COLORS[r.color]) return false;
+  if(r.trend !== undefined && !VALID_RATING_TRENDS[r.trend]) return false;
+  if(r.note !== undefined && typeof r.note !== "string") return false;
+  return true;
+}
 
 function parseBoardImportFile(text){
   var data;
@@ -141,7 +159,13 @@ function parseBoardImportFile(text){
     var fs = data.squads[i];
     if(!isPlainObject(fs)) return { ok:false, error:"invalid-squad" };
     if(fs.name !== undefined && typeof fs.name !== "string") return { ok:false, error:"invalid-squad" };
-    if(fs.dimensions !== undefined && !isPlainObject(fs.dimensions)) return { ok:false, error:"invalid-squad" };
+    if(fs.dimensions !== undefined){
+      if(!isPlainObject(fs.dimensions)) return { ok:false, error:"invalid-squad" };
+      var dimKeys = Object.keys(fs.dimensions);
+      for(var j=0;j<dimKeys.length;j++){
+        if(!isValidRating(fs.dimensions[dimKeys[j]])) return { ok:false, error:"invalid-rating" };
+      }
+    }
   }
   return { ok:true, data:data };
 }

@@ -100,6 +100,32 @@ with sync_playwright() as p:
     page.click('#importJsonCloseErr')
     page.wait_for_selector('#importJsonBackdrop[hidden]', state="attached")
 
+    # ---- error state: a rating with a bad field type (review finding, round
+    # 2: {color:"good", note:123} passed validation, got persisted, then
+    # crashed rendering -- cell.note.trim() assumes a string. Confirms the
+    # malformed rating never reaches window.__FAKE_STORE__ at all -- exact
+    # equality against a snapshot taken before the attempt, not just "isn't
+    # literally 123", so this would also catch a partial/silent write. ----
+    print("=== malformed rating (note is a number, not a string) ===")
+    def squad1_dims():
+        return page.evaluate("""() => {
+            const sq = Object.values(window.__FAKE_STORE__).find(v => v && v.name === 'Squad 1');
+            return sq ? sq.dimensions : null;
+        }""")
+    dims_before = squad1_dims()
+    bad_rating_file = {"formatVersion": 1, "squads": [{"name": "Squad 1", "dimensions": {"release": {"color": "good", "note": 123}}}]}
+    open_with_file(json.dumps(bad_rating_file), "bad_rating.json")
+    page.wait_for_selector('#importJsonBody .error-state')
+    err_text_rating = strip_bidi(page.eval_on_selector('#importJsonBody .error-state p', 'el => el.textContent'))
+    print("error shown:", err_text_rating)
+    assert "doesn't look like a Squad Pulse export" in err_text_rating
+    assert errors == [], "a malformed rating must be handled, not thrown as an uncaught page error"
+    dims_after = squad1_dims()
+    print("Squad 1's dimensions before/after the rejected file:", dims_before, dims_after)
+    assert dims_after == dims_before, "a malformed rating must never reach the persisted store, not even partially"
+    page.click('#importJsonCloseErr')
+    page.wait_for_selector('#importJsonBackdrop[hidden]', state="attached")
+
     # ---- MERGE: Squad 1 (release overridden, process untouched), Squad 3 new, Squad 2 untouched ----
     print("=== merge import ===")
     merge_file = {

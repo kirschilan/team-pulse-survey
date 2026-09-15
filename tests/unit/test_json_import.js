@@ -83,6 +83,55 @@ test("parseBoardImportFile() still accepts a squad entry with no dimensions fiel
   assert.equal(result.ok, true);
 });
 
+// Second review finding on the same PR: parseBoardImportFile() validated the
+// squad/dimensions CONTAINERS but not individual rating objects or their
+// field types -- a rating like {color:"good", note:123} passed straight
+// through buildSquadImportPlan() and applySquadImportPlan() into the
+// persisted store, then crashed rendering: render.js's/squads.js's
+// `cell.note && cell.note.trim()` assumes note is always a string. Worse
+// than just a crash: `color`/`trend` are interpolated UNESCAPED into a CSS
+// class attribute in both render.js and squads.js (`'cell-btn '+color+'"'`)
+// -- always safe before because every existing writer (the rating-modal UI,
+// CSV's colorFromWord()) only ever produces one of a fixed enum, but a JSON
+// import copied whatever string was in the file, opening real attribute-
+// injection room for a color/trend value with a `"` in it. Fixing this by
+// restricting color/trend to the app's actual enum (not just "must be a
+// string") closes both problems with the same check.
+
+test("parseBoardImportFile() rejects a rating value that isn't a plain object", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: "good" } }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-rating");
+});
+
+test("parseBoardImportFile() rejects a rating whose note isn't a string", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: "good", note: 123 } } }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-rating");
+});
+
+test("parseBoardImportFile() rejects a rating whose color isn't one of the app's known colors", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: "not-a-real-color" } } }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-rating");
+});
+
+test("parseBoardImportFile() rejects a rating whose trend isn't one of the app's known trends", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { trend: "sideways" } } }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-rating");
+});
+
+test("parseBoardImportFile() accepts a well-formed rating with every known-good field", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: "good", trend: "up", note: "great work" } } }] }));
+  assert.equal(result.ok, true);
+});
+
+test("parseBoardImportFile() accepts a rating with no fields at all (an empty object)", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: {} } }] }));
+  assert.equal(result.ok, true);
+});
+
 // ---------- buildSquadImportPlan() ----------
 
 function fileWith(squads){ return { formatVersion: 1, squads: squads }; }
