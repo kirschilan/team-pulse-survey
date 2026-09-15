@@ -2048,3 +2048,14 @@ not just in this repo's own tests.
   randomized session code), then stress-tested 10x clean at ~1.9-2.1s per run (down from
   ~4.4-4.6s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
   Full-suite `tests/run_all.sh` now **74.7s**.
+- 2026-09-15 — File 3/6 of the remaining local candidates from Copilot's third top-10 list:
+  `test_retro_direct_rating_flow.py` (14 waits). Same established treatment throughout: the initial
+  boot marker, `wait_for_function()` for session-creation/override/finish-retro writes, and the
+  join screen's genuine async gap (`listenJoinSession()`'s `onSnapshot` first delivery, matching
+  `test_retro_statement_language.py`'s identical case) covered by
+  `wait_for_selector('.direct-row', ...)` instead of a guess. The direct-rating swatch-click loop
+  needed no waits between clicks (`refreshSubmitEnabled()` runs synchronously, same finding as
+  every other join-screen file in this pass). Verified output identical to the original (aside from
+  the randomized session code), then stress-tested 10x clean at ~1.9-2.0s per run (down from
+  ~4.5-4.7s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+  Full-suite `tests/run_all.sh` now **74.0s**.
