@@ -43,6 +43,65 @@ document.getElementById("exportBtn").addEventListener("click", async function(){
   if(w){ w.document.write("<pre style='white-space:pre-wrap;font-family:monospace;padding:16px;'>"+esc(csv)+"</pre>"); }
 });
 
+// ---------- JSON board export (beta) ----------
+// A full board backup/restore format, unlike toCSV()'s flat ratings-only
+// table: carries config, every dimension's/template's full definition
+// (including scored-template statements/scoreBands/strategies, and each
+// one's Hebrew i18n override verbatim -- state.js's dim.i18n.he.{...}/
+// tpl.i18n.he.{...} passed through as-is, not flattened into a symmetric
+// {en,he} shape the way scripts/export-template-translations.js does for
+// its own, different, human-review purpose), and every squad's ratings.
+// formatVersion:1 is the first version of this format -- no migration
+// path needed yet, since nothing existing depends on an older shape.
+// Deliberately excludes `sessions` (ephemeral, never meant to be portable)
+// and any team-sync secret (a durable credential has no business in a
+// downloadable file) -- this function never reads state.db/state.live or
+// anything team-sync-related, so there's nothing to accidentally leak.
+// Squads are matched on import by NAME, same as toCSV()/buildImportPlan()
+// -- squad.id is a storage-generated value (see state.js/squads.js), never
+// a portable identity, so it's deliberately left out of this export rather
+// than implying a portability it doesn't have.
+function buildBoardExport(){
+  return {
+    formatVersion: 1,
+    exportedAt: nowIso(),
+    config: Object.assign({}, state.config),
+    dimensions: sortedDimensions().map(function(d){
+      var out = { key:d.key, label:d.label, green:d.green||"", red:d.red||"", order:d.order };
+      if(d.statements) out.statements = d.statements;
+      if(d.scoreBands) out.scoreBands = d.scoreBands;
+      if(d.strategies && d.strategies.length) out.strategies = d.strategies;
+      if(d.i18n) out.i18n = d.i18n;
+      return out;
+    }),
+    templates: (state.templates||[]).map(function(tpl){
+      var out = { id:tpl.id, name:tpl.name, unit:tpl.unit, unitPlural:tpl.unitPlural, attribution:tpl.attribution||"", dimensions:tpl.dimensions };
+      if(tpl.i18n) out.i18n = tpl.i18n;
+      return out;
+    }),
+    squads: sortedSquads().map(function(sq){
+      return { name:sq.name, order:sq.order, dimensions: sq.dimensions||{} };
+    })
+  };
+}
+
+function toJSON(){
+  return JSON.stringify(buildBoardExport(), null, 2);
+}
+
+document.getElementById("exportJsonBtn").addEventListener("click", async function(){
+  var json = toJSON();
+  try{
+    var downloads = await (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null));
+    if(downloads){
+      await downloads.save({ filename:"squad-pulse-board.json", data: json });
+      return;
+    }
+  }catch(e){ /* fall through */ }
+  var w = window.open("", "_blank");
+  if(w){ w.document.write("<pre style='white-space:pre-wrap;font-family:monospace;padding:16px;'>"+esc(json)+"</pre>"); }
+});
+
 // ---------- CSV import ----------
 var importBackdrop = document.getElementById("importBackdrop");
 var csvFileInput = document.getElementById("csvFileInput");
@@ -258,7 +317,8 @@ function applyImportRatingsToSquad(sq, dims){
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     parseCSV: parseCSV, colorFromWord: colorFromWord, trendFromWord: trendFromWord,
-    mapImportColumns: mapImportColumns, buildImportPlan: buildImportPlan, toCSV: toCSV
+    mapImportColumns: mapImportColumns, buildImportPlan: buildImportPlan, toCSV: toCSV,
+    buildBoardExport: buildBoardExport, toJSON: toJSON
   };
 }
 

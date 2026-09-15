@@ -456,7 +456,7 @@ recall exercise instead of something anyone could just read.
 | 10 | Retro join flow (participant-facing screens) | **DONE** (2026-09-14) |
 | 11 | Retro facilitation flow (facilitator-facing screens, session cards, overrides) | **DONE** (2026-09-14) |
 | 12 | Dimension detail and Edit Dimensions modal (Admin) | **DONE** (2026-09-14) |
-| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass | Not started |
+| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass. Redesigned as a full JSON board export/import replacing CSV (see session log): (1) JSON board export (beta), additive — **DONE** (2026-09-15); (2) JSON import — squads/ratings; (3) JSON import — dimensions/templates/config; (4) delete the CSV runtime code | **In progress** |
 
 ## Deliberately not built yet (and why)
 
@@ -2300,3 +2300,44 @@ not just in this repo's own tests.
   the original run_all.sh ROI review with zero files skipped except the intentional exceptions.
   Verified output byte-for-byte identical to every original. Full suite green: 74/74 unit tests,
   45/45 Playwright tests via `tests/run_all.sh` (58.9s).
+- **2026-09-15 — Story 13 (CSV import/export chrome), first slice: JSON board export
+  (beta), additive.** `csv.js`'s `buildBoardExport()`/`toJSON()` export the FULL board
+  (config, every dimension's full definition including scored-template
+  statements/scoreBands/strategies and its Hebrew `i18n.he.*` override verbatim, custom
+  templates with their own `i18n`, and every squad's ratings) as one JSON file, behind a
+  new "Export JSON (beta)" button in Admin — alongside `toCSV()`'s existing flat
+  ratings-only export, not replacing it (that's items 3a/3b/4 below). Deliberately
+  excludes `sessions` (ephemeral) and any team-sync secret (a durable credential has no
+  business in a downloadable file); squad `id` is left out too, same reasoning as
+  `toCSV()`'s squad matching — it's a storage artifact, not a portable identity, so
+  import (not built yet) will match by name, same as CSV today.
+  Reconciles the open item from the 2026-09-14 translation-export-script entry: this
+  export intentionally does NOT reuse `scripts/export-template-translations.js`'s
+  flattened `{en,he}`-per-field shape — that shape serves human review of AI-translated
+  starter-template copy; this one serves board backup/restore fidelity, so it passes
+  `state.js`'s real `i18n.he.{...}` structure straight through unchanged. Both agree on
+  the same underlying field (`i18n.he.*`), just shaped for different readers.
+  New data shape, migration decision stated per DoD §3: `formatVersion:1`, no migration
+  needed — first version of the format, nothing existing depends on an older shape.
+  Mockup-before-implementation (DoD §3) judged not to apply here: the new button is a
+  visual/behavioral clone of the already-approved "Export CSV" button (same icon style,
+  same click → real download via `window.claude.use("downloads")` → same
+  `window.open`+`<pre>` fallback), not a new UX shape — the genuine UX decisions in this
+  story (the import-preview panel, the merge/replace toggle) are items 3a/3b, still
+  ahead, and will get a real mockup before implementation.
+  i18n per DoD §2: new button goes through `t()`/`data-i18n` (`admin.boardSetup.exportJson`),
+  both `en.js`/`he.js` updated in the same change, Playwright-verified in both languages.
+  Test-first per the `tdd` skill: `tests/unit/test_json_export.js` (7 tests, pure-function
+  coverage of `buildBoardExport()`/`toJSON()` — config passthrough, dimension/template
+  `i18n` passthrough, squads-by-name with no `id` leak, `sessions`/secret exclusion,
+  pretty-printed round-trip) written and confirmed failing before `csv.js` had the
+  functions; `tests/test_json_export.py` (English label, real click → real parseable
+  JSON with the right shape, Hebrew label) written and confirmed failing (missing
+  button) before the HTML/locale change. Full suite verified green after: 81/81 unit
+  tests, all 46 Playwright files (including relay-backed ones, after `relay/`'s own
+  `npm install`), relay's own protocol suite. Story 13 table status moved to
+  **In progress** — squads/dimensions/templates JSON import (items 3a/3b) and deleting
+  the CSV runtime code (item 4) remain, tracked in the backlog conversation this session
+  continues from. Implemented on branch `story13-json-board-export`, pushed as a PR per
+  explicit instruction rather than merged into `claude/optimistic-keller-holuql` directly
+  — not yet in the shared preview branch.
