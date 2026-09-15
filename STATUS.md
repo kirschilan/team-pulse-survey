@@ -1785,3 +1785,15 @@ not just in this repo's own tests.
   output identical to the original (aside from a timestamp), then stress-tested 10x clean at
   ~3.1-3.4s per run (down from ~6.5s). Landed via a clean fast-forward (no concurrent changes to
   this file), full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+- 2026-09-15 — Copilot perf pass, file 8/9: `test_scored_template_five_dysfunctions.py`. Same
+  treatment as its Tuckman sibling (same starter-template test shape): removed every
+  `wait_for_timeout()`, using auto-wait for click chains, `wait_for_selector(state="attached")` for
+  synchronous-once-rendered content, `state="visible"` for the confirm modal, and
+  `wait_for_function()` polling the store for template-load/rating writes. One condition needed
+  more thought than Tuckman's: reloading the SAME already-active template rewrites the same
+  dimension keys, so "dimensions/trust exists" is already true before the reload even starts -- not
+  a real completion signal there. Used `meta/config.updatedAt` instead, which `loadTemplate()`
+  stamps fresh on every load regardless of content -- captured its value before the reload and
+  polled for it to change. Verified output identical to the original (aside from timestamps), then
+  stress-tested 10x clean at ~2.2-2.3s per run (down from ~5.7s). Landed via a clean fast-forward,
+  full 44-file Playwright suite + 74-test unit suite green, zero regressions.
