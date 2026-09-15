@@ -20,10 +20,15 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
+    # setView() (app.js) is synchronous (established across this pass) --
+    # no wait needed after this click.
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(150)
 
     print("=== defaults to English on first load ===")
     heading = page.eval_on_selector('.card h2[data-i18n="admin.boardSetup.heading"]', 'el => el.textContent')
@@ -42,8 +47,8 @@ with sync_playwright() as p:
     assert page.eval_on_selector('.lang-btn[data-lang="en"]', 'el => el.classList.contains("active")')
 
     # ---- switch to Hebrew ----
+    # setLocale() (i18n.js) is synchronous (established across this pass).
     page.click('.lang-btn[data-lang="he"]')
-    page.wait_for_timeout(200)
 
     print("=== switched to Hebrew ===")
     heading_he = page.eval_on_selector('.card h2[data-i18n="admin.boardSetup.heading"]', 'el => el.textContent')
@@ -84,19 +89,19 @@ with sync_playwright() as p:
     assert "squad" in del_title and del_title != "Remove squad"
 
     page.click('.admin-squad-del')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     confirm_title = page.eval_on_selector('#confirmTitle', 'el => el.textContent')
     confirm_msg = page.eval_on_selector('#confirmMessage', 'el => el.textContent')
     confirm_btn = page.eval_on_selector('#confirmOk', 'el => el.textContent')
     print("confirm dialog:", confirm_title, "|", confirm_msg, "|", confirm_btn)
     assert confirm_title != "Remove squad?"
     assert "squad" in confirm_title
+    # closeConfirm()/setView() are synchronous -- no wait needed for either
+    # of these two clicks.
     page.click('#confirmCancel')  # don't actually delete -- just checking the strings
-    page.wait_for_timeout(100)
 
     print("=== rest of the app is untouched by the Admin-only switch ===")
     page.click('.view-btn[data-view="tribe"]')
-    page.wait_for_timeout(150)
     # Story 6 made the header an i18n-supported screen (h1 IS routed through
     # t() now), but "header.appName" is a deliberate brand-name pass-through
     # -- same literal value in every locale -- so this stays "Squad Pulse"
@@ -105,13 +110,13 @@ with sync_playwright() as p:
     print("Tribe view h1 (brand name, same in every locale):", tribe_heading)
     assert tribe_heading == "Squad Pulse"
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(150)
 
     # ---- persists across reload ----
     page.reload()
-    page.wait_for_timeout(400)
+    # A real reload re-runs the whole async boot sequence -- wait for the
+    # real boot-complete marker again, not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(150)
     heading_after_reload = page.eval_on_selector('.card h2[data-i18n="admin.boardSetup.heading"]', 'el => el.textContent')
     print("=== Hebrew persists across reload ===")
     print("heading after reload:", heading_after_reload)
@@ -122,7 +127,6 @@ with sync_playwright() as p:
 
     # ---- switch back to English ----
     page.click('.lang-btn[data-lang="en"]')
-    page.wait_for_timeout(200)
     heading_back = page.eval_on_selector('.card h2[data-i18n="admin.boardSetup.heading"]', 'el => el.textContent')
     print("=== switched back to English ===")
     print("heading:", heading_back)

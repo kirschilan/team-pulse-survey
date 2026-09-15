@@ -12,20 +12,27 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
     # rate a couple cells so export has content (from Squad view now)
+    # setView()/selectSquad() are both synchronous (established across this
+    # pass) -- no wait needed for either of these two clicks.
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(120)
     page.click('#squadDetail .cell-btn[data-squad="squad-1"][data-dim="release"]')
-    page.wait_for_timeout(100)
-    page.click('.swatch.good'); page.click('#modalSave'); page.wait_for_timeout(150)
+    page.wait_for_selector('#backdrop', state="visible")  # real modal-open signal, not a guess
+    page.click('.swatch.good')
+    page.click('#modalSave')
+    # evaluate() below doesn't auto-wait -- poll for the real write landing
+    # instead of guessing.
+    page.wait_for_function("() => { var s = window.__FAKE_STORE__['squads/squad-1']; return s && s.dimensions && s.dimensions.release && s.dimensions.release.color === 'good'; }")
 
     # ---- export and capture the fallback popup's CSV text (Export lives in Admin now) ----
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     with page.expect_popup() as popup_info:
         page.click('#exportBtn')
     popup = popup_info.value
@@ -66,11 +73,18 @@ with sync_playwright() as p:
     p2 = test_output_path("test_reordered.csv")
     p2.write_text(reordered_csv)
     page.set_input_files('#csvFileInput', str(p2))
-    page.wait_for_timeout(250)
+    # set_input_files() only dispatches the "change" event -- csv.js's
+    # handler then reads the file via FileReader.readAsText(), a genuinely
+    # async I/O callback, before rendering the preview and unhiding the
+    # backdrop. Wait for that real signal instead of guessing.
+    page.wait_for_selector('#importBackdrop', state="visible")
     print("=== reordered-columns import preview ===")
     print(page.eval_on_selector('#importSummary', 'el=>el.innerText'))
     page.click('#importApplyBtn')
-    page.wait_for_timeout(200)
+    # applyImportPlan() (csv.js) applies synchronously when no new squads
+    # need creating (our case -- both rows target the existing squad-1),
+    # but poll for the real write landing rather than assume that timing.
+    page.wait_for_function("() => { var s = window.__FAKE_STORE__['squads/squad-1']; return s && s.dimensions && s.dimensions.release && s.dimensions.release.color === 'good'; }")
     print("squad-1 release after reordered import (should be 'good'):", page.evaluate("window.__FAKE_STORE__['squads/squad-1'].dimensions.release"))
 
     # ---- Test: template mismatch warning ----
@@ -83,7 +97,9 @@ with sync_playwright() as p:
     p3 = test_output_path("test_mismatch.csv")
     p3.write_text(mismatched_csv)
     page.set_input_files('#csvFileInput', str(p3))
-    page.wait_for_timeout(250)
+    # Same genuinely-async FileReader reasoning as the reordered-columns
+    # import above.
+    page.wait_for_selector('#importBackdrop', state="visible")
     print("=== template-mismatch import preview ===")
     print(page.eval_on_selector('#importSummary', 'el=>el.innerText'))
     page.click('#importCancel')
