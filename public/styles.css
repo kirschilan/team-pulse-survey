@@ -481,3 +481,8 @@
 @media (max-width: 540px) {
   #aboutDialog { width: 100%; max-width: 100%; max-height: 100dvh; height: 100dvh; margin: 0; border-radius: 0; padding: 24px; }
 }
+.about-guides details { border-block-end: 1px solid var(--border); }
+.about-guides summary { cursor: pointer; padding-block: 16px; font-weight: 600; }
+.about-guide-body { padding-block-end: 16px; }
+.about-guide-body ol { padding-inline-start: 24px; line-height: 1.65; }
+.about-guide-body li + li { margin-block-start: 12px; }

@@ -471,16 +471,16 @@ recall exercise instead of something anyone could just read.
 ## Introduction and help backlog (2026-09-15)
 
 Priority is separate from the stable story ID. Each story ships English/Hebrew,
-RTL, keyboard support, and focused regression coverage. Story 1 is proposed on
-`codex/about-help-story-1` for PR review; it is not merged into preview.
+RTL, keyboard support, and focused regression coverage. Story 1 was merged through PR #2. Stories 2–4 and outside-click dismissal
+are on `codex/about-guides` for review before integration.
 
 | Priority | Story | User value and acceptance criteria | Status |
 |---|---|---|---|
-| 1 | 1 — On-demand introduction | As a visitor, open About & help from every view, including participant mode, understand the app's purpose, and close back to the same context without changing data or drafts. | Implemented on private PR branch; review pending |
+| 1 | 1 — On-demand introduction | As a visitor, open About & help from every view, including participant mode, understand the app's purpose, and close back to the same context without changing data or drafts. | Merged via PR #2 (2026-09-15) |
 | 2 | 6 — First-visit introduction | As a first-time visitor, see an introduction on an ordinary visit. Remember dismissal locally; bypass it for participant/co-facilitator/team links; retain manual access; storage failure never blocks entry. | Not started |
-| 3 | 2 — Participant guide | As a participant, understand code/link entry and answering; open the existing join flow or return to an active retro without losing answers. | Not started |
-| 4 | 3 — Facilitator guide | As a facilitator, follow setup, template and squad selection, start, invite, discuss, and finish/apply; distinguish team and session links. | Not started |
-| 5 | 4 — Reading results | As a viewer, understand colors, trends, Squad/Tribe views, and hotspots through expandable guidance matching actual behavior. | Not started |
+| 3 | 2 — Participant guide | As a participant, understand code/link entry and answering; open the existing join flow or return to an active retro without losing answers. | Implemented on `codex/about-guides`; PR review pending |
+| 4 | 3 — Facilitator guide | As a facilitator, follow setup, template and squad selection, start, invite, discuss, and finish/apply; distinguish team and session links. | Implemented on `codex/about-guides`; PR review pending |
+| 5 | 4 — Reading results | As a viewer, understand colors, trends, Squad/Tribe views, and hotspots through expandable guidance matching actual behavior. | Implemented on `codex/about-guides`; PR review pending |
 | 6 | 5 — Credits and licenses | As a user, inspect verified model sources, Dr. Agile contributions, application license, and third-party notices; preserve contextual board credits. Verify the source of Tuckman assessment scoring. | Not started |
 | 7 | 7 — Terms and conditions of use | As a user, read terms before choosing to use the app and reopen them from About & help. Publish owner-approved English/Hebrew terms covering permitted use, responsibilities, data/sharing behavior, and limitations; show effective date/version and accessible links. Explicitly decide whether acceptance tracking is needed before implementation; do not imply consent through mere dismissal. | Not started; wording and acceptance policy need owner review |
 
@@ -2206,6 +2206,25 @@ not just in this repo's own tests.
   verified output byte-for-byte identical to their originals, each stress-tested 10x clean. Full
   suite green: 74/74 unit tests, 45/45 Playwright tests (test count grew by one from the merged
   About & help PR) via `tests/run_all.sh` (67.7s). 16 files remain in this batch.
+- **2026-09-15 — Introduction stories 2–4 and outside-click dismissal.**
+  Private branch `codex/about-guides` starts at freshly fetched preview 401fec7,
+  including merged PR #2 and current condition-wait strategy (8375a2f and the
+  recent wait-removal passes). Fetched again before delivery; preview unchanged.
+  Added expandable participant, facilitator, and results guides in English/Hebrew.
+  Participant action opens existing code entry or returns to the current survey
+  without dropping its draft. Outside clicks close the native dialog through the
+  same close path; inside clicks and drags originating inside do not dismiss it.
+  No new data shape, persistence, or migration. Automatic first-visit display,
+  attribution/license details, and terms remain separate stories.
+  Test-first dismissal regression failed before implementation; expanded guide
+  and language checks pass, as does the real participant draft-return test.
+  No new fixed sleeps: retrying DOM assertions/condition waits follow current
+  strategy. Visually checked English desktop and Hebrew mobile layouts.
+  74/74 Node tests pass; full `tests/run_all.sh` reports 44/45 passing files.
+  The experiment-note test still times out at its new wait_for_function at line
+  89 on this machine, reproduced against an untouched archive of 401fec7 too.
+  Thus the latest wait patch is incorporated but does not resolve the baseline
+  failure here. Draft PR for review; full-green Definition of Done outstanding.
 - 2026-09-15 — Batch 2/5 of the remaining wait-condition files: `test_admin_language_switch.py`
   (10 waits -> 0, standard boot marker + synchronous setView()/setLocale()/openConfirm() treatment;
   a real `page.reload()` correctly kept its own boot-marker wait, since a reload genuinely re-runs

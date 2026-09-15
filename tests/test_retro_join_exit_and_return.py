@@ -63,7 +63,9 @@ with sync_playwright() as p:
 
     # Opening help during an actual live survey preserves the selected answer.
     part.click("#aboutHelpBtn")
-    part.click("#aboutCloseBtn")
+    part.click("#about-participant summary")
+    part.click("#aboutJoinBtn")
+    part.wait_for_selector(".direct-row")
     assert part.evaluate("JSON.stringify(state.joinDraftAnswers)") == draft_before
     assert part.locator(".direct-row .swatch.good").first.is_visible()
 
