@@ -30,9 +30,18 @@ or clicks needs a Playwright test.
 ## Setup
 
 ```
-pip install playwright
+pip install -r tests/requirements.txt
 playwright install chromium
 ```
+
+The pinned version in `tests/requirements.txt` matters: Playwright ties
+its Chromium build to the exact package version, so an unpinned `pip
+install playwright` can silently put two contributors' machines on
+different Chromium builds with no way to tell from the repo. If you ever
+report a test-timing discrepancy that another environment can't
+reproduce, check `pip show playwright` (or `playwright --version`) on
+both sides before assuming it's a code bug or a flake — see
+`docs/DefinitionOfDone.md`.
 
 (`tests/unit/` needs nothing beyond Node itself.)
 

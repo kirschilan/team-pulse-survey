@@ -2341,3 +2341,30 @@ not just in this repo's own tests.
   continues from. Implemented on branch `story13-json-board-export`, pushed as a PR per
   explicit instruction rather than merged into `claude/optimistic-keller-holuql` directly
   — not yet in the shared preview branch.
+- 2026-09-15 — A second, more rigorous investigation into `test_retro_experiment_note_and_finish.py`'s
+  cross-machine failure report (see the `codex/about-guides` entry above: reproduced there against
+  commit 401fec7, `wait_for_function()` timing out on that machine). This session's environment:
+  HEAD `f970639`, Python 3.11.15, Playwright 1.62.0, Chromium 151.0.7922.34. Rather than re-run the
+  test as a black box, wrapped the actual runtime call chain
+  (`state.db.collection("sessions").doc(sid).update(patch)`) to trace every step: whether
+  `collection()`/`doc()`/`update()` were even called, the store's content immediately before and
+  after the synchronous part of `update()`, and whether its returned promise resolved or rejected.
+  Ran this instrumented version 20 times sequentially plus 6 concurrently (26 total) in this
+  environment: every single run showed the identical, correct sequence (`collection_called` ->
+  `doc_called` -> `update_called` with the store still empty -> `update_returned_sync` with the
+  store already holding the new note text, synchronously, before the promise even settled ->
+  `update_resolved`) and the test's own poll landed on its very first check every time. No call
+  skipped, no rejection, no case of the promise resolving without the mutation. This is stronger
+  evidence than the earlier 26/26 (which only checked the outcome, not the mechanism), and it still
+  could not reproduce the reported failure.
+  This does NOT establish the other machine's report as wrong -- there is no way to test its exact
+  Chromium build from here, and the claim is not being overturned on that basis. What the
+  investigation did surface: this repo pinned no Playwright/Chromium version anywhere (`pip install
+  playwright` with no version in `tests/README.md`, no requirements file at all), so two machines
+  running "the same test" had no guarantee of running the same browser engine, and no way to tell
+  from the repo alone. Fixed that gap directly: added `tests/requirements.txt` pinning
+  `playwright==1.62.0` (which also pins the Chromium build), updated `tests/README.md`'s setup
+  instructions to install from it, and added a `docs/DefinitionOfDone.md` working agreement to
+  check both sides' Playwright/Chromium versions before concluding a cross-machine test-timing
+  report is a real bug, a flake, or a harness artifact. No production code or test wait logic was
+  changed -- the instrumented trace gave no reason to believe either needs it.

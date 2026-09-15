@@ -164,6 +164,18 @@ and to every one already covered:
   harmless here since it self-corrected on its own re-check, but exactly
   the kind of stale read that could otherwise send real effort at an
   already-solved problem.)
+- **When a test-timing report from another machine can't be reproduced,
+  check both environments' Playwright/Chromium versions (`pip show
+  playwright`, or `playwright --version`) before concluding it's a real
+  bug, a flake, or a harness artifact.** `tests/requirements.txt` pins the
+  version this repo expects, precisely so that question has a fast answer
+  instead of staying an open guess. (Adopted 2026-09-15 after two
+  same-day cross-machine disputes over `test_retro_experiment_note_and_
+  finish.py` -- one environment's own request for a fully-instrumented
+  reproduction, wrapping the actual `db.collection().doc().update()` call
+  chain, still couldn't reproduce the reported failure after 26 clean
+  runs, which pointed at a silently unpinned Playwright/Chromium version
+  as the more likely explanation than a real code bug.)
 - **`main` only moves when the product owner explicitly says so** — never
   push to `main` on your own judgment. This is unchanged by the branching
   model above: `claude/optimistic-keller-holuql` is a PREVIEW branch, not a
