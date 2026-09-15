@@ -456,7 +456,7 @@ recall exercise instead of something anyone could just read.
 | 10 | Retro join flow (participant-facing screens) | **DONE** (2026-09-14) |
 | 11 | Retro facilitation flow (facilitator-facing screens, session cards, overrides) | **DONE** (2026-09-14) |
 | 12 | Dimension detail and Edit Dimensions modal (Admin) | **DONE** (2026-09-14) |
-| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass. Redesigned as a full JSON board export/import replacing CSV (see session log): (1) JSON board export (beta), additive — **DONE** (2026-09-15); (2) JSON import — squads/ratings; (3) JSON import — dimensions/templates/config; (4) delete the CSV runtime code | **In progress** |
+| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass. Redesigned as a full JSON board export/import replacing CSV (see session log): (1) JSON board export (beta), additive — **DONE** (2026-09-15); (2) JSON import — squads/ratings — **DONE** (2026-09-15); (3) JSON import — dimensions/templates/config; (4) delete the CSV runtime code | **In progress** |
 
 ## Deliberately not built yet (and why)
 
@@ -2420,3 +2420,130 @@ not just in this repo's own tests.
   otherwise-unobservable callback, and still polls/asserts the stored note.
   Verified with 10 focused runs, the full 46-file Playwright suite through
   `run_all.sh` (TEST_JOBS=2, 3 shards, 32s), and the Node unit suite; all green.
+- **2026-09-15 — Story 13, item 3a: JSON import for squads & ratings**, additive alongside `toCSV()`'s
+  existing CSV import. Design reviewed first as a real, interactive Artifact mockup ("Squad Import
+  Preview" -- see the conversation this continues from) before any code, per DoD §3; the product
+  owner's decisions from that review, implemented as specified:
+  - **Merge/Replace is a real choice, offered every time, at BOTH the squad level and the per-squad
+    rating level.** Merge (default) adds/updates squads and ratings from the file; a board squad
+    absent from the file is left alone, and a matched squad's own rating for a dimension the file
+    doesn't mention is left alone too. Replace removes a squad absent from the file (named in a
+    warning before applying) AND clears a matched squad's own ratings the file doesn't mention (also
+    named). `buildSquadImportPlan()`/`mergeSquadDimensions()` (`csv.js`) are the pure planning/merge
+    functions; squads still match by NAME (`buildImportPlan()`'s existing rule, unchanged) and each
+    rating's dimension still matches by KEY against the board's current set, reporting (not guessing)
+    a key not found today -- same mechanism CSV import already proved.
+  - **No second confirm dialog for Replace.** Instead, the warning offers a one-click "download a
+    backup of this board first" (reuses item 1's `toJSON()`), plus a text tip pointing at an external
+    open-source diff/merge tool (Meld) for anyone who'd rather reconcile two files by hand than trust
+    either mode.
+  - A real bug, caught before it ever shipped: the first draft of Replace's write path sent the
+    already-clipped `dimensions` object through `.update()`, same as Merge. `local-store.js`'s
+    `deepMerge()`/`relay-client.js`'s matching `update()` are additive-only -- they never drop a key
+    absent from the patch -- so that would have silently left "removed" ratings sitting in the
+    PERSISTED doc, merged right back in, even though the in-memory `state.squads` copy looked correct.
+    Fixed by having Replace's write use `.set()` with the whole doc instead, which genuinely replaces
+    the stored value. `tests/test_json_import.py` asserts on `window.__FAKE_STORE__` directly (not
+    `state`, not the DOM) specifically to catch a regression of this exact mistake.
+  - New data shape: none (reuses item 1's existing board-export shape); no migration question, per
+    DoD §3.
+  - i18n per DoD §2: the new button and the whole preview modal (mode switch, chips, warnings, skip
+    list, error states) go through `t()`/`data-i18n`, `en.js`+`he.js` updated together, count-sensitive
+    strings via a `countKey()` helper (One/Many key pairs, same convention as `templates.js`'s
+    `templates.meta.dimensionsOne/Many` -- `t()` has no built-in pluralization).
+  - Test-first per the `tdd` skill: `tests/unit/test_json_import.js` (14 tests -- `parseBoardImportFile()`'s
+    version/shape checks, `buildSquadImportPlan()`'s merge/replace/skip logic, `mergeSquadDimensions()`'s
+    pure merge math) written and confirmed failing before `csv.js` had the functions.
+    `tests/test_json_import.py` (button/label, both error states, a full Merge apply, a full Replace
+    apply including the backup offer, Hebrew label) written and confirmed failing (missing button)
+    before the HTML/locale change; every wait is a real condition (`wait_for_function` polling
+    `window.__FAKE_STORE__` directly, since `state.live` is true under this harness and new-squad
+    creation takes the async branch) per DoD §1, stress-tested 10x clean.
+  - Full suite green: 95/95 unit tests, all 47 Playwright files, relay's own protocol suite.
+    `tests/.timing_baseline` updated 60 -> 78s -- legitimate growth (two new, real Playwright files
+    this story added, `test_json_export.py` and `test_json_import.py`, neither with a `wait_for_timeout()`
+    call), not slop, per DoD §1's growth-budget rule.
+  - Story 13 table status: item 3a now **DONE**. Remaining: item 3b (JSON import for
+    dimensions/templates/config, its own mockup first) and item 4 (delete the CSV runtime code).
+    Implemented on branch `story13-json-import-squads`, pushed as a PR rather than merged into
+    `claude/optimistic-keller-holuql` directly, matching item 1's delivery pattern.
+- **2026-09-15 — Story 13, item 3a: four review findings on PR #7, all real, all fixed.** Verified
+  each against the actual code before touching anything, then fixed test-first:
+  1. **Backup "success" shown even when the backup never happened.** The backup-first button's
+     `catch` swallowed a rejected `downloads.save()`, and the fallback `window.open()` returning
+     `null` (a blocked popup) both still reached the unconditional "Backup downloaded" line --
+     exactly the wrong failure mode for the one safety net Replace mode offers instead of a confirm
+     dialog. Now tracks success explicitly and shows a new `importJson.backupFailed` message
+     ("try again, or use Export JSON instead") when it isn't real. Playwright-tested by actually
+     forcing the failure (monkeypatching `window.open` to return `null`, the real code path this
+     harness's `downloads` capability always takes since it's always `null`), not just inspecting.
+  2. **A REPLACE plan that only clears existing ratings couldn't be applied.** The Apply button's
+     disabled condition checked `ratingCount`/`newSquadNames`/`squadsToRemove` but not
+     `clearedRatings` -- a file naming every board squad but with fewer ratings than before (a
+     legitimate "restore to unscored" case) left Apply permanently disabled. Extracted the check
+     into its own pure `planHasChanges()` (now unit-tested directly, 2 new tests) rather than an
+     inline HTML-string condition.
+  3. **A malformed squad entry crashed instead of showing the error UI.** `buildSquadImportPlan()`
+     ran directly inside `FileReader.onload` with no try/catch; a `null` entry in `squads`, or a
+     non-string `name`, threw an uncaught exception instead of the intended "can't read this file"
+     message. Fixed by validating each entry's shape in `parseBoardImportFile()` itself (the one
+     function that already decides ok:true/false) -- a non-object entry, a non-string `name`, or a
+     non-plain-object `dimensions` now all fail cleanly as `invalid-squad`, before
+     `buildSquadImportPlan()` ever sees them. 4 new unit tests, 1 new Playwright scenario.
+  4. **The import modal wasn't in `RTL_SCOPED_CONTAINERS`.** Its strings were translated, but
+     `#importJsonBackdrop` was never in `i18n.js`'s list of containers `applyScopedDirLang()`
+     flips -- confirmed with Hebrew selected: `dir`/`lang` were empty and computed direction was
+     `ltr` despite Hebrew text on screen. Added it to the list (matching how `#aboutDialog` was
+     added for the About & Help story); the existing Playwright test only checked the *button*
+     label in Hebrew, so extended it to also open the modal and assert `dir="rtl"`,
+     `lang="he"`, and a real `getComputedStyle().direction` check, not just the button.
+  All four confirmed fixed end-to-end via `tests/test_json_import.py` (now 4 new scenarios: a
+  malformed-entry error, a forced backup failure, a ratings-only-clear Apply + real persisted
+  result, and the RTL/lang check), stress-tested 10x clean; `tests/unit/test_json_import.js` grew
+  from 14 to 20 tests (`invalid-squad` validation, `planHasChanges()`). Full suite green: 101/101
+  unit tests, all 48 Playwright files, relay's own protocol suite. Pushed to the same
+  `story13-json-import-squads` branch/PR rather than opening a new one.
+- **2026-09-15 — Story 13, item 3a: a fifth review finding on PR #7, on re-review of the fix
+  above, real and more severe than it first reads.** `parseBoardImportFile()`'s new validation
+  checked the squad/dimensions CONTAINERS but not a rating's own field types -- a file with
+  `{color:"good", note:123}` passed validation, got persisted, then crashed rendering
+  (`render.js`'s/`squads.js`'s `cell.note && cell.note.trim()` assumes a string). Verified the
+  repro directly before fixing. **Found something broader while fixing it**: `color`/`trend` are
+  interpolated UNESCAPED into a CSS class attribute in both of those same files
+  (`'cell-btn '+color+'"'`) -- always safe before because every existing writer (the rating-modal
+  UI, CSV's `colorFromWord()`) only ever produces one of a fixed enum, but this JSON import path
+  copied whatever string a file contained, which is real attribute-injection room for a
+  color/trend value containing a `"`. Fixed both with the same check: `isValidRating()`
+  restricts `color` to the app's actual 4-value enum and `trend` to its actual 3-value enum (not
+  just "must be a string"), `note` to a string, applied per-rating inside
+  `parseBoardImportFile()`'s existing squad-shape loop. 6 new unit tests (bad container, bad
+  note/color/trend, and two "still accepts a well-formed/empty rating" negatives so the check
+  isn't just permissive-by-accident). New Playwright regression, per the review's explicit ask:
+  imports the exact `note:123` repro, confirms the friendly error shows, zero uncaught page
+  errors, AND (the part that actually proves the fix, not just the symptom) an EXACT equality
+  snapshot of the target squad's persisted `dimensions` before vs. after the rejected import --
+  catching a partial/silent write, not just "the literal bad value isn't there." Stress-tested
+  10x clean. Full suite green: 107/107 unit tests, all 48 Playwright files, relay's own protocol
+  suite. Same branch/PR again.
+- **2026-09-15 — Story 13, item 3a: a sixth review finding on PR #7, a third round on the same
+  validation fix, all three parts real.** The rating-enum check added for finding #5 used bracket
+  lookup (`VALID_RATING_COLORS[r.color]`) directly on an untyped value -- unsafe three distinct
+  ways, each independently verified with a throwaway `node -e` repro before touching anything:
+  (1) a non-string COERCES to a matching key string (`["good"]` stringifies to exactly `"good"`,
+  so an array passed the check); (2) a string naming an INHERITED `Object.prototype` property
+  (e.g. `"constructor"`) read truthy even though it was never one of the four real colors; (3) an
+  object with a non-callable `toString` THROWS converting itself into a property key
+  (`TypeError: Cannot convert object to primitive value`) -- uncaught, the same
+  "bypasses the friendly error UI" failure as finding #3, just reached through the rating check
+  this time instead of the squad-shape check. Fixed with `isValidEnumWord()`: requiring
+  `typeof value === "string"` FIRST means a throw can never happen (only strings ever reach the
+  lookup) and forecloses the coercion case; `Object.prototype.hasOwnProperty.call()` (not bracket
+  lookup) means an inherited property name never counts as a match. 5 new unit tests (array
+  coercion and inherited-property cases for both `color` and `trend`, plus the throwing case
+  wrapped in `assert.doesNotThrow`), plus one new Playwright scenario for the throwing case
+  specifically (the one genuinely crash-capable of the three -- the other two are pure
+  validation-logic mistakes with no throw risk, so left at unit-level coverage, proportionate to
+  what each actually risks) -- confirms the friendly error shows, zero uncaught page errors, and
+  the persisted store is untouched, same before/after-equality-snapshot rigor as finding #5's
+  regression. Stress-tested 10x clean. Full suite green: 112/112 unit tests, all 48 Playwright
+  files, relay's own protocol suite. Same branch/PR a third time.
