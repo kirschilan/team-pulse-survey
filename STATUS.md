@@ -1920,3 +1920,18 @@ not just in this repo's own tests.
   the statement-survey file's identical loop. Verified output byte-for-byte identical to the
   original, then stress-tested 10x clean at ~2.9-3.2s per run (down from ~5.7-6.0s). Full 44-file
   Playwright suite + 74-test unit suite green, zero regressions.
+- 2026-09-15 — Copilot pass file 6/8: `test_retro_join_exit_and_return.py` (17 waits).
+  `exitJoinScreen()`/`returnToJoinScreen()` (retro-join.js) are both fully synchronous DOM toggles
+  -- `returnToJoinScreen()` re-renders from already-cached `state.joinSession`/
+  `joinSubmittedResults`, no new fetch involved -- so neither needed any wait before the next click
+  or read. The direct-rating swatch-click loops needed none either (same synchronous
+  `refreshSubmitEnabled()` finding as the statement-survey/statement-language files); the two
+  submission points got `wait_for_selector('.personal-result', state="attached")` instead of a
+  guess; both fresh-page boots got the established real boot markers. Verified output byte-for-byte
+  identical to the original, then stress-tested 10x clean at ~2.2-2.4s per run (down from
+  ~5.1-5.2s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+  **Full-suite timing trend** (per the DoD's new tracking rule, `tests/run_all.sh`,
+  `TEST_JOBS=2`, wall-clock): the commit right before this whole wait-condition pass began
+  (`172594f`, 38 Playwright files) ran in **102.5s**; now, 44 files later (6 of them added by
+  unrelated concurrent feature work, not this pass) and 10 files converted, it runs in **81.1s** --
+  down ~21.4s (~21%) despite running more tests.
