@@ -2280,3 +2280,23 @@ not just in this repo's own tests.
   original, each stress-tested 15x clean given the real relay round trips. Full suite green:
   74/74 unit tests, 45/45 Playwright tests via `tests/run_all.sh` (60.6s). Only
   `test_board_sync_opt_in_push.py` plus the relay re-check task remain in this batch.
+- 2026-09-15 — Batch 5/5, closing out the run_all.sh ROI review's remaining candidates:
+  `test_board_sync_opt_in_push.py` (6 waits -> 0, same reasoning as batch 4 -- reused
+  `poll_relay_board()` for the squad-rename push, and the disconnect-then-push "proving a negative"
+  scenario got the same strengthened treatment as `test_board_sync_live_subscribe.py`'s). Also
+  caught and fixed a mistake from batch 4: `test_board_sync_hydrate_on_boot.py`'s `addSquadBtn`
+  waits carried a factually wrong comment blaming relay-client.js's `room.ready` gate --
+  `local-store.js`'s `routedCollRef()` only sends "sessions"/"boards" paths to the relay, so
+  "squads" is a purely local, synchronous write (same shape as `fake_store.html`) and never touches
+  `room.ready` at all. Removed both now-unnecessary waits and fixed the comments; re-verified
+  byte-identical output and 15/15 clean. Then did the promised re-check of the smaller relay files:
+  `test_cofacilitator_join.py`'s 2 remaining waits are the already-documented "no DOM signal for
+  team/link adoption via URL open" exception from earlier in this pass and were left alone, but
+  `test_relay_config_injection.py` (1 wait), `test_relay_board_path_sync.py` (4 waits, previously
+  commented as deliberate "ordinary page-bootstrap settling"), and `test_relay_cross_device_sync.py`
+  (8 waits) all turned out to have room left: the same synchronous-shim/synchronous-click reasoning
+  established throughout this pass applied cleanly to all of them, verified empirically with 15x
+  stress runs before trusting it over the older comments. This closes out every file identified in
+  the original run_all.sh ROI review with zero files skipped except the intentional exceptions.
+  Verified output byte-for-byte identical to every original. Full suite green: 74/74 unit tests,
+  45/45 Playwright tests via `tests/run_all.sh` (58.9s).
