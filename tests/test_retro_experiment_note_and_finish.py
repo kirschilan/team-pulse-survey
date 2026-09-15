@@ -76,22 +76,29 @@ with sync_playwright() as p:
     assert session_info["doc"].get("experimentNote") == ""
 
     print("=== Story 8: writing and saving the sprint-experiment note ===")
-    page.fill('#experimentNoteBox', "Pair on the riskiest story every day this sprint")
+    note_text = "Pair on the riskiest story every day this sprint"
+    page.fill('#experimentNoteBox', note_text)
     assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == True
-    # No wait needed here -- saveExperimentNote() (retro-facilitator.js)
-    # writes to the store synchronously, and the "Saved" hint's
-    # hidden=false is also set synchronously in the click handler (the
-    # setTimeout it schedules only re-hides it later).
     page.click('#saveExperimentNoteBtn')
+    # saveExperimentNote() (retro-facilitator.js) writes to the store
+    # synchronously here -- but a report surfaced an intermittent failure of
+    # this exact click/read pair on a different machine/Chromium build (see
+    # STATUS.md); rather than assume the synchronous timing holds in every
+    # environment, poll for the real write landing like every other write
+    # in this file already does.
+    page.wait_for_function(
+        "([sid, expected]) => window.__FAKE_STORE__['sessions/' + sid] && window.__FAKE_STORE__['sessions/' + sid].experimentNote === expected",
+        arg=[sid, note_text],
+    )
     stored_note = page.evaluate("window.__FAKE_STORE__['sessions/%s'].experimentNote" % sid)
     print("stored note:", stored_note)
-    assert stored_note == "Pair on the riskiest story every day this sprint"
+    assert stored_note == note_text
     hint_visible = page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == False
     print("'Saved' hint shown right after clicking Save:", hint_visible)
     assert hint_visible
     # saving must NOT blow away the textarea or steal further typing --
     # the whole card wasn't re-rendered by this button, just the hint toggled
-    assert page.eval_on_selector('#experimentNoteBox', 'el => el.value') == "Pair on the riskiest story every day this sprint"
+    assert page.eval_on_selector('#experimentNoteBox', 'el => el.value') == note_text
     print("errors:", errors)
 
     print("=== Story 9: 'Finish retro' with nothing submitted just closes, no squad changes ===")
