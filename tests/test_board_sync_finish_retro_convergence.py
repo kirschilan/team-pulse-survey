@@ -113,10 +113,12 @@ try:
         a_errors = []
         a.on("pageerror", lambda e: a_errors.append(str(e)))
         a.goto(INDEX_URL, wait_until="domcontentloaded")
-        a.wait_for_timeout(300)
         a.click('.view-btn[data-view="admin"]')
-        a.wait_for_timeout(100)
-        a.wait_for_timeout(300)  # step 7: default-on -- device A already has its own team link, no click needed
+        # step 7: default-on -- device A auto-generates its own team secret at
+        # boot via crypto.subtle (a real, non-instant async API, unlike this
+        # fake store's near-instant local writes) -- poll for the real value
+        # landing instead of guessing how long key generation takes.
+        a.wait_for_function("() => document.getElementById('teamLinkInput') && document.getElementById('teamLinkInput').value.length > 0")
         team_link = a.eval_on_selector("#teamLinkInput", "el=>el.value")
 
         # ============ device B opens the same team link ============
@@ -126,13 +128,17 @@ try:
         b_errors = []
         b.on("pageerror", lambda e: b_errors.append(str(e)))
         b.goto(team_link, wait_until="domcontentloaded")
+        # No documented DOM signal exists for "this device finished adopting
+        # a team it just opened via URL" (distinct from any particular
+        # write landing) -- same precedent as test_cofacilitator_join.py's
+        # identical moment. Getting this wrong on a relay-backed,
+        # cross-device path risks a worse, harder-to-diagnose failure than
+        # the modest time this costs, so it stays a plain wait.
         b.wait_for_timeout(500)
 
         print("=== round 1: device A facilitates squad-1, device B answers ===")
         a.click('.view-btn[data-view="squad"]')
-        a.wait_for_timeout(100)
         a.click('.squad-pick-btn[data-id="squad-1"]')
-        a.wait_for_timeout(150)
         a.click("#startSessionBtn")
         a.wait_for_selector(".session-code")  # real relay round trip -- wait for it, don't guess how long
         code1 = a.eval_on_selector(".session-code", "el=>el.textContent")
@@ -140,19 +146,26 @@ try:
         print("session 1 code:", code1)
 
         b.click("#joinCodeBtn")
-        b.wait_for_timeout(100)
         b.fill("#joinCodeInput", code1)
         b.click("#joinCodeGo")
         b.wait_for_selector(".direct-row")  # real relay round trip -- wait for it, don't guess how long
         rows = b.query_selector_all(".direct-row")
         assert len(rows) > 0, "device B should see squad-1's real dimensions over the relay"
+        # Every step here is click() -- Playwright auto-waits for each target
+        # to become actionable, and joinDraftAnswers/refreshSubmitEnabled()
+        # (retro-join.js) update synchronously in the click handler, so the
+        # loop needs no waits of its own.
         for row in rows[:-1]:
             row.query_selector(".swatch.good").click()
-            b.wait_for_timeout(20)
         rows[-1].query_selector(".swatch.crit").click()
-        b.wait_for_timeout(50)
         b.click("#stmtSubmitBtn")
-        b.wait_for_timeout(400)
+        # .add() is a REAL relay round trip (this file's own db, not a fake
+        # store) that only resolves once the relay acks the write -- and
+        # afterSubmit() (retro-join.js) only re-renders the personal-result
+        # page once that resolves. Waiting for it is what actually
+        # guarantees the submission landed before navigating away below,
+        # not just a guess at how long the round trip takes.
+        b.wait_for_selector('.personal-result', state="attached")
 
         # Device B is a join-mode page now (no nav back to the main app --
         # that's the real, current gap story 9 is about) -- navigating back
@@ -165,22 +178,25 @@ try:
         # its existence is the real post-reload boot marker, not a guess
         b.wait_for_selector('.squad-pick-btn[data-id="squad-1"]', state="attached")
 
+        # setRevealMode()'s live-mode write is a REAL relay round trip that
+        # this device's own UI only reflects once its session listener
+        # receives it back (unlike the local liveOr() fallback, it doesn't
+        # optimistically re-render) -- the toggle gaining "active" is that
+        # real signal, not a guess at round-trip time.
         a.click('.reveal-btn[data-reveal="live"]')
-        a.wait_for_timeout(400)
+        a.wait_for_selector('.reveal-btn[data-reveal="live"].active', state="attached")
         a.click("#finishSessionBtn")
-        a.wait_for_timeout(150)
+        a.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
         a.click("#confirmOk")
-        a.wait_for_timeout(500)
         print("=== device A finished squad-1's retro -- checking device A's own board ===")
         a.click('.squad-pick-btn[data-id="squad-1"]')
-        a.wait_for_timeout(150)
+        wait_for_scored(a, "squad-1", "release")  # real relay round trip -- wait for it, don't guess how long
         a_squad1_release = cell_color(a, "squad-1", "release")
         print("device A, squad-1/release:", a_squad1_release)
         assert a_squad1_release in ("good", "warn", "crit")
 
         print("=== does device B see squad-1's finished result LIVE, via its open subscription (no SECOND reload)? ===")
         b.click('.view-btn[data-view="squad"]')
-        b.wait_for_timeout(200)
         b.click('.squad-pick-btn[data-id="squad-1"]')
         wait_for_scored(b, "squad-1", "release")  # real relay round trip -- wait for it, don't guess how long
         b_squad1_release = cell_color(b, "squad-1", "release")
@@ -189,7 +205,6 @@ try:
 
         print("=== round 2: reverse roles -- device B facilitates squad-2, device A answers ===")
         b.click('.squad-pick-btn[data-id="squad-2"]')
-        b.wait_for_timeout(150)
         b.click("#startSessionBtn")
         b.wait_for_selector(".session-code")  # real relay round trip -- wait for it, don't guess how long
         code2 = b.eval_on_selector(".session-code", "el=>el.textContent")
@@ -197,7 +212,6 @@ try:
         print("session 2 code:", code2)
 
         a.click("#joinCodeBtn")
-        a.wait_for_timeout(100)
         a.fill("#joinCodeInput", code2)
         a.click("#joinCodeGo")
         a.wait_for_selector(".direct-row")  # real relay round trip -- wait for it, don't guess how long
@@ -205,11 +219,11 @@ try:
         assert len(rows2) > 0, "device A should see squad-2's real dimensions over the relay"
         for row in rows2[:-1]:
             row.query_selector(".swatch.good").click()
-            a.wait_for_timeout(20)
         rows2[-1].query_selector(".swatch.warn").click()
-        a.wait_for_timeout(50)
         a.click("#stmtSubmitBtn")
-        a.wait_for_timeout(400)
+        # See round 1's identical wait above -- .add() only resolves once
+        # the relay acks the write, and that's what this waits for.
+        a.wait_for_selector('.personal-result', state="attached")
         # Same as device B in round 1 -- device A is stuck on the join
         # screen with no nav back (the real gap story 9 addresses), so
         # leave join mode the same way a real user would today: navigate
@@ -217,21 +231,20 @@ try:
         a.goto(INDEX_URL, wait_until="domcontentloaded")
         a.wait_for_selector('.squad-pick-btn[data-id="squad-1"]', state="attached")  # real post-reload boot marker, not a guess
 
+        # Same real signal as round 1's identical moment above.
         b.click('.reveal-btn[data-reveal="live"]')
-        b.wait_for_timeout(400)
+        b.wait_for_selector('.reveal-btn[data-reveal="live"].active', state="attached")
         b.click("#finishSessionBtn")
-        b.wait_for_timeout(150)
+        b.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
         b.click("#confirmOk")
-        b.wait_for_timeout(500)
         b.click('.squad-pick-btn[data-id="squad-2"]')
-        b.wait_for_timeout(150)
+        wait_for_scored(b, "squad-2", "release")  # real relay round trip -- wait for it, don't guess how long
         b_squad2_release = cell_color(b, "squad-2", "release")
         print("device B (facilitator), squad-2/release:", b_squad2_release)
         assert b_squad2_release in ("good", "warn", "crit")
 
         print("=== does device A see squad-2's finished result LIVE too (no second reload)? ===")
         a.click('.view-btn[data-view="squad"]')
-        a.wait_for_timeout(200)
         a.click('.squad-pick-btn[data-id="squad-2"]')
         wait_for_scored(a, "squad-2", "release")  # real relay round trip -- wait for it, don't guess how long
         a_squad2_release = cell_color(a, "squad-2", "release")
@@ -239,14 +252,20 @@ try:
         assert a_squad2_release == b_squad2_release
 
         print("=== the divergence from the original bug report is gone: BOTH devices show BOTH squads ===")
+        # Both squads' data is already confirmed landed above -- these are
+        # just re-checks after switching the LOCAL squad selection, a
+        # synchronous client-side re-render, not a new relay round trip.
+        # eval_on_selector() (inside cell_color()) doesn't auto-wait, so
+        # wait for the specific cell to be attached after each switch,
+        # rather than guess how long the re-render takes.
         a.click('.squad-pick-btn[data-id="squad-1"]')
-        a.wait_for_timeout(150)
+        a.wait_for_selector('.cell-btn[data-squad="squad-1"][data-dim="release"]', state="attached")
         assert cell_color(a, "squad-1", "release") == a_squad1_release, "device A still has its own squad-1 result"
         b.click('.squad-pick-btn[data-id="squad-1"]')
-        b.wait_for_timeout(150)
+        b.wait_for_selector('.cell-btn[data-squad="squad-1"][data-dim="release"]', state="attached")
         assert cell_color(b, "squad-1", "release") == a_squad1_release, "device B ALSO has squad-1's result (this is the fix)"
         a.click('.squad-pick-btn[data-id="squad-2"]')
-        a.wait_for_timeout(150)
+        a.wait_for_selector('.cell-btn[data-squad="squad-2"][data-dim="release"]', state="attached")
         assert cell_color(a, "squad-2", "release") == b_squad2_release, "device A ALSO has squad-2's result (this is the fix)"
 
         print("=== RAINY DAY: a third device, never opened A/B's team link, is unaffected by any of this ===")
@@ -256,9 +275,10 @@ try:
         c_errors = []
         c.on("pageerror", lambda e: c_errors.append(str(e)))
         c.goto(INDEX_URL, wait_until="domcontentloaded")  # plain URL, NOT the team link
-        c.wait_for_timeout(400)
         c.click('.view-btn[data-view="admin"]')
-        c.wait_for_timeout(100)
+        # Same real signal as device A's identical moment above (step 7's
+        # crypto.subtle-backed key generation).
+        c.wait_for_function("() => document.getElementById('teamLinkInput') && document.getElementById('teamLinkInput').value.length > 0")
         # Step 7: default-on means device C isn't "not connected" any more --
         # it auto-generated its OWN random team secret at boot, same as A and
         # B did. The real rainy-day invariant is that C's team link is its
@@ -268,8 +288,14 @@ try:
         print("device C's own (different) team link:", c_link)
         assert c_link and c_link != team_link
         c.click('.view-btn[data-view="squad"]')
-        c.wait_for_timeout(150)
         c.click('.squad-pick-btn[data-id="squad-1"]')
+        # wait_for_scored() can't be used here -- this cell is EXPECTED to
+        # stay unscored (that's the whole point of this rainy-day check), so
+        # polling for it to leave "unscored" would just waste the full
+        # timeout waiting for something that must never happen. There's no
+        # positive DOM signal for "nothing arrived, and nothing ever will",
+        # so this stays a plain wait -- the margin the rest of this file
+        # already trusts real relay round trips to land well within.
         c.wait_for_timeout(150)
         c_squad1_release = cell_color(c, "squad-1", "release")
         print("device C (never team-synced), squad-1/release:", c_squad1_release)
