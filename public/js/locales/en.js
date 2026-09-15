@@ -118,6 +118,43 @@ var LOCALE_EN = {
   "admin.boardSetup.importCsv": "Import CSV",
   "admin.boardSetup.exportCsv": "Export CSV",
   "admin.boardSetup.exportJson": "Export JSON (beta)",
+  "admin.boardSetup.importJson": "Import JSON (beta)",
+
+  // Story 13 item 3a: the JSON board import preview modal (squads & ratings
+  // only -- dimensions/templates/config are item 3b). One/Many key pairs
+  // below follow templates.js's own templates.meta.dimensionsOne/Many
+  // convention, since t() has no built-in pluralization and Hebrew's plural
+  // grammar isn't just an English "+s" either way -- see csv.js's countKey().
+  "importJson.title": "Import JSON — Squads & ratings",
+  "importJson.hint": "Reads only this file's squads, matching each to a squad on this board by name — a name not found here is created new. What happens to an existing squad, or a rating it already has, depends on the mode below.",
+  "importJson.modeLabel": "Anything on this board that isn't in the file — a squad, or one of its ratings",
+  "importJson.modeMerge": "Merge — keep it",
+  "importJson.modeReplace": "Replace — remove it",
+  "importJson.externalTip": "If you're not sure which way you want this, export the current board first and reconcile the two files by hand with a general-purpose open-source diff/merge tool, such as",
+  "importJson.chipRatingsOne": "{count} rating to import",
+  "importJson.chipRatingsMany": "{count} ratings to import",
+  "importJson.chipUpdatedOne": "{count} existing {unit} updated",
+  "importJson.chipUpdatedMany": "{count} existing {unitPlural} updated",
+  "importJson.chipNewOne": "{count} new {unit}: {names}",
+  "importJson.chipNewMany": "{count} new {unitPlural}: {names}",
+  "importJson.chipRemovedOne": "{count} {unit} will be removed: {names}",
+  "importJson.chipRemovedMany": "{count} {unitPlural} will be removed: {names}",
+  "importJson.replaceWarningTitle": "Replace mode removes anything not in this file.",
+  "importJson.willRemoveSquad": "{name} — not in the file — will be permanently removed",
+  "importJson.willClearRating": "{squad}'s “{dimension}” rating — not in the file — will be cleared",
+  "importJson.downloadBackup": "Download a backup of this board first",
+  "importJson.backupDone": "Backup downloaded",
+  "importJson.skippedRow": "{squad}, “{dimension}” — not found among this board's current dimensions",
+  "importJson.scopeDimensions": "{count} dimension definitions",
+  "importJson.scopeTemplates": "{count} custom templates",
+  "importJson.scopeConfig": "board config",
+  "importJson.scopeNote": "Also in this file, not imported here: {list}.",
+  "importJson.cancel": "Cancel",
+  "importJson.apply": "Import",
+  "importJson.errorTitle": "Can't read this file",
+  "importJson.errorUnsupportedVersion": "It's a Squad Pulse export, but from a newer app version (format {fileVersion}) than this board understands (up to {appVersion}). Update the app, or ask whoever exported it for a copy from an older version.",
+  "importJson.errorMalformed": "This doesn't look like a Squad Pulse export — it isn't valid JSON, or is missing the fields this import expects. Nothing on this board has changed.",
+  "importJson.close": "Close",
 
   "admin.teamSync.heading": "Team sync",
   "admin.teamSync.hint": "This board syncs, live, with every other device that opens the link below — over the same encrypted relay retro sessions already use. Nobody without the link can read or change it.",

@@ -456,7 +456,7 @@ recall exercise instead of something anyone could just read.
 | 10 | Retro join flow (participant-facing screens) | **DONE** (2026-09-14) |
 | 11 | Retro facilitation flow (facilitator-facing screens, session cards, overrides) | **DONE** (2026-09-14) |
 | 12 | Dimension detail and Edit Dimensions modal (Admin) | **DONE** (2026-09-14) |
-| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass. Redesigned as a full JSON board export/import replacing CSV (see session log): (1) JSON board export (beta), additive — **DONE** (2026-09-15); (2) JSON import — squads/ratings; (3) JSON import — dimensions/templates/config; (4) delete the CSV runtime code | **In progress** |
+| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass. Redesigned as a full JSON board export/import replacing CSV (see session log): (1) JSON board export (beta), additive — **DONE** (2026-09-15); (2) JSON import — squads/ratings — **DONE** (2026-09-15); (3) JSON import — dimensions/templates/config; (4) delete the CSV runtime code | **In progress** |
 
 ## Deliberately not built yet (and why)
 
@@ -2420,3 +2420,50 @@ not just in this repo's own tests.
   otherwise-unobservable callback, and still polls/asserts the stored note.
   Verified with 10 focused runs, the full 46-file Playwright suite through
   `run_all.sh` (TEST_JOBS=2, 3 shards, 32s), and the Node unit suite; all green.
+- **2026-09-15 — Story 13, item 3a: JSON import for squads & ratings**, additive alongside `toCSV()`'s
+  existing CSV import. Design reviewed first as a real, interactive Artifact mockup ("Squad Import
+  Preview" -- see the conversation this continues from) before any code, per DoD §3; the product
+  owner's decisions from that review, implemented as specified:
+  - **Merge/Replace is a real choice, offered every time, at BOTH the squad level and the per-squad
+    rating level.** Merge (default) adds/updates squads and ratings from the file; a board squad
+    absent from the file is left alone, and a matched squad's own rating for a dimension the file
+    doesn't mention is left alone too. Replace removes a squad absent from the file (named in a
+    warning before applying) AND clears a matched squad's own ratings the file doesn't mention (also
+    named). `buildSquadImportPlan()`/`mergeSquadDimensions()` (`csv.js`) are the pure planning/merge
+    functions; squads still match by NAME (`buildImportPlan()`'s existing rule, unchanged) and each
+    rating's dimension still matches by KEY against the board's current set, reporting (not guessing)
+    a key not found today -- same mechanism CSV import already proved.
+  - **No second confirm dialog for Replace.** Instead, the warning offers a one-click "download a
+    backup of this board first" (reuses item 1's `toJSON()`), plus a text tip pointing at an external
+    open-source diff/merge tool (Meld) for anyone who'd rather reconcile two files by hand than trust
+    either mode.
+  - A real bug, caught before it ever shipped: the first draft of Replace's write path sent the
+    already-clipped `dimensions` object through `.update()`, same as Merge. `local-store.js`'s
+    `deepMerge()`/`relay-client.js`'s matching `update()` are additive-only -- they never drop a key
+    absent from the patch -- so that would have silently left "removed" ratings sitting in the
+    PERSISTED doc, merged right back in, even though the in-memory `state.squads` copy looked correct.
+    Fixed by having Replace's write use `.set()` with the whole doc instead, which genuinely replaces
+    the stored value. `tests/test_json_import.py` asserts on `window.__FAKE_STORE__` directly (not
+    `state`, not the DOM) specifically to catch a regression of this exact mistake.
+  - New data shape: none (reuses item 1's existing board-export shape); no migration question, per
+    DoD §3.
+  - i18n per DoD §2: the new button and the whole preview modal (mode switch, chips, warnings, skip
+    list, error states) go through `t()`/`data-i18n`, `en.js`+`he.js` updated together, count-sensitive
+    strings via a `countKey()` helper (One/Many key pairs, same convention as `templates.js`'s
+    `templates.meta.dimensionsOne/Many` -- `t()` has no built-in pluralization).
+  - Test-first per the `tdd` skill: `tests/unit/test_json_import.js` (14 tests -- `parseBoardImportFile()`'s
+    version/shape checks, `buildSquadImportPlan()`'s merge/replace/skip logic, `mergeSquadDimensions()`'s
+    pure merge math) written and confirmed failing before `csv.js` had the functions.
+    `tests/test_json_import.py` (button/label, both error states, a full Merge apply, a full Replace
+    apply including the backup offer, Hebrew label) written and confirmed failing (missing button)
+    before the HTML/locale change; every wait is a real condition (`wait_for_function` polling
+    `window.__FAKE_STORE__` directly, since `state.live` is true under this harness and new-squad
+    creation takes the async branch) per DoD §1, stress-tested 10x clean.
+  - Full suite green: 95/95 unit tests, all 47 Playwright files, relay's own protocol suite.
+    `tests/.timing_baseline` updated 60 -> 78s -- legitimate growth (two new, real Playwright files
+    this story added, `test_json_export.py` and `test_json_import.py`, neither with a `wait_for_timeout()`
+    call), not slop, per DoD §1's growth-budget rule.
+  - Story 13 table status: item 3a now **DONE**. Remaining: item 3b (JSON import for
+    dimensions/templates/config, its own mockup first) and item 4 (delete the CSV runtime code).
+    Implemented on branch `story13-json-import-squads`, pushed as a PR rather than merged into
+    `claude/optimistic-keller-holuql` directly, matching item 1's delivery pattern.

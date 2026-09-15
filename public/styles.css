@@ -309,6 +309,23 @@
   @media (max-width:520px){ .tpl-save-row{ flex-direction:column; } .tpl-save-row button{ width:100%; justify-content:center; } }
 
   .import-warning{ font-size:12.5px; line-height:1.5; color:var(--text); background:color-mix(in srgb, var(--warn) 16%, var(--surface-2)); border:1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius:10px; padding:10px 13px; margin-top:14px; }
+  .import-warning.danger{ background:color-mix(in srgb, var(--crit) 12%, var(--surface-2)); border-color:color-mix(in srgb, var(--crit) 45%, var(--border)); }
+  .import-warning ul{ margin:6px 0 0; padding-inline-start:18px; }
+  .import-warning .chip.crit, .import-stats .chip.crit{ color:#fff; background:var(--crit); border-color:var(--crit); }
+
+  /* ---------- JSON board import (beta): merge/replace mode ---------- */
+  .mode-switch{ display:inline-flex; gap:2px; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:2px; }
+  .mode-btn{ appearance:none; border:none; background:transparent; color:var(--text-2); padding:8px 16px; border-radius:8px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer; }
+  .mode-btn.active{ background:var(--surface); color:var(--text); box-shadow:var(--shadow); }
+  .mode-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .external-tip{ font-size:12px; color:var(--text-muted); margin:10px 0 0; line-height:1.55; }
+  .external-tip a{ color:var(--accent); }
+  .backup-offer{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px; }
+  .backup-done{ font-size:12px; color:var(--good); font-weight:600; display:inline-flex; align-items:center; gap:5px; }
+  .scope-note{ font-size:12px; color:var(--text-muted); background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:9px 11px; margin-top:14px; line-height:1.5; }
+  .error-state{ display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:6px 0 4px; }
+  .error-state h4{ font-size:14px; margin:0; }
+  .error-state p{ font-size:12.5px; color:var(--text-2); margin:0; line-height:1.5; }
 
   /* ---------- busy overlay (shown during multi-step live operations, e.g.
      switching templates or importing new rows, so a several-second wait

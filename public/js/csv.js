@@ -102,6 +102,276 @@ document.getElementById("exportJsonBtn").addEventListener("click", async functio
   if(w){ w.document.write("<pre style='white-space:pre-wrap;font-family:monospace;padding:16px;'>"+esc(json)+"</pre>"); }
 });
 
+// ---------- JSON board import (beta): squads & ratings ----------
+// Story 13, item 3a. Scope is deliberately narrow, same split as the export
+// side: this reads only a buildBoardExport()-shaped file's `squads` section
+// -- dimensions/templates/config from the same file are item 3b, not built
+// yet, and are surfaced as an informational note in the preview rather than
+// silently ignored.
+//
+// Mode (product owner's decision, see the reviewed mockup): a real choice,
+// offered every time, applying at BOTH levels --
+//   MERGE (default): add/update squads from the file; a board squad absent
+//     from the file is left alone; a matched squad's own ratings for a
+//     dimension the file doesn't mention are left alone too.
+//   REPLACE: a board squad absent from the file is removed outright (listed
+//     by name before applying); a matched squad's ratings become EXACTLY
+//     what the file lists -- a rating the file doesn't mention is cleared.
+// No second confirm dialog for Replace -- the preview offers a one-click
+// "download a backup first" instead (same toJSON() this file already has).
+var SUPPORTED_BOARD_FORMAT_VERSION = 1;
+
+function parseBoardImportFile(text){
+  var data;
+  try{ data = JSON.parse(text); }catch(e){ return { ok:false, error:"not-json" }; }
+  if(!data || typeof data.formatVersion !== "number") return { ok:false, error:"missing-version" };
+  if(data.formatVersion > SUPPORTED_BOARD_FORMAT_VERSION) return { ok:false, error:"unsupported-version", fileVersion:data.formatVersion };
+  if(!Array.isArray(data.squads)) return { ok:false, error:"missing-squads" };
+  return { ok:true, data:data };
+}
+
+// Pure planning step -- matches file squads to board squads by NAME (same
+// rule toCSV()'s import already uses; squad.id is a storage artifact, never
+// a portable identity -- see buildBoardExport()'s own comment above), and
+// each rating's dimension by KEY against the board's CURRENT dimension set.
+// A rating for a key not found today is reported, not guessed at, exactly
+// like buildImportPlan()'s CSV equivalent.
+function buildSquadImportPlan(data, mode){
+  var dimByKeyMap = {};
+  sortedDimensions().forEach(function(d){ dimByKeyMap[d.key] = d; });
+  var existingByName = {};
+  state.squads.forEach(function(s){ existingByName[s.name.trim().toLowerCase()] = s; });
+
+  var patches = [], newSquadNames = [], skipped = [], ratingCount = 0;
+  var fileNameKeys = {};
+  (data.squads || []).forEach(function(fs){
+    var name = (fs.name || "").trim();
+    if(!name) return;
+    fileNameKeys[name.toLowerCase()] = true;
+    var existing = existingByName[name.toLowerCase()] || null;
+    var fileDims = {};
+    Object.keys(fs.dimensions || {}).forEach(function(key){
+      if(!dimByKeyMap[key]){ skipped.push({ squad:name, dimension:key, reason:"dimension not found" }); return; }
+      fileDims[key] = fs.dimensions[key];
+      ratingCount++;
+    });
+    patches.push({ name:name, existing:existing, order:fs.order, fileDims:fileDims });
+    if(!existing) newSquadNames.push(name);
+  });
+
+  var squadsToRemove = [];
+  var clearedRatings = [];
+  if(mode === "replace"){
+    state.squads.forEach(function(s){
+      if(!fileNameKeys[s.name.trim().toLowerCase()]) squadsToRemove.push(s);
+    });
+    patches.forEach(function(p){
+      if(!p.existing) return;
+      Object.keys(p.existing.dimensions || {}).forEach(function(key){
+        if(!(key in p.fileDims)){
+          var d = dimByKeyMap[key];
+          clearedRatings.push({ squad:p.name, dimension: d ? d.label : key });
+        }
+      });
+    });
+  }
+
+  return {
+    mode:mode, patches:patches, newSquadNames:newSquadNames, skipped:skipped,
+    ratingCount:ratingCount, squadsToRemove:squadsToRemove, clearedRatings:clearedRatings
+  };
+}
+
+// Pure per-squad merge math, split out from applySquadImportPlan() so the
+// MERGE-keeps-extras / REPLACE-clears-extras rule is directly unit-testable
+// without a state/db fixture.
+function mergeSquadDimensions(existingDims, fileDims, mode){
+  if(mode === "replace") return Object.assign({}, fileDims);
+  return Object.assign({}, existingDims, fileDims);
+}
+
+var jsonFileInput = document.getElementById("jsonFileInput");
+var importJsonBackdrop = document.getElementById("importJsonBackdrop");
+var pendingSquadImportPlan = null;
+var pendingSquadImportMode = "merge";
+
+document.getElementById("importJsonBtn").addEventListener("click", function(){ jsonFileInput.click(); });
+
+jsonFileInput.addEventListener("change", function(){
+  var file = jsonFileInput.files && jsonFileInput.files[0];
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(){
+    var parsed = parseBoardImportFile(String(reader.result || ""));
+    if(!parsed.ok){
+      renderJsonImportError(parsed);
+    } else {
+      pendingSquadImportMode = "merge";
+      pendingSquadImportPlan = buildSquadImportPlan(parsed.data, pendingSquadImportMode);
+      renderSquadImportPreview(parsed.data, pendingSquadImportPlan);
+    }
+    importJsonBackdrop.hidden = false;
+    jsonFileInput.value = "";
+  };
+  reader.onerror = function(){ diag("JSON import: could not read the selected file."); jsonFileInput.value = ""; };
+  reader.readAsText(file);
+});
+
+function renderJsonImportError(parsed){
+  var body;
+  if(parsed.error === "unsupported-version"){
+    body = t("importJson.errorUnsupportedVersion", { fileVersion:parsed.fileVersion, appVersion:SUPPORTED_BOARD_FORMAT_VERSION });
+  } else {
+    body = t("importJson.errorMalformed");
+  }
+  document.getElementById("importJsonBody").innerHTML =
+    '<div class="error-state"><h4>'+esc(t("importJson.errorTitle"))+'</h4><p>'+esc(body)+'</p></div>' +
+    '<div class="modal-actions"><button class="btn ghost" id="importJsonCloseErr" type="button">'+esc(t("importJson.close"))+'</button></div>';
+  document.getElementById("importJsonCloseErr").addEventListener("click", closeSquadImport);
+}
+
+// t() has no built-in pluralization -- same convention as templates.js's
+// templates.meta.dimensionsOne/dimensionsMany key pairs, since Hebrew's
+// plural grammar isn't just an English "+s" either way.
+function countKey(base, count){ return base + (count===1 ? "One" : "Many"); }
+
+function renderSquadImportPreview(fileData, plan){
+  var extraSections = [];
+  if(Array.isArray(fileData.dimensions) && fileData.dimensions.length){
+    var otherParts = [];
+    if(fileData.dimensions.length) otherParts.push(t("importJson.scopeDimensions", { count:fileData.dimensions.length }));
+    if(Array.isArray(fileData.templates) && fileData.templates.length) otherParts.push(t("importJson.scopeTemplates", { count:fileData.templates.length }));
+    if(fileData.config) otherParts.push(t("importJson.scopeConfig"));
+    extraSections.push('<div class="scope-note">'+esc(t("importJson.scopeNote", { list: otherParts.join(", ") }))+'</div>');
+  }
+
+  var updatedExisting = plan.patches.filter(function(p){ return p.existing; }).length;
+  var chips = '<div class="import-stats">' +
+    '<span class="chip ok">'+esc(t(countKey("importJson.chipRatings", plan.ratingCount), { count:plan.ratingCount }))+'</span>' +
+    '<span class="chip">'+esc(t(countKey("importJson.chipUpdated", updatedExisting), { count:updatedExisting, unit:unitLower(), unitPlural:unitPluralLower() }))+'</span>' +
+    (plan.newSquadNames.length ? '<span class="chip">'+esc(t(countKey("importJson.chipNew", plan.newSquadNames.length), { count:plan.newSquadNames.length, unit:unitLower(), unitPlural:unitPluralLower(), names:plan.newSquadNames.join(", ") }))+'</span>' : '') +
+    (plan.mode==="replace" && plan.squadsToRemove.length ? '<span class="chip crit">'+esc(t(countKey("importJson.chipRemoved", plan.squadsToRemove.length), { count:plan.squadsToRemove.length, unit:unitLower(), unitPlural:unitPluralLower(), names:plan.squadsToRemove.map(function(s){return s.name;}).join(", ") }))+'</span>' : '') +
+  '</div>';
+
+  var replaceWarning = "";
+  if(plan.mode === "replace" && (plan.squadsToRemove.length || plan.clearedRatings.length)){
+    var items = plan.squadsToRemove.map(function(s){ return '<li>'+esc(t("importJson.willRemoveSquad", { name:s.name }))+'</li>'; })
+      .concat(plan.clearedRatings.map(function(c){ return '<li>'+esc(t("importJson.willClearRating", { squad:c.squad, dimension:c.dimension }))+'</li>'; }));
+    replaceWarning = '<div class="import-warning danger"><b>'+esc(t("importJson.replaceWarningTitle"))+'</b><ul>'+items.join("")+'</ul>' +
+      '<div class="backup-offer"><button class="btn" id="importJsonBackupBtn" type="button">'+esc(t("importJson.downloadBackup"))+'</button>' +
+      '<span class="backup-done" id="importJsonBackupDone" hidden>'+esc(t("importJson.backupDone"))+'</span></div></div>';
+  }
+
+  var skipsHtml = "";
+  if(plan.skipped.length){
+    skipsHtml = '<div class="import-skips">' + plan.skipped.slice(0,50).map(function(s){
+      return '<div class="srow">'+esc(t("importJson.skippedRow", { squad:s.squad, dimension:s.dimension }))+'</div>';
+    }).join("") + '</div>';
+  }
+
+  document.getElementById("importJsonBody").innerHTML =
+    '<h3>'+esc(t("importJson.title"))+'</h3>' +
+    '<p class="hint">'+esc(t("importJson.hint"))+'</p>' +
+    '<div class="field-label">'+esc(t("importJson.modeLabel"))+'</div>' +
+    '<div class="mode-switch">' +
+      '<button class="mode-btn'+(plan.mode==="merge"?" active":"")+'" data-mode="merge" type="button">'+esc(t("importJson.modeMerge"))+'</button>' +
+      '<button class="mode-btn'+(plan.mode==="replace"?" active":"")+'" data-mode="replace" type="button">'+esc(t("importJson.modeReplace"))+'</button>' +
+    '</div>' +
+    '<p class="external-tip">'+esc(t("importJson.externalTip"))+' <a href="https://meldmerge.org" target="_blank" rel="noopener">Meld</a>.</p>' +
+    chips + replaceWarning + skipsHtml + extraSections.join("") +
+    '<div class="modal-actions">' +
+      '<button class="btn ghost" id="importJsonCancel" type="button">'+esc(t("importJson.cancel"))+'</button>' +
+      '<button class="btn primary" id="importJsonApplyBtn" type="button" '+(plan.ratingCount===0 && plan.newSquadNames.length===0 && plan.squadsToRemove.length===0 ? "disabled" : "")+'>'+esc(t("importJson.apply"))+'</button>' +
+    '</div>';
+
+  document.querySelectorAll("#importJsonBody .mode-btn").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      pendingSquadImportMode = btn.getAttribute("data-mode");
+      pendingSquadImportPlan = buildSquadImportPlan(fileData, pendingSquadImportMode);
+      renderSquadImportPreview(fileData, pendingSquadImportPlan);
+    });
+  });
+  document.getElementById("importJsonCancel").addEventListener("click", closeSquadImport);
+  document.getElementById("importJsonApplyBtn").addEventListener("click", function(){
+    applySquadImportPlan(pendingSquadImportPlan);
+    closeSquadImport();
+  });
+  var backupBtn = document.getElementById("importJsonBackupBtn");
+  if(backupBtn){
+    backupBtn.addEventListener("click", async function(){
+      var json = toJSON();
+      try{
+        var downloads = await (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null));
+        if(downloads){ await downloads.save({ filename:"squad-pulse-board-backup.json", data: json }); }
+        else { var w = window.open("", "_blank"); if(w){ w.document.write("<pre style='white-space:pre-wrap;font-family:monospace;padding:16px;'>"+esc(json)+"</pre>"); } }
+      }catch(e){ /* fall through */ }
+      document.getElementById("importJsonBackupDone").hidden = false;
+    });
+  }
+}
+
+function closeSquadImport(){ importJsonBackdrop.hidden = true; pendingSquadImportPlan = null; }
+importJsonBackdrop.addEventListener("click", function(e){ if(e.target===importJsonBackdrop) closeSquadImport(); });
+
+function applySquadImportPlan(plan){
+  if(!plan) return;
+  var mode = plan.mode;
+  var newOnes = plan.patches.filter(function(p){ return !p.existing; });
+  function applyAll(){
+    plan.patches.forEach(function(p){
+      if(!p.existing) return;
+      p.existing.dimensions = mergeSquadDimensions(p.existing.dimensions || {}, p.fileDims, mode);
+      syncLiveIfConnected(function(){
+        // update() deep-MERGES a patch into the stored doc (see local-store.js's
+        // deepMerge()/relay-client.js's matching update()) -- additive only, it
+        // never drops a key absent from the patch. That's exactly right for
+        // MERGE mode (send only the file's own keys, existing ones survive
+        // untouched), but wrong for REPLACE: sending the already-clipped
+        // p.existing.dimensions through update() would silently leave the
+        // "removed" keys sitting in the persisted doc, merged right back in.
+        // set() fully replaces the doc's stored value instead, so REPLACE
+        // writes the whole doc (not just a dimensions patch) to actually make
+        // the clipped keys disappear from what's persisted, not just from
+        // this tab's in-memory copy.
+        if(mode === "replace"){
+          return state.db.collection("squads").doc(p.existing.id).set({
+            name: p.existing.name, order: p.existing.order,
+            dimensions: p.existing.dimensions, updatedAt: nowIso()
+          });
+        }
+        var patch = { dimensions:{}, updatedAt: nowIso() };
+        Object.keys(p.fileDims).forEach(function(k){ patch.dimensions[k] = p.fileDims[k]; });
+        return state.db.collection("squads").doc(p.existing.id).update(patch);
+      }, "JSON import write for squads/" + p.existing.id);
+    });
+    if(mode === "replace"){
+      plan.squadsToRemove.forEach(function(s){ removeSquad(s.id); });
+    }
+    renderAll();
+    diag("JSON import applied (" + mode + "): " + plan.ratingCount + " rating(s), " + newOnes.length + " new " + unitPluralLower() +
+      (mode==="replace" ? ", " + plan.squadsToRemove.length + " removed" : "") + ".");
+  }
+  if(newOnes.length===0){ applyAll(); return; }
+  var maxOrder = state.squads.reduce(function(m,s){ return Math.max(m, s.order||0); }, 0);
+  if(state.live && state.db){
+    showBusy("Importing " + newOnes.length + " new " + (newOnes.length===1?unitLower():unitPluralLower()) + "…");
+    Promise.all(newOnes.map(function(p, i){
+      return state.db.collection("squads").add({ name:p.name, order:maxOrder+1+i, dimensions:p.fileDims, updatedAt: nowIso() })
+        .then(function(ref){ p.existing = { id: ref.id, name:p.name, order:maxOrder+1+i, dimensions:p.fileDims }; });
+    })).then(function(){ hideBusy(); applyAll(); }).catch(function(err){
+      hideBusy();
+      diag("JSON import: creating new " + unitPluralLower() + " failed: " + (err && err.code ? err.code : String(err)));
+    });
+  } else {
+    newOnes.forEach(function(p, i){
+      var sq = { id:"local-"+Date.now()+"-"+i, name:p.name, order:maxOrder+1+i, dimensions:p.fileDims };
+      state.squads.push(sq);
+      p.existing = sq;
+    });
+    applyAll();
+  }
+}
+
 // ---------- CSV import ----------
 var importBackdrop = document.getElementById("importBackdrop");
 var csvFileInput = document.getElementById("csvFileInput");
@@ -318,7 +588,9 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     parseCSV: parseCSV, colorFromWord: colorFromWord, trendFromWord: trendFromWord,
     mapImportColumns: mapImportColumns, buildImportPlan: buildImportPlan, toCSV: toCSV,
-    buildBoardExport: buildBoardExport, toJSON: toJSON
+    buildBoardExport: buildBoardExport, toJSON: toJSON,
+    parseBoardImportFile: parseBoardImportFile, buildSquadImportPlan: buildSquadImportPlan,
+    mergeSquadDimensions: mergeSquadDimensions
   };
 }
 
