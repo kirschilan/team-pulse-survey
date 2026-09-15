@@ -1858,3 +1858,16 @@ not just in this repo's own tests.
   to the original (aside from the randomized session code), then stress-tested 10x clean at
   ~2.3-2.4s per run (down from ~5.7s). Full 44-file Playwright suite + 74-test unit suite green,
   zero regressions.
+- 2026-09-15 — Copilot pass file 2/8: `test_view_navigation_and_squad_admin.py` (19 waits, tied for
+  highest in the new list). Same established treatment throughout: `wait_for_selector`
+  `state="attached"`/`"visible"` for renders/modals, `wait_for_function()` polling the store for
+  squad rename/add/remove/rate writes. Two spots got a stronger justification than "probably
+  synchronous": clicking a read-only Tribe-grid cell (asserted to do nothing) needed no wait at
+  all, confirmed STRUCTURALLY by reading render.js/squads.js -- Tribe's cells are plain `<div>`s
+  with no click listener bound anywhere, so nothing could ever open the modal, delayed or not; and
+  the pre-reload squad selection needed no wait before `reload()` either, since `selectSquad()`
+  writes to `localStorage` synchronously (a blocking browser API). The dimension-header tooltip
+  hover kept a real `wait_for_function` on `#dimTooltip`'s hidden state, matching the established
+  idiom from the tooltip and RTL files earlier in this pass. Verified output byte-for-byte
+  identical to the original, then stress-tested 10x clean at ~2.3-2.4s per run (down from
+  ~5.3-5.4s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
