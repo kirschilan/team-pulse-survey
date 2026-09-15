@@ -310,3 +310,244 @@ test("mergeSquadDimensions() in REPLACE mode drops a squad's existing ratings th
   );
   assert.deepEqual(result, { release: { color: "crit" } });
 });
+
+// ---------- item 3b: parseBoardImportFile() validating dimensions/templates/config ----------
+// Same rationale as the squad/rating validation above: a structurally-
+// malformed dimensions/templates/config section must be rejected at the
+// parse boundary, not thrown from deep inside plan-building or render code.
+
+test("parseBoardImportFile() rejects a non-array dimensions field", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: "nope" }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-dimensions");
+});
+
+test("parseBoardImportFile() rejects a dimension entry with no label", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: [{ key: "release" }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-dimension");
+});
+
+test("parseBoardImportFile() rejects a dimension entry whose label is blank", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: [{ label: "   " }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-dimension");
+});
+
+test("parseBoardImportFile() rejects a dimension entry whose green field isn't a string", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: [{ label: "Speed", green: 5 }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-dimension");
+});
+
+test("parseBoardImportFile() rejects a dimension entry whose statements isn't an array", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: [{ label: "Speed", statements: "nope" }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-dimension");
+});
+
+test("parseBoardImportFile() accepts a well-formed dimensions section", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({
+    formatVersion: 1, squads: [],
+    dimensions: [{ key: "release", label: "Easy to release", green: "smooth", red: "risky", order: 1 }]
+  }));
+  assert.equal(result.ok, true);
+});
+
+test("parseBoardImportFile() rejects a non-array templates field", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], templates: {} }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-templates");
+});
+
+test("parseBoardImportFile() rejects a template entry with no name", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], templates: [{ dimensions: [] }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-template");
+});
+
+test("parseBoardImportFile() rejects a template entry whose own dimensions array is malformed", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({
+    formatVersion: 1, squads: [],
+    templates: [{ name: "Onboarding", dimensions: [{ label: "" }] }]
+  }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-template");
+});
+
+test("parseBoardImportFile() accepts a well-formed templates section", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({
+    formatVersion: 1, squads: [],
+    templates: [{ name: "Onboarding", unit: "Squad", unitPlural: "Squads", attribution: "", dimensions: [{ key: "release", label: "Easy to release", order: 1 }] }]
+  }));
+  assert.equal(result.ok, true);
+});
+
+test("parseBoardImportFile() rejects a non-object config field", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], config: "nope" }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-config");
+});
+
+test("parseBoardImportFile() rejects a config field whose known value isn't a string", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], config: { unit: 5 } }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-config");
+});
+
+test("parseBoardImportFile() accepts a config section with an unknown extra field (forward-compat, ignored not rejected)", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], config: { unit: "Squad", someFutureField: 123 } }));
+  assert.equal(result.ok, true);
+});
+
+test("parseBoardImportFile() accepts a file with no dimensions/templates/config sections at all", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [] }));
+  assert.equal(result.ok, true);
+});
+
+// ---------- buildDimensionImportPlan() ----------
+// Matches by LABEL, not key -- see csv.js's own comment on why: a custom
+// dimension's key is exactly as device-local/random as a template's id, so
+// key-matching would import every admin-created dimension as "new" every
+// time, defeating cross-tribe reuse. Only 3a's separate rating-to-dimension
+// matching (by key, against the board's own CURRENT set) is unaffected.
+
+test("buildDimensionImportPlan() matches an existing dimension by label, case-insensitively and trimmed", () => {
+  withBoard({ dimensions: [{ key: "release", label: "Easy to release", order: 1 }] }, () => {
+    const plan = csv.buildDimensionImportPlan([{ label: "  EASY TO RELEASE  ", green: "g", red: "r" }], "merge");
+    assert.equal(plan.added.length, 0);
+    assert.equal(plan.patches[0].existing.key, "release");
+  });
+});
+
+test("buildDimensionImportPlan() flags a file dimension label not on the board as added", () => {
+  withBoard({ dimensions: [] }, () => {
+    const plan = csv.buildDimensionImportPlan([{ label: "Psychological safety" }], "merge");
+    assert.deepEqual(plan.added, ["Psychological safety"]);
+    assert.equal(plan.patches[0].existing, null);
+  });
+});
+
+test("buildDimensionImportPlan() in MERGE mode never marks a board dimension absent from the file for removal", () => {
+  withBoard({ dimensions: [{ key: "release", label: "Easy to release", order: 1 }, { key: "speed", label: "Speed", order: 2 }] }, () => {
+    const plan = csv.buildDimensionImportPlan([{ label: "Easy to release" }], "merge");
+    assert.deepEqual(plan.toRemove, []);
+  });
+});
+
+test("buildDimensionImportPlan() in REPLACE mode marks a board dimension absent from the file for removal", () => {
+  withBoard({ dimensions: [{ key: "release", label: "Easy to release", order: 1 }, { key: "speed", label: "Speed", order: 2 }] }, () => {
+    const plan = csv.buildDimensionImportPlan([{ label: "Easy to release" }], "replace");
+    assert.equal(plan.toRemove.length, 1);
+    assert.equal(plan.toRemove[0].key, "speed");
+  });
+});
+
+// A squads-only file (no "dimensions" key at all -- every item 3a-only
+// fixture is exactly this shape, and formatVersion:1 makes the field
+// genuinely optional) must never be read as "this file's dimension set is
+// empty." Caught before shipping: REPLACE mode was treating `undefined` the
+// same as `[]`, which meant opening a plain squads-only file in Replace
+// mode silently wiped every dimension on the board.
+test("buildDimensionImportPlan() with no dimensions field at all touches nothing, even in REPLACE mode", () => {
+  withBoard({ dimensions: [{ key: "release", label: "Easy to release", order: 1 }, { key: "speed", label: "Speed", order: 2 }] }, () => {
+    const plan = csv.buildDimensionImportPlan(undefined, "replace");
+    assert.deepEqual(plan.toRemove, []);
+    assert.deepEqual(plan.added, []);
+    assert.deepEqual(plan.patches, []);
+  });
+});
+
+// ---------- buildTemplateImportPlan() ----------
+// Matches by NAME, not id -- same portability reasoning already applied to
+// squads (a template's local id is a storage artifact, never portable
+// across two different boards/devices).
+
+test("buildTemplateImportPlan() matches an existing template by name, case-insensitively and trimmed", () => {
+  withBoard({ templates: [{ id: "tpl-1", name: "Onboarding Checklist" }] }, () => {
+    const plan = csv.buildTemplateImportPlan([{ name: "  onboarding checklist  " }], "merge");
+    assert.equal(plan.added.length, 0);
+    assert.equal(plan.patches[0].existing.id, "tpl-1");
+  });
+});
+
+test("buildTemplateImportPlan() flags a file template name not on the board as added", () => {
+  withBoard({ templates: [] }, () => {
+    const plan = csv.buildTemplateImportPlan([{ name: "New Hire 30-60-90" }], "merge");
+    assert.deepEqual(plan.added, ["New Hire 30-60-90"]);
+    assert.equal(plan.patches[0].existing, null);
+  });
+});
+
+test("buildTemplateImportPlan() in MERGE mode never marks a board template absent from the file for removal", () => {
+  withBoard({ templates: [{ id: "tpl-1", name: "Onboarding Checklist" }, { id: "tpl-2", name: "Quarterly Deep Dive" }] }, () => {
+    const plan = csv.buildTemplateImportPlan([{ name: "Onboarding Checklist" }], "merge");
+    assert.deepEqual(plan.toRemove, []);
+  });
+});
+
+test("buildTemplateImportPlan() in REPLACE mode marks a board template absent from the file for removal", () => {
+  withBoard({ templates: [{ id: "tpl-1", name: "Onboarding Checklist" }, { id: "tpl-2", name: "Quarterly Deep Dive" }] }, () => {
+    const plan = csv.buildTemplateImportPlan([{ name: "Onboarding Checklist" }], "replace");
+    assert.equal(plan.toRemove.length, 1);
+    assert.equal(plan.toRemove[0].id, "tpl-2");
+  });
+});
+
+// Same fix as buildDimensionImportPlan() above, same reason: a squads-only
+// file (no "templates" key at all) must never be read as "zero saved
+// templates" and wipe the board's saved-templates list in REPLACE mode.
+test("buildTemplateImportPlan() with no templates field at all touches nothing, even in REPLACE mode", () => {
+  withBoard({ templates: [{ id: "tpl-1", name: "Onboarding Checklist" }] }, () => {
+    const plan = csv.buildTemplateImportPlan(undefined, "replace");
+    assert.deepEqual(plan.toRemove, []);
+    assert.deepEqual(plan.added, []);
+    assert.deepEqual(plan.patches, []);
+  });
+});
+
+// ---------- buildConfigImportPlan() ----------
+// Board settings are 4 named fields, not a collection -- no mode parameter,
+// no removal concept, same in Merge or Replace (see csv.js's own comment).
+
+test("buildConfigImportPlan() reports only known fields that actually differ", () => {
+  withBoard({ config: { unit: "Squad", unitPlural: "Squads", activeTemplateName: "Spotify", attribution: "orig" } }, () => {
+    const changes = csv.buildConfigImportPlan({ unit: "Squad", activeTemplateName: "Tuckman" });
+    assert.deepEqual(changes, [{ field: "activeTemplateName", from: "Spotify", to: "Tuckman" }]);
+  });
+});
+
+test("buildConfigImportPlan() ignores an unknown field even if it would differ", () => {
+  withBoard({ config: { unit: "Squad", unitPlural: "Squads", activeTemplateName: "Spotify", attribution: "orig" } }, () => {
+    const changes = csv.buildConfigImportPlan({ someFutureField: "x" });
+    assert.deepEqual(changes, []);
+  });
+});
+
+test("buildConfigImportPlan() returns no changes when the file has no config section", () => {
+  withBoard({ config: { unit: "Squad", unitPlural: "Squads", activeTemplateName: "Spotify", attribution: "orig" } }, () => {
+    const changes = csv.buildConfigImportPlan(undefined);
+    assert.deepEqual(changes, []);
+  });
+});
+
+// ---------- entityImportPlanHasChanges() ----------
+// Shared gate for the dimensions/templates Apply-button state, same shape
+// as planHasChanges() above but for the {patches, added, toRemove} plans
+// buildDimensionImportPlan()/buildTemplateImportPlan() return.
+
+test("entityImportPlanHasChanges() is true when there's a new entity to add", () => {
+  assert.equal(csv.entityImportPlanHasChanges({ patches: [], added: ["New one"], toRemove: [] }), true);
+});
+
+test("entityImportPlanHasChanges() is true when an existing entity is matched (would be updated)", () => {
+  assert.equal(csv.entityImportPlanHasChanges({ patches: [{ existing: { key: "release" }, file: {} }], added: [], toRemove: [] }), true);
+});
+
+test("entityImportPlanHasChanges() is true when REPLACE mode would remove something", () => {
+  assert.equal(csv.entityImportPlanHasChanges({ patches: [], added: [], toRemove: [{ key: "speed" }] }), true);
+});
+
+test("entityImportPlanHasChanges() is false when a plan truly changes nothing", () => {
+  assert.equal(csv.entityImportPlanHasChanges({ patches: [], added: [], toRemove: [] }), false);
+});

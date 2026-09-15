@@ -456,7 +456,7 @@ recall exercise instead of something anyone could just read.
 | 10 | Retro join flow (participant-facing screens) | **DONE** (2026-09-14) |
 | 11 | Retro facilitation flow (facilitator-facing screens, session cards, overrides) | **DONE** (2026-09-14) |
 | 12 | Dimension detail and Edit Dimensions modal (Admin) | **DONE** (2026-09-14) |
-| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass. Redesigned as a full JSON board export/import replacing CSV (see session log): (1) JSON board export (beta), additive — **DONE** (2026-09-15); (2) JSON import — squads/ratings — **DONE** (2026-09-15); (3) JSON import — dimensions/templates/config; (4) delete the CSV runtime code | **In progress** |
+| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass. Redesigned as a full JSON board export/import replacing CSV (see session log): (1) JSON board export (beta), additive — **DONE** (2026-09-15); (2) JSON import — squads/ratings — **DONE** (2026-09-15); (3) JSON import — dimensions/templates/board settings — **DONE** (2026-09-15); (4) delete the CSV runtime code | **In progress** |
 
 ## Deliberately not built yet (and why)
 
@@ -2547,3 +2547,76 @@ not just in this repo's own tests.
   the persisted store is untouched, same before/after-equality-snapshot rigor as finding #5's
   regression. Stress-tested 10x clean. Full suite green: 112/112 unit tests, all 48 Playwright
   files, relay's own protocol suite. Same branch/PR a third time.
+- **2026-09-15 — Story 13, item 3b: JSON import for dimensions, templates & board settings**,
+  extending the same file/preview/Merge-Replace modal item 3a shipped rather than adding a second
+  one. Design reviewed first as an updated Artifact mockup (the same "Full Board Import Preview"
+  the item 3a mockup evolved into -- see the conversation this continues from) before any code,
+  per DoD §3; the product owner's decisions from that review, implemented as specified:
+  - **Dimensions and saved templates both match by LABEL/NAME, not key/id** -- initially proposed
+    as key-matching for dimensions (consistent with 3a's rating-to-dimension matching) and
+    name-matching for templates, the product owner asked why the two would differ. Investigating
+    turned up a real fact neither of us had checked yet: a custom dimension's key
+    (`"local-dim-"+Date.now()`, `dimensions.js`'s `addDimension()`) is exactly as device-local and
+    random as a template's id (`"local-tpl-"+Date.now()`) -- only the three built-in starter
+    templates' dimensions have meaningful, hand-picked keys. Key-matching a custom dimension would
+    have imported it as "new" on every single re-import, including re-importing your OWN board's
+    own file, defeating the whole point of this item (importing a template set between tribes).
+    Settled on label/name matching for both, confirmed by the product owner. 3a's own
+    rating-to-dimension matching (by KEY, against the board's CURRENT set) is a different question
+    entirely and is untouched either way.
+  - **A Squads-vs-Templates import SCOPE choice**, both checked by default, independently
+    uncheckable -- the product owner's own stated reason: wanting to import a template set from
+    one tribe into another board without dragging that tribe's squads/ratings along for the ride.
+    "Templates" scope bundles dimensions + saved templates + board settings as one unit (matching
+    how the backlog item itself was already grouped, confirmed over a 3-way-split alternative).
+  - Merge/Replace still one single toggle governing everything in whichever scope(s) are checked,
+    same mental model already approved for 3a, not a second control to learn. Replace's danger
+    warning grew two new named groups (dimensions / saved templates) alongside 3a's existing
+    squad/rating ones, same backup-first safety net, still no second confirm dialog. Board settings
+    (config: unit/unitPlural/activeTemplateName/attribution) have no Replace/remove concept at all
+    -- four named fields, not a collection, so whatever the file has just overwrites the matching
+    field in either mode, shown as a plain before/after diff instead of chips.
+  - **A real, serious bug caught before it ever ran against real data, not a review finding this
+    time:** formatVersion:1 makes `dimensions`/`templates`/`config` genuinely OPTIONAL top-level
+    keys (unlike `squads`, required since item 1) -- exactly the shape every existing item
+    3a-only fixture already uses (`{"formatVersion":1,"squads":[...]}`, no other keys at all). The
+    first draft of `buildDimensionImportPlan()`/`buildTemplateImportPlan()` treated "key absent"
+    the same as "key present with an empty array," so opening an ordinary squads-only file in
+    REPLACE mode would have silently wiped every dimension and every saved template off the board
+    -- found by running `test_json_import.py`'s own pre-existing item 3a "replace" scenario after
+    wiring the new code in, and seeing its warning box unexpectedly list every board dimension for
+    removal. Fixed by having both planning functions return an untouched, empty plan when their
+    input is `undefined` -- `undefined` (key absent, file has no opinion) and `[]` (key present,
+    file explicitly claims zero) are different claims, and only the second one means anything. Two
+    new unit tests lock this in (`buildDimensionImportPlan(undefined, "replace")`/
+    `buildTemplateImportPlan(undefined, "replace")` must return empty plans), and the Playwright
+    dimension/template-removal scenario deliberately unchecks the squads scope and asserts no
+    squad-removal warning appears, proving the (separate, correctly-required) `"squads": []` in
+    that same test file's own fixture doesn't leak into scopes it wasn't checked for.
+  - New data shape: none (reuses item 1's existing board-export shape); no migration question, per
+    DoD §3.
+  - i18n per DoD §2: the scope checkboxes, new section headings (Dimensions/Saved templates/Board
+    settings), new chip rows, the config diff, and the two new removal-warning groups all go
+    through `t()`/`data-i18n`, `en.js`+`he.js` updated together, same `countKey()` One/Many
+    convention as the rest of this modal. The now-inert old "also in this file, not imported here"
+    stub note/keys (`importJson.scopeDimensions`/`scopeTemplates`/`scopeConfig`/`scopeNote`) were
+    removed rather than left dead, since this item is exactly what replaces them.
+  - Test-first per the `tdd` skill: `tests/unit/test_json_import.js` grew from 31 to 62 tests --
+    `parseBoardImportFile()`'s new dimension/template/config shape validation (mirroring the
+    squad/rating validation's parse-boundary rule), `buildDimensionImportPlan()`/
+    `buildTemplateImportPlan()`'s label/name matching and merge/replace removal logic (including
+    the undefined-vs-empty-array regression above), `buildConfigImportPlan()`'s known-fields-only
+    diffing, and `entityImportPlanHasChanges()`'s Apply-button gate -- all written and confirmed
+    failing before `csv.js` had the functions. `tests/test_json_import.py` gained 5 new scenarios
+    (Apply disabled with no scope checked; a combined merge that adds+updates a dimension, adds a
+    saved template, and changes a config field, all asserted against `window.__FAKE_STORE__`
+    directly; a replace that removes a dimension and a saved template with the squads scope
+    deliberately off; unchecking the templates scope leaves it out of both the DOM and the actual
+    apply) -- every wait is a real condition per DoD §1, stress-tested 5x clean.
+  - Full suite green: 143/143 unit tests, all 48 Playwright files (78s, at the existing baseline --
+    no new file added this time, so no baseline update needed), relay's own protocol suite.
+  - Story 13 table status: item 3b now **DONE**. Remaining: item 4 (delete the CSV runtime code).
+    Implemented directly on `story13-json-import-squads` (PR #7, still open under review as of this
+    entry) rather than a new branch/PR -- this item's code is a direct, sequential extension of the
+    same functions PR #7 already introduced, in the same file, so splitting it into a second PR
+    stacked on unmerged code would only have added review friction, not independence.
