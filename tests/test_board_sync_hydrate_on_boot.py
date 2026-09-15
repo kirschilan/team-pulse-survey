@@ -77,13 +77,23 @@ try:
         a_errors = []
         a.on("pageerror", lambda e: a_errors.append(str(e)))
         a.goto(INDEX_URL, wait_until="domcontentloaded")
-        a.wait_for_timeout(300)
+        # eval_on_selector()/query_selector() below don't auto-wait --
+        # renderAdminSquadList() only populates this once the async store load +
+        # first render() pass lands, so this is the real boot-complete marker
+        # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+        a.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
+        # ensureDefaultTeamSecret()/renderTeamSyncStatus() (board-sync.js) both
+        # run synchronously at script-load time -- device A's team link is
+        # already populated the instant goto() returns, no wait needed.
         a.click('.view-btn[data-view="admin"]')
-        a.wait_for_timeout(100)
-        a.wait_for_timeout(300)  # step 7: default-on -- device A already has its own team link, no click needed
         team_link = a.eval_on_selector("#teamLinkInput", "el=>el.value")
         a.click("#addSquadBtn")
-        a.wait_for_timeout(300)
+        # addSquad()'s live branch (squads.js) doesn't apply a local copy at
+        # all -- the new row only appears once relay-client.js's collection
+        # .add() resolves room.ready and its optimistic local update fires
+        # the long-lived squads listener. A genuine async gap, so wait for
+        # the real row landing instead of guessing.
+        a.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).some(i => i.value === 'New squad')")
         a_squad_names = a.eval_on_selector_all("#adminSquadList input.admin-squad-name", "els=>els.map(e=>e.value)")
         print("=== device A's board after adding a squad ===")
         print(a_squad_names)
@@ -104,8 +114,11 @@ try:
         # admin squad list is rebuilt by renderAll() regardless of which
         # view is currently visible, so this doesn't need Admin open first)
         b.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).some(i => i.value === 'New squad')")
+        # autoConnectFromLink()/renderTeamSyncStatus() (board-sync.js) are
+        # both synchronous at script-load time -- device B's "connected"
+        # status and stripped URL are already correct by the time the wait
+        # above resolves, so setView()'s own synchronicity is all this click needs.
         b.click('.view-btn[data-view="admin"]')
-        b.wait_for_timeout(100)
 
         print("=== device B, booting by opening A's team link, hydrates A's board automatically ===")
         b_status = b.eval_on_selector("#teamSyncStatus", "el=>el.textContent")
@@ -120,7 +133,8 @@ try:
         # ============ device B adds its own squad -- a newer push ============
         print("=== device B adds its own squad, producing a newer push ===")
         b.click("#addSquadBtn")
-        b.wait_for_timeout(300)
+        # Same genuine async-gap reasoning as device A's addSquadBtn click above.
+        b.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).filter(i => i.value === 'New squad').length === 2")
         b_squad_names_2 = b.eval_on_selector_all("#adminSquadList input.admin-squad-name", "els=>els.map(e=>e.value)")
         print("device B's board after adding its own squad:", b_squad_names_2)
         assert b_squad_names_2.count("New squad") == 2
@@ -129,8 +143,7 @@ try:
         print("=== device A reloads, hydrates B's newer state on its next boot ===")
         a.reload(wait_until="domcontentloaded")
         a.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).filter(i => i.value === 'New squad').length === 2")
-        a.click('.view-btn[data-view="admin"]')
-        a.wait_for_timeout(100)
+        a.click('.view-btn[data-view="admin"]')  # setView() is synchronous
         a_squad_names_after_reload = a.eval_on_selector_all("#adminSquadList input.admin-squad-name", "els=>els.map(e=>e.value)")
         print("device A's board after reload:", a_squad_names_after_reload)
         assert a_squad_names_after_reload.count("New squad") == 2, "A should now see BOTH squads named 'New squad' -- its own original push, plus B's later one"
