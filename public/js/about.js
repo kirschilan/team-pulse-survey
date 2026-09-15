@@ -12,6 +12,7 @@ document.getElementById("aboutCloseBtn").addEventListener("click", function(){
   aboutDialog.close();
 });
 aboutDialog.addEventListener("close", function(){
+  try{ localStorage.setItem("squadpulse:welcomeSeen", "1"); }catch(e){ /* dismissal must work without storage */ }
   // A guide action may already have focused the join-code input.
   if(document.getElementById("joinCodeBackdrop").hidden) aboutHelpBtn.focus();
 });
@@ -40,3 +41,10 @@ document.getElementById("aboutJoinBtn").addEventListener("click", function(){
   if(state.joinSessionId) returnToJoinScreen();
   else document.getElementById("joinCodeBtn").click();
 });
+
+// A per-browser convenience, separate from any terms acknowledgment.
+function showWelcomeOnFirstVisit(){
+  if(openedFromInvitation) return;
+  try{ if(localStorage.getItem("squadpulse:welcomeSeen") === "1") return; }catch(e){ /* show once for this page */ }
+  aboutHelpBtn.click();
+}
