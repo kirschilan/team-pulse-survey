@@ -121,12 +121,28 @@ document.getElementById("exportJsonBtn").addEventListener("click", async functio
 // "download a backup first" instead (same toJSON() this file already has).
 var SUPPORTED_BOARD_FORMAT_VERSION = 1;
 
+// Validates each squad entry's shape at the parse boundary -- found missing
+// in review (PR #7): buildSquadImportPlan() ran directly inside
+// FileReader.onload with no try/catch, so a null entry or a non-string
+// `name` threw an uncaught exception instead of showing the malformed-file
+// error UI. `dimensions` isn't required (a squad can have none yet), but if
+// present must be a plain object -- individual rating VALUES are still
+// whatever the caller wrote, matched against real dimensions/colors by
+// buildSquadImportPlan() itself, same as CSV import already tolerates.
+function isPlainObject(v){ return !!v && typeof v === "object" && !Array.isArray(v); }
+
 function parseBoardImportFile(text){
   var data;
   try{ data = JSON.parse(text); }catch(e){ return { ok:false, error:"not-json" }; }
   if(!data || typeof data.formatVersion !== "number") return { ok:false, error:"missing-version" };
   if(data.formatVersion > SUPPORTED_BOARD_FORMAT_VERSION) return { ok:false, error:"unsupported-version", fileVersion:data.formatVersion };
   if(!Array.isArray(data.squads)) return { ok:false, error:"missing-squads" };
+  for(var i=0;i<data.squads.length;i++){
+    var fs = data.squads[i];
+    if(!isPlainObject(fs)) return { ok:false, error:"invalid-squad" };
+    if(fs.name !== undefined && typeof fs.name !== "string") return { ok:false, error:"invalid-squad" };
+    if(fs.dimensions !== undefined && !isPlainObject(fs.dimensions)) return { ok:false, error:"invalid-squad" };
+  }
   return { ok:true, data:data };
 }
 
@@ -188,6 +204,16 @@ function buildSquadImportPlan(data, mode){
 function mergeSquadDimensions(existingDims, fileDims, mode){
   if(mode === "replace") return Object.assign({}, fileDims);
   return Object.assign({}, existingDims, fileDims);
+}
+
+// Whether a plan would actually change anything -- gates the Apply button.
+// Review finding (PR #7): originally inlined as ratingCount/newSquadNames/
+// squadsToRemove only, missing clearedRatings -- a REPLACE-mode plan that
+// only clears existing ratings (every board squad already named in the
+// file, just with fewer ratings than before) left Apply permanently
+// disabled, with no way to apply it.
+function planHasChanges(plan){
+  return plan.ratingCount>0 || plan.newSquadNames.length>0 || plan.squadsToRemove.length>0 || plan.clearedRatings.length>0;
 }
 
 var jsonFileInput = document.getElementById("jsonFileInput");
@@ -259,7 +285,8 @@ function renderSquadImportPreview(fileData, plan){
       .concat(plan.clearedRatings.map(function(c){ return '<li>'+esc(t("importJson.willClearRating", { squad:c.squad, dimension:c.dimension }))+'</li>'; }));
     replaceWarning = '<div class="import-warning danger"><b>'+esc(t("importJson.replaceWarningTitle"))+'</b><ul>'+items.join("")+'</ul>' +
       '<div class="backup-offer"><button class="btn" id="importJsonBackupBtn" type="button">'+esc(t("importJson.downloadBackup"))+'</button>' +
-      '<span class="backup-done" id="importJsonBackupDone" hidden>'+esc(t("importJson.backupDone"))+'</span></div></div>';
+      '<span class="backup-done" id="importJsonBackupDone" hidden>'+esc(t("importJson.backupDone"))+'</span>' +
+      '<span class="backup-failed" id="importJsonBackupFailed" hidden>'+esc(t("importJson.backupFailed"))+'</span></div></div>';
   }
 
   var skipsHtml = "";
@@ -281,7 +308,7 @@ function renderSquadImportPreview(fileData, plan){
     chips + replaceWarning + skipsHtml + extraSections.join("") +
     '<div class="modal-actions">' +
       '<button class="btn ghost" id="importJsonCancel" type="button">'+esc(t("importJson.cancel"))+'</button>' +
-      '<button class="btn primary" id="importJsonApplyBtn" type="button" '+(plan.ratingCount===0 && plan.newSquadNames.length===0 && plan.squadsToRemove.length===0 ? "disabled" : "")+'>'+esc(t("importJson.apply"))+'</button>' +
+      '<button class="btn primary" id="importJsonApplyBtn" type="button" '+(planHasChanges(plan) ? "" : "disabled")+'>'+esc(t("importJson.apply"))+'</button>' +
     '</div>';
 
   document.querySelectorAll("#importJsonBody .mode-btn").forEach(function(btn){
@@ -299,13 +326,27 @@ function renderSquadImportPreview(fileData, plan){
   var backupBtn = document.getElementById("importJsonBackupBtn");
   if(backupBtn){
     backupBtn.addEventListener("click", async function(){
+      // Review finding (PR #7): the previous version showed "Backup
+      // downloaded" unconditionally -- a rejected downloads.save() (caught
+      // and swallowed) or a blocked fallback popup (window.open() returning
+      // null) both still reached the success line. Since this backup is the
+      // offered protection right before a destructive Replace, a false
+      // "downloaded" is worse than no message at all: only show success once
+      // a save/popup genuinely happened.
       var json = toJSON();
+      var succeeded = false;
       try{
         var downloads = await (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null));
-        if(downloads){ await downloads.save({ filename:"squad-pulse-board-backup.json", data: json }); }
-        else { var w = window.open("", "_blank"); if(w){ w.document.write("<pre style='white-space:pre-wrap;font-family:monospace;padding:16px;'>"+esc(json)+"</pre>"); } }
-      }catch(e){ /* fall through */ }
-      document.getElementById("importJsonBackupDone").hidden = false;
+        if(downloads){
+          await downloads.save({ filename:"squad-pulse-board-backup.json", data: json });
+          succeeded = true;
+        } else {
+          var w = window.open("", "_blank");
+          if(w){ w.document.write("<pre style='white-space:pre-wrap;font-family:monospace;padding:16px;'>"+esc(json)+"</pre>"); succeeded = true; }
+        }
+      }catch(e){ succeeded = false; }
+      document.getElementById("importJsonBackupDone").hidden = !succeeded;
+      document.getElementById("importJsonBackupFailed").hidden = succeeded;
     });
   }
 }
@@ -590,7 +631,7 @@ if (typeof module !== "undefined" && module.exports) {
     mapImportColumns: mapImportColumns, buildImportPlan: buildImportPlan, toCSV: toCSV,
     buildBoardExport: buildBoardExport, toJSON: toJSON,
     parseBoardImportFile: parseBoardImportFile, buildSquadImportPlan: buildSquadImportPlan,
-    mergeSquadDimensions: mergeSquadDimensions
+    mergeSquadDimensions: mergeSquadDimensions, planHasChanges: planHasChanges
   };
 }
 

@@ -52,6 +52,37 @@ test("parseBoardImportFile() refuses a formatVersion newer than this app underst
   assert.equal(result.fileVersion, 4);
 });
 
+// Review finding (PR #7): buildSquadImportPlan() ran directly inside
+// FileReader.onload with no try/catch, so a structurally-malformed squads
+// array (a null entry, a non-string name, a non-object dimensions value)
+// threw an uncaught exception instead of showing the intended malformed-file
+// error UI. Fixed by validating each entry's shape at the parse boundary,
+// before buildSquadImportPlan() ever sees it -- consistent with this
+// function already being the one place that decides ok:true/false.
+
+test("parseBoardImportFile() rejects a null entry in the squads array", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [null] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-squad");
+});
+
+test("parseBoardImportFile() rejects a squad entry whose name isn't a string", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: 5, dimensions: {} }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-squad");
+});
+
+test("parseBoardImportFile() rejects a squad entry whose dimensions isn't a plain object", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: ["not", "an", "object"] }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-squad");
+});
+
+test("parseBoardImportFile() still accepts a squad entry with no dimensions field at all", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1" }] }));
+  assert.equal(result.ok, true);
+});
+
 // ---------- buildSquadImportPlan() ----------
 
 function fileWith(squads){ return { formatVersion: 1, squads: squads }; }
@@ -156,6 +187,24 @@ test("mergeSquadDimensions() in MERGE mode keeps a squad's existing ratings the 
     "merge"
   );
   assert.deepEqual(result, { release: { color: "crit" }, speed: { color: "warn" } });
+});
+
+// Review finding (PR #7): the Apply button's disabled condition checked
+// ratingCount/newSquadNames/squadsToRemove but not clearedRatings, so a
+// REPLACE-mode plan that only clears existing ratings (every squad already
+// on the board, just with fewer/no ratings in the file) left Apply
+// permanently disabled -- there was no way to actually apply that plan.
+// Extracted into its own pure function, both to fix it and so this exact
+// case has a real regression test that doesn't depend on rendered HTML.
+
+test("planHasChanges() is true when a REPLACE plan only clears existing ratings", () => {
+  const plan = { ratingCount: 0, newSquadNames: [], squadsToRemove: [], clearedRatings: [{ squad: "Squad 1", dimension: "Speed" }] };
+  assert.equal(csv.planHasChanges(plan), true);
+});
+
+test("planHasChanges() is false when a plan truly changes nothing", () => {
+  const plan = { ratingCount: 0, newSquadNames: [], squadsToRemove: [], clearedRatings: [] };
+  assert.equal(csv.planHasChanges(plan), false);
 });
 
 test("mergeSquadDimensions() in REPLACE mode drops a squad's existing ratings the file doesn't mention", () => {

@@ -144,6 +144,7 @@ var LOCALE_EN = {
   "importJson.willClearRating": "{squad}'s “{dimension}” rating — not in the file — will be cleared",
   "importJson.downloadBackup": "Download a backup of this board first",
   "importJson.backupDone": "Backup downloaded",
+  "importJson.backupFailed": "Backup failed — try again, or use Export JSON in Board setup instead.",
   "importJson.skippedRow": "{squad}, “{dimension}” — not found among this board's current dimensions",
   "importJson.scopeDimensions": "{count} dimension definitions",
   "importJson.scopeTemplates": "{count} custom templates",

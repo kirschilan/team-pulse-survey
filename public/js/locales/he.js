@@ -132,6 +132,7 @@ var LOCALE_HE = {
   "importJson.willClearRating": "הדירוג “{dimension}” של {squad} — לא נמצא בקובץ — יימחק",
   "importJson.downloadBackup": "הורידו גיבוי של הלוח הזה קודם",
   "importJson.backupDone": "הגיבוי הורד",
+  "importJson.backupFailed": "הגיבוי נכשל — נסו שוב, או השתמשו בייצוא JSON בהגדרות הלוח במקום.",
   "importJson.skippedRow": "{squad}, “{dimension}” — לא נמצא בין הממדים הנוכחיים של הלוח הזה",
   "importJson.scopeDimensions": "{count} הגדרות ממד",
   "importJson.scopeTemplates": "{count} תבניות מותאמות אישית",

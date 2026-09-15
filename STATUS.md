@@ -2467,3 +2467,39 @@ not just in this repo's own tests.
     dimensions/templates/config, its own mockup first) and item 4 (delete the CSV runtime code).
     Implemented on branch `story13-json-import-squads`, pushed as a PR rather than merged into
     `claude/optimistic-keller-holuql` directly, matching item 1's delivery pattern.
+- **2026-09-15 — Story 13, item 3a: four review findings on PR #7, all real, all fixed.** Verified
+  each against the actual code before touching anything, then fixed test-first:
+  1. **Backup "success" shown even when the backup never happened.** The backup-first button's
+     `catch` swallowed a rejected `downloads.save()`, and the fallback `window.open()` returning
+     `null` (a blocked popup) both still reached the unconditional "Backup downloaded" line --
+     exactly the wrong failure mode for the one safety net Replace mode offers instead of a confirm
+     dialog. Now tracks success explicitly and shows a new `importJson.backupFailed` message
+     ("try again, or use Export JSON instead") when it isn't real. Playwright-tested by actually
+     forcing the failure (monkeypatching `window.open` to return `null`, the real code path this
+     harness's `downloads` capability always takes since it's always `null`), not just inspecting.
+  2. **A REPLACE plan that only clears existing ratings couldn't be applied.** The Apply button's
+     disabled condition checked `ratingCount`/`newSquadNames`/`squadsToRemove` but not
+     `clearedRatings` -- a file naming every board squad but with fewer ratings than before (a
+     legitimate "restore to unscored" case) left Apply permanently disabled. Extracted the check
+     into its own pure `planHasChanges()` (now unit-tested directly, 2 new tests) rather than an
+     inline HTML-string condition.
+  3. **A malformed squad entry crashed instead of showing the error UI.** `buildSquadImportPlan()`
+     ran directly inside `FileReader.onload` with no try/catch; a `null` entry in `squads`, or a
+     non-string `name`, threw an uncaught exception instead of the intended "can't read this file"
+     message. Fixed by validating each entry's shape in `parseBoardImportFile()` itself (the one
+     function that already decides ok:true/false) -- a non-object entry, a non-string `name`, or a
+     non-plain-object `dimensions` now all fail cleanly as `invalid-squad`, before
+     `buildSquadImportPlan()` ever sees them. 4 new unit tests, 1 new Playwright scenario.
+  4. **The import modal wasn't in `RTL_SCOPED_CONTAINERS`.** Its strings were translated, but
+     `#importJsonBackdrop` was never in `i18n.js`'s list of containers `applyScopedDirLang()`
+     flips -- confirmed with Hebrew selected: `dir`/`lang` were empty and computed direction was
+     `ltr` despite Hebrew text on screen. Added it to the list (matching how `#aboutDialog` was
+     added for the About & Help story); the existing Playwright test only checked the *button*
+     label in Hebrew, so extended it to also open the modal and assert `dir="rtl"`,
+     `lang="he"`, and a real `getComputedStyle().direction` check, not just the button.
+  All four confirmed fixed end-to-end via `tests/test_json_import.py` (now 4 new scenarios: a
+  malformed-entry error, a forced backup failure, a ratings-only-clear Apply + real persisted
+  result, and the RTL/lang check), stress-tested 10x clean; `tests/unit/test_json_import.js` grew
+  from 14 to 20 tests (`invalid-squad` validation, `planHasChanges()`). Full suite green: 101/101
+  unit tests, all 48 Playwright files, relay's own protocol suite. Pushed to the same
+  `story13-json-import-squads` branch/PR rather than opening a new one.

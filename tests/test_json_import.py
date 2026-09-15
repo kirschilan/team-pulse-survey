@@ -87,6 +87,19 @@ with sync_playwright() as p:
     page.click('#importJsonCloseErr')
     page.wait_for_selector('#importJsonBackdrop[hidden]', state="attached")
 
+    # ---- error state: structurally malformed squad entry (review finding: this
+    # used to throw uncaught inside FileReader.onload instead of showing the
+    # error UI) ----
+    print("=== malformed squad entry (null in squads array) ===")
+    open_with_file(json.dumps({"formatVersion": 1, "squads": [None]}), "bad_squad.json")
+    page.wait_for_selector('#importJsonBody .error-state')
+    err_text3 = strip_bidi(page.eval_on_selector('#importJsonBody .error-state p', 'el => el.textContent'))
+    print("error shown:", err_text3)
+    assert "doesn't look like a Squad Pulse export" in err_text3
+    assert errors == [], "a malformed entry must be handled, not thrown as an uncaught page error"
+    page.click('#importJsonCloseErr')
+    page.wait_for_selector('#importJsonBackdrop[hidden]', state="attached")
+
     # ---- MERGE: Squad 1 (release overridden, process untouched), Squad 3 new, Squad 2 untouched ----
     print("=== merge import ===")
     merge_file = {
@@ -154,7 +167,23 @@ with sync_playwright() as p:
     assert "Squad 2" in warning_html
     assert "Suitable process" in warning_html  # Squad 1's about-to-clear "process" rating, by its dimension label
 
-    print("=== backup-first offer ===")
+    print("=== backup failure (blocked popup) shows an error, not a false success ===")
+    # fake_store.html's window.claude.use("downloads") always resolves to
+    # null, so the real code path here is the window.open() fallback --
+    # returning null from it (a blocked popup) is a real, reachable failure
+    # mode, not a contrived one. Review finding: the old handler showed
+    # "Backup downloaded" regardless.
+    page.evaluate("() => { window.__realOpen = window.open; window.open = () => null; }")
+    page.click('#importJsonBackupBtn')
+    page.wait_for_selector('#importJsonBackupFailed:not([hidden])')
+    failed_text = strip_bidi(page.eval_on_selector('#importJsonBackupFailed', 'el => el.textContent'))
+    print("backup failure shown:", failed_text)
+    assert "failed" in failed_text.lower()
+    done_hidden = page.eval_on_selector('#importJsonBackupDone', 'el => el.hasAttribute("hidden")')
+    assert done_hidden, "the success indicator must stay hidden after a failed backup"
+    page.evaluate("() => { window.open = window.__realOpen; }")
+
+    print("=== backup-first offer (real success) ===")
     with page.expect_popup() as popup_info:
         page.click('#importJsonBackupBtn')
     popup = popup_info.value
@@ -183,12 +212,52 @@ with sync_playwright() as p:
     print("persisted squad names after replace:", all_names_after)
     assert all_names_after == ["Squad 1", "Squad 3"], "REPLACE must remove a squad absent from the file"
 
-    # ---- Hebrew label ----
-    print("=== Hebrew label ===")
+    # ---- REPLACE plan that only clears existing ratings (every board squad
+    # already named in the file, none removed, nothing new to import) must
+    # still enable Apply -- review finding: the disabled condition checked
+    # ratingCount/newSquadNames/squadsToRemove but not clearedRatings ----
+    print("=== replace-mode ratings-only clear still enables Apply ===")
+    clear_only_file = {
+        "formatVersion": 1,
+        "squads": [{"name": "Squad 1", "dimensions": {}}, {"name": "Squad 3", "dimensions": {}}],
+    }
+    open_with_file(json.dumps(clear_only_file), "clear_only.json")
+    page.wait_for_selector('#importJsonBody .mode-btn[data-mode="replace"]')
+    page.click('#importJsonBody .mode-btn[data-mode="replace"]')
+    page.wait_for_selector('#importJsonBody .import-warning.danger')
+
+    apply_disabled = page.eval_on_selector('#importJsonApplyBtn', 'el => el.disabled')
+    print("Apply disabled?", apply_disabled)
+    assert not apply_disabled, "a REPLACE plan that only clears ratings must still be applyable"
+
+    page.click('#importJsonApplyBtn')
+    page.wait_for_function("""() => {
+        const sq1 = Object.values(window.__FAKE_STORE__).find(v => v && v.name === 'Squad 1');
+        return sq1 && Object.keys(sq1.dimensions || {}).length === 0;
+    }""")
+    store_sq1_cleared = store_squad_by_name("Squad 1")
+    print("Squad 1 after ratings-only replace:", store_sq1_cleared)
+    assert store_sq1_cleared["dimensions"] == {}, "REPLACE must clear ratings even with no squad additions/removals"
+
+    # ---- Hebrew label + RTL modal scoping (review finding: the modal was
+    # missing from RTL_SCOPED_CONTAINERS, so its translated strings rendered
+    # with dir="ltr") ----
+    print("=== Hebrew label + RTL modal scoping ===")
     page.click('.lang-btn[data-lang="he"]')
     label_he = page.eval_on_selector('#importJsonBtn', 'el => el.textContent').strip()
     print("import-json button (he):", label_he)
     assert label_he == "ייבוא JSON (בטא)"
+
+    open_with_file(json.dumps({"formatVersion": 1, "squads": []}), "he_check.json")
+    backdrop_dir = page.eval_on_selector('#importJsonBackdrop', 'el => el.getAttribute("dir")')
+    backdrop_lang = page.eval_on_selector('#importJsonBackdrop', 'el => el.getAttribute("lang")')
+    computed_dir = page.eval_on_selector('#importJsonBody h3', 'el => getComputedStyle(el).direction')
+    modal_title_he = strip_bidi(page.eval_on_selector('#importJsonBody h3', 'el => el.textContent'))
+    print("modal dir/lang/computed direction/title:", backdrop_dir, backdrop_lang, computed_dir, modal_title_he)
+    assert backdrop_dir == "rtl"
+    assert backdrop_lang == "he"
+    assert computed_dir == "rtl"
+    assert modal_title_he == "ייבוא JSON — צוותים ודירוגים"
 
     print("errors:", errors)
     assert errors == []
