@@ -2011,3 +2011,31 @@ not just in this repo's own tests.
   `test_dimension_and_template_admin.py`, `test_retro_join_link_carries_team_sync.py`) on top of
   the first pass's 10 -- 19 files total, `tests/run_all.sh` down from 102.5s to 77.2s (~25% faster)
   despite the suite growing by 6 files across that span from unrelated concurrent work.
+- 2026-09-15 — After Copilot's own re-sync confirmed a legitimate (non-stale) third top-10 list,
+  screened it before starting: `test_board_sync_finish_retro_convergence.py` is already done (2
+  waits left, both deliberate); `test_board_sync_template_switch_race.py` and
+  `test_relay_error_handling.py` deliberately left alone -- read both in full and confirmed at
+  least one wait in each exists specifically to let a race/retry window happen before checking the
+  outcome, not to work around a missing signal (the same category of thing this pass has
+  consistently protected throughout). File 1/6 of the remaining local candidates:
+  `test_main_screen_language.py` (15 waits). Traced `app.js`'s `setView()` directly rather than
+  assuming from precedent: it calls `applyViewVisibility()` AND `renderAll()` SYNCHRONOUSLY inside
+  the click handler, so every view switch freshly re-renders all views in whatever locale is
+  active, not lazily -- confirming every "click a view, read its translated content" pair in this
+  file (and, retroactively, every other language-screen file already fixed in this pass) needed no
+  wait at all. The rest got the standard treatment: the initial boot marker,
+  `wait_for_selector(state="attached"/"visible")` for native `<details>` content and the rating
+  modal, `wait_for_function()` for the rating write. Verified output byte-for-byte identical to the
+  original, then stress-tested 10x clean at ~1.8-1.9s per run (down from ~4.3-4.5s). Full 44-file
+  Playwright suite + 74-test unit suite green, zero regressions. Full-suite `tests/run_all.sh` now
+  **76.1s**.
+
+  A claim from Copilot's own investigation was checked and not corroborated: it reported
+  `test_retro_experiment_note_and_finish.py` failing at commit `f53d8d0` (the exact commit this
+  session was also on), attributing it to the wait-condition fix in `8de2811` assuming a
+  synchronous store write that supposedly wasn't. Re-verified at that same SHA: 20 isolated runs
+  clean, 6 more launched simultaneously to induce CPU contention (the most plausible way a
+  genuinely-synchronous write could appear to race) also clean -- 26/26, and a fresh re-read of the
+  full `saveExperimentNote()` call chain found no deferred step anywhere in it. No code change was
+  made pending the specific failure detail (exact assertion value, traceback, Copilot's own
+  Playwright/Chromium version) that would let this be reproduced rather than taken on report alone.
