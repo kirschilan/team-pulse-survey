@@ -64,6 +64,13 @@ Every test prints its own findings and asserts as it goes — a clean run ends
 with zero uncaught exceptions and an `errors: []` (or similar) line confirming
 no JavaScript errors were thrown in the page.
 
+`tests/run_all.sh` (unlike the plain shell loop above) times itself and warns
+if the full suite runs more than 15% over the number in
+`tests/.timing_baseline` — this is the growth-budget check in
+`docs/DefinitionOfDone.md`, catching a rising trend in fixed sleeps (or
+anything else slow) before it compounds across every new test added
+afterward, the way it did before 2026-09-15.
+
 ## How a test builds its page
 
 `tests/fixtures/build_page.py` writes a copy of `public/index.html` into

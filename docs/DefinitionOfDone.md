@@ -35,6 +35,28 @@ duplicated or contradicted elsewhere:
   same way the 2026-09-15 wait-condition pass above got started: Copilot's
   own serial timing (146.910s, then corrected after a stale-checkout
   re-run) is what named the slowest files worth looking at, not a hunch.
+- **That signal needed a real trigger, not just a note to log — this
+  is the growth-budget agreement.** The bullet above stayed passive too
+  long: `run_all.sh` grew from ~102.5s to over 5 minutes, one
+  individually-defensible `wait_for_timeout()` at a time, added to one
+  new test after another, before anyone stopped to treat the trend
+  itself as a problem — the eventual fix (the 2026-09-15 wait-condition
+  pass, run in two sessions) cost far more than catching each file would
+  have at the time it was written. `tests/run_all.sh` now times itself
+  and checks the result against `tests/.timing_baseline`, printing a loud
+  warning if the full suite runs more than 15% over that number — so the
+  signal shows up on every run, for every contributor, without anyone
+  having to remember to time it by hand. If you see that warning: grep
+  `tests/test_*.py` for new `wait_for_timeout()` calls added since the
+  baseline was last set and fix the ones lacking the justification the
+  next bullet requires, before adding more Playwright files in the same
+  pattern. If the growth is legitimate (a real increase in file count,
+  not slop), update `tests/.timing_baseline` to the new number and say so
+  in STATUS.md. **This applies equally to every contributor working in
+  this repo — Copilot, Codex, Claude Code, or a human writing a test by
+  hand** — none of them can be expected to notice a compounding trend
+  from their own one new test in isolation, so the check has to live
+  where the suite itself runs, not in any one tool's own habits.
 - A Playwright test earns its slower cost only when it covers something a
   unit test structurally can't (real DOM, `localStorage`, a real WebSocket,
   `crypto.subtle`) — see `tests/README.md`'s "Performance" section before

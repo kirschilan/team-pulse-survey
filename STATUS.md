@@ -2368,3 +2368,22 @@ not just in this repo's own tests.
   check both sides' Playwright/Chromium versions before concluding a cross-machine test-timing
   report is a real bug, a flake, or a harness artifact. No production code or test wait logic was
   changed -- the instrumented trace gave no reason to believe either needs it.
+- 2026-09-15 — Product-owner retrospective on the whole wait-condition saga: the standing
+  "log a rising `run_all.sh` time in STATUS.md" agreement (added earlier the same day) stayed
+  passive too long in practice -- the suite grew from ~102.5s to over 5 minutes, one
+  individually-defensible `wait_for_timeout()` at a time, added to one new test after another,
+  before anyone treated the trend itself as worth stopping for. Nobody could see that trend
+  without manually timing every run and remembering to compare, which is exactly what wasn't
+  happening. Closed that gap with an actual mechanism rather than another paragraph: `tests/run_all.sh`
+  now times itself and compares the result against a new tracked file, `tests/.timing_baseline`
+  (currently 60, matching this session's own measured ~59-62s range), printing a loud warning if
+  the full suite runs more than 15% over that number -- pointing at the new `wait_for_timeout()`
+  audit and baseline-update steps in `docs/DefinitionOfDone.md`'s new "growth budget" entry.
+  This is explicitly scoped to every contributor now working in this repo -- Copilot (VS Code),
+  Codex, Claude Code, and a human writing a test by hand -- since none of them can be expected to
+  notice a compounding trend from their own one new test in isolation; the check now lives where
+  the suite itself runs, not in any one tool's habits. `tests/README.md` cross-references it.
+  Verified: `run_all.sh` reports its own elapsed time and does not false-trigger on a clean run
+  (60s, under the 69s threshold); the trigger arithmetic was separately verified against a
+  temporarily-lowered baseline. 81/81 unit tests and the full 46-file Playwright suite still pass
+  unchanged -- this only added self-reporting, no test behavior changed.

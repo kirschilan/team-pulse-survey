@@ -88,6 +88,7 @@ if [ "$#" -gt 0 ]; then
 fi
 
 status=0
+START_TIME=$(date +%s)
 for shard in $(seq 0 $((SHARD_COUNT - 1))); do
   files=()
   file_index=0
@@ -111,5 +112,35 @@ if [ "$status" -eq 0 ]; then
   echo "All Playwright tests passed (TEST_JOBS=$JOBS, $SHARD_COUNT shards)."
 else
   echo "One or more Playwright tests FAILED (TEST_JOBS=$JOBS, $SHARD_COUNT shards) -- see above."
+fi
+
+# Self-reported timing against a tracked baseline (tests/.timing_baseline) --
+# added 2026-09-15 after fixed wait_for_timeout() sleeps, each individually
+# defensible, quietly grew this suite from ~102s to over 5 minutes before
+# anyone treated the trend as worth stopping for. Nobody could see that
+# trend without manually timing every run, so this makes it show up
+# automatically, for every contributor (Copilot, Codex, Claude Code, or a
+# human), without anyone having to remember to check. See
+# docs/DefinitionOfDone.md's "growth budget" entry.
+ELAPSED=$(( $(date +%s) - START_TIME ))
+echo "Total wall-clock time: ${ELAPSED}s"
+BASELINE_FILE="tests/.timing_baseline"
+if [ -f "$BASELINE_FILE" ]; then
+  BASELINE=$(tr -d '[:space:]' < "$BASELINE_FILE")
+  case "$BASELINE" in
+    ''|*[!0-9]*) : ;;  # malformed baseline file -- skip the comparison silently
+    *)
+      THRESHOLD=$((BASELINE * 115 / 100))
+      if [ "$ELAPSED" -gt "$THRESHOLD" ]; then
+        echo ""
+        echo "*** ${ELAPSED}s is more than 15% over the ${BASELINE}s baseline in $BASELINE_FILE. ***"
+        echo "*** Before adding more Playwright files in the same pattern: grep tests/test_*.py"
+        echo "*** for new wait_for_timeout() calls added since the baseline was set, and fix any"
+        echo "*** that lack the justification docs/DefinitionOfDone.md requires. If the growth is"
+        echo "*** legitimate (a real increase in file count, not slop), update $BASELINE_FILE."
+        echo ""
+      fi
+      ;;
+  esac
 fi
 exit "$status"
