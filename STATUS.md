@@ -1899,3 +1899,13 @@ not just in this repo's own tests.
   `tests/_run_one.sh` -- was deferred: the incident that prompted it (the relay stdout-pipe
   deadlock, already fixed above) was a real code bug, not evidence a bug-free test can legitimately
   run that long, so it needs its own analysis before becoming a standing rule.
+- 2026-09-15 — Copilot pass file 4/8: `test_starter_template_spotify.py` (18 waits). Same
+  established treatment throughout: `wait_for_selector(state="attached"/"visible")` for the
+  templates list, native `<details>` content (the Tribe legend, under Hebrew and after switching
+  back), and the confirm modal; `wait_for_function()` polling the store for the Five
+  Dysfunctions/Spotify template-load and session-creation writes -- using `dimensions/release` (a
+  key unique to Spotify, absent while Five Dysfunctions was active) as the real signal for
+  "Spotify's dimensions landed back", adapting the by-now-standard template-load idiom to a
+  load-then-reload-the-original sequence rather than a first-time load. Verified output identical
+  to the original (aside from timestamps), then stress-tested 10x clean at ~1.9-2.0s per run (down
+  from ~5.0-5.1s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
