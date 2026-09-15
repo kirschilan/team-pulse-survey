@@ -141,10 +141,26 @@ function isPlainObject(v){ return !!v && typeof v === "object" && !Array.isArray
 var VALID_RATING_COLORS = { good:true, warn:true, crit:true, unscored:true };
 var VALID_RATING_TRENDS = { up:true, down:true, flat:true };
 
+// Third review round on the same PR: bracket lookup (TABLE[value]) directly
+// on an untyped value is unsafe three ways -- a non-string can COERCE to a
+// matching key string (an array like ["good"] stringifies to exactly
+// "good"); a string naming an INHERITED Object.prototype property (e.g.
+// "constructor") reads truthy even though it was never one of the real
+// enum values; and an object with a non-callable `toString` THROWS
+// converting itself into a property key, uncaught -- the same "bypasses the
+// friendly error UI" failure as the squad-shape fix above, just reached
+// through the rating check instead. `typeof value === "string"` first
+// means a throw can never happen (only strings ever reach the lookup) and
+// forecloses the coercion case; `hasOwnProperty` (not bracket lookup) means
+// an inherited property name never counts as a match.
+function isValidEnumWord(value, table){
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(table, value);
+}
+
 function isValidRating(r){
   if(!isPlainObject(r)) return false;
-  if(r.color !== undefined && !VALID_RATING_COLORS[r.color]) return false;
-  if(r.trend !== undefined && !VALID_RATING_TRENDS[r.trend]) return false;
+  if(r.color !== undefined && !isValidEnumWord(r.color, VALID_RATING_COLORS)) return false;
+  if(r.trend !== undefined && !isValidEnumWord(r.trend, VALID_RATING_TRENDS)) return false;
   if(r.note !== undefined && typeof r.note !== "string") return false;
   return true;
 }

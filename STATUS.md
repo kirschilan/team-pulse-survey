@@ -2525,3 +2525,25 @@ not just in this repo's own tests.
   catching a partial/silent write, not just "the literal bad value isn't there." Stress-tested
   10x clean. Full suite green: 107/107 unit tests, all 48 Playwright files, relay's own protocol
   suite. Same branch/PR again.
+- **2026-09-15 — Story 13, item 3a: a sixth review finding on PR #7, a third round on the same
+  validation fix, all three parts real.** The rating-enum check added for finding #5 used bracket
+  lookup (`VALID_RATING_COLORS[r.color]`) directly on an untyped value -- unsafe three distinct
+  ways, each independently verified with a throwaway `node -e` repro before touching anything:
+  (1) a non-string COERCES to a matching key string (`["good"]` stringifies to exactly `"good"`,
+  so an array passed the check); (2) a string naming an INHERITED `Object.prototype` property
+  (e.g. `"constructor"`) read truthy even though it was never one of the four real colors; (3) an
+  object with a non-callable `toString` THROWS converting itself into a property key
+  (`TypeError: Cannot convert object to primitive value`) -- uncaught, the same
+  "bypasses the friendly error UI" failure as finding #3, just reached through the rating check
+  this time instead of the squad-shape check. Fixed with `isValidEnumWord()`: requiring
+  `typeof value === "string"` FIRST means a throw can never happen (only strings ever reach the
+  lookup) and forecloses the coercion case; `Object.prototype.hasOwnProperty.call()` (not bracket
+  lookup) means an inherited property name never counts as a match. 5 new unit tests (array
+  coercion and inherited-property cases for both `color` and `trend`, plus the throwing case
+  wrapped in `assert.doesNotThrow`), plus one new Playwright scenario for the throwing case
+  specifically (the one genuinely crash-capable of the three -- the other two are pure
+  validation-logic mistakes with no throw risk, so left at unit-level coverage, proportionate to
+  what each actually risks) -- confirms the friendly error shows, zero uncaught page errors, and
+  the persisted store is untouched, same before/after-equality-snapshot rigor as finding #5's
+  regression. Stress-tested 10x clean. Full suite green: 112/112 unit tests, all 48 Playwright
+  files, relay's own protocol suite. Same branch/PR a third time.

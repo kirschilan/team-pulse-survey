@@ -122,6 +122,52 @@ test("parseBoardImportFile() rejects a rating whose trend isn't one of the app's
   assert.equal(result.error, "invalid-rating");
 });
 
+// Third review round on the same PR: the enum check above used bracket
+// lookup (VALID_RATING_COLORS[r.color]) directly on an untyped value, which
+// is unsafe in three distinct ways a plain "is it in the enum" check misses:
+// (1) a non-string coerces to a matching key string (an array [\"good\"]
+// stringifies to exactly "good"); (2) a string naming an INHERITED property
+// of the plain-object lookup table (e.g. "constructor") reads truthy even
+// though it was never one of the four real colors; (3) an object with a
+// non-callable `toString` throws TypeError converting itself into a
+// property key, uncaught, the same "bypasses the friendly error UI" failure
+// mode as finding #3, just reached through the rating check instead of the
+// squad-shape check. Fixed by requiring `typeof value === "string"` FIRST
+// (throws never reach a non-string, and non-strings can't coerce to begin
+// with) before checking OWN-property membership, not bracket lookup.
+
+test("parseBoardImportFile() rejects a rating color that isn't a string, even if it would coerce to a valid one", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: ["good"] } } }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-rating");
+});
+
+test("parseBoardImportFile() rejects a rating color naming an inherited Object.prototype property", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: "constructor" } } }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-rating");
+});
+
+test("parseBoardImportFile() rejects a non-coercible rating color without throwing", () => {
+  assert.doesNotThrow(() => {
+    const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: { toString: null } } } }] }));
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "invalid-rating");
+  });
+});
+
+test("parseBoardImportFile() rejects a rating trend that isn't a string, even if it would coerce to a valid one", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { trend: ["up"] } } }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-rating");
+});
+
+test("parseBoardImportFile() rejects a rating trend naming an inherited Object.prototype property", () => {
+  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { trend: "hasOwnProperty" } } }] }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid-rating");
+});
+
 test("parseBoardImportFile() accepts a well-formed rating with every known-good field", () => {
   const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: "good", trend: "up", note: "great work" } } }] }));
   assert.equal(result.ok, true);

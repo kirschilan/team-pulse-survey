@@ -126,6 +126,29 @@ with sync_playwright() as p:
     page.click('#importJsonCloseErr')
     page.wait_for_selector('#importJsonBackdrop[hidden]', state="attached")
 
+    # ---- error state: a rating color that throws converting itself to a
+    # property key (review finding, round 3: bracket-lookup enum checking
+    # used the raw value as an object key; {toString:null} can't be coerced
+    # to a primitive at all, so JS's own key-conversion throws BEFORE any
+    # app validation code even runs). Most severe of the three round-3
+    # findings since it's the one that could genuinely crash uncaught, same
+    # class as the round-1 malformed-squad-entry bug -- the others
+    # (array-coercion, inherited-property names) are pure validation-logic
+    # mistakes with no throw risk, so they're covered at the unit level only. ----
+    print("=== malformed rating (color is a non-primitive-coercible object) ===")
+    dims_before2 = squad1_dims()
+    throwing_color_file = {"formatVersion": 1, "squads": [{"name": "Squad 1", "dimensions": {"release": {"color": {"toString": None}}}}]}
+    open_with_file(json.dumps(throwing_color_file), "throwing_color.json")
+    page.wait_for_selector('#importJsonBody .error-state')
+    err_text_throw = strip_bidi(page.eval_on_selector('#importJsonBody .error-state p', 'el => el.textContent'))
+    print("error shown:", err_text_throw)
+    assert "doesn't look like a Squad Pulse export" in err_text_throw
+    assert errors == [], "a non-primitive-coercible rating field must be handled, not thrown as an uncaught page error"
+    dims_after2 = squad1_dims()
+    assert dims_after2 == dims_before2, "must never reach the persisted store"
+    page.click('#importJsonCloseErr')
+    page.wait_for_selector('#importJsonBackdrop[hidden]', state="attached")
+
     # ---- MERGE: Squad 1 (release overridden, process untouched), Squad 3 new, Squad 2 untouched ----
     print("=== merge import ===")
     merge_file = {
