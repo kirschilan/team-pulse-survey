@@ -2420,6 +2420,22 @@ not just in this repo's own tests.
   otherwise-unobservable callback, and still polls/asserts the stored note.
   Verified with 10 focused runs, the full 46-file Playwright suite through
   `run_all.sh` (TEST_JOBS=2, 3 shards, 32s), and the Node unit suite; all green.
+- 2026-09-15 — **Fixed finding #3 of a full app-wide untranslated-text scan**: five screen-reader-
+  only `aria-label`s were never wired to `t()`/`data-i18n` at all, so a Hebrew-locale screen-reader
+  user always heard them in English regardless of locale (invisible to a plain visible-text scan --
+  caught by a separate static-attribute grep). Four are static markup: the header's Tribe/Squad/
+  Admin view switcher ("View"), the Tribe stats section ("Snapshot at a glance"), the Admin
+  language switcher ("Language"), and the team-link input ("Team link" -- reused the existing
+  `admin.teamSync.linkLabel` key rather than duplicating it, since the visible label right next to
+  it already says the same thing). `i18n.js`'s `applyStaticTranslations()` gained a
+  `[data-i18n-aria-label]` handler, mirroring its existing `-placeholder`/`-title` ones. The fifth
+  (`retro-facilitator.js`'s reveal-mode toggle, "Reveal mode") is JS-rendered, so it calls `t()`
+  directly instead, matching this file's own established pattern for JS-built aria-labels. New
+  locale keys: `header.viewSwitchAriaLabel`, `tribe.stats.sectionAriaLabel`,
+  `admin.language.ariaLabel`, `retro.reveal.ariaLabel`. Test-first: new
+  `tests/test_aria_label_language.py` covers all five, confirmed failing before the fix (the fifth
+  via a real retro session's reveal-toggle), passing after. Full 81-test unit suite + 48-file
+  Playwright suite green.
 - **2026-09-15 — Story 13, item 3a: JSON import for squads & ratings**, additive alongside `toCSV()`'s
   existing CSV import. Design reviewed first as a real, interactive Artifact mockup ("Squad Import
   Preview" -- see the conversation this continues from) before any code, per DoD §3; the product

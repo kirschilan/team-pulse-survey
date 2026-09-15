@@ -80,6 +80,7 @@ var LOCALE_EN = {
   "header.viewTribe": "Tribe view",
   "header.viewSquad": "Squad view",
   "header.viewAdmin": "Admin",
+  "header.viewSwitchAriaLabel": "View",
 
   // Story 9: the Templates modal's own chrome. The template NAMES
   // themselves and a starter template's own dimension content (Stories
@@ -110,6 +111,7 @@ var LOCALE_EN = {
   "admin.language.heading": "Language",
   "admin.language.betaBadge": "Beta",
   "admin.language.hint": "Choose the language for the Admin panel. More of the app will follow as translation coverage grows.",
+  "admin.language.ariaLabel": "Language",
 
   "admin.boardSetup.heading": "Board setup",
   "admin.boardSetup.hint": "Manage the survey model and squad list. Changes here apply to everyone viewing this board.",
@@ -203,6 +205,7 @@ var LOCALE_EN = {
 
   "tribe.stats.assessedLabel": "{unitPlural} assessed",
   "tribe.stats.assessedSub": "{countUnit} tracked",
+  "tribe.stats.sectionAriaLabel": "Snapshot at a glance",
   "tribe.stats.riskLabel": "Items at risk",
   "tribe.stats.riskSub": "dimensions marked red across all squads",
   "tribe.stats.hotspotLabel": "Top systemic hotspot",
@@ -299,6 +302,7 @@ var LOCALE_EN = {
   "retro.retroLabel": "Retro: “{name}”.",
   "retro.codeBlock.heading": "Session code",
   "retro.codeBlock.hint": "Have teammates open Squad Pulse and tap “Join a retro” up top, then type this code in.",
+  "retro.reveal.ariaLabel": "Reveal mode",
   "retro.reveal.hold": "Hold results",
   "retro.reveal.live": "Show live",
   "retro.countLine.one": "1 teammate has submitted so far.",

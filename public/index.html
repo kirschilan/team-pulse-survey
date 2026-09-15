@@ -23,7 +23,7 @@
       <button class="btn ghost" id="aboutHelpBtn" type="button" data-i18n="about.open">About &amp; help</button>
       <button class="btn ghost" id="joinCodeBtn" type="button" data-i18n="header.joinRetro">Join a retro</button>
       <button class="btn ghost" id="backToRetroBtn" type="button" hidden data-i18n="header.backToRetro">&larr; Back to my retro</button>
-      <div class="view-switch" role="tablist" aria-label="View">
+      <div class="view-switch" role="tablist" aria-label="View" data-i18n-aria-label="header.viewSwitchAriaLabel">
         <button class="view-btn" data-view="tribe" type="button" role="tab" data-i18n="header.viewTribe">Tribe view</button>
         <button class="view-btn" data-view="squad" type="button" role="tab" data-i18n="header.viewSquad">Squad view</button>
         <button class="view-btn" data-view="admin" type="button" role="tab" data-i18n="header.viewAdmin">Admin</button>
@@ -33,7 +33,7 @@
 
   <!-- ================= TRIBE VIEW ================= -->
   <section id="viewTribe">
-    <section class="stats" aria-label="Snapshot at a glance">
+    <section class="stats" aria-label="Snapshot at a glance" data-i18n-aria-label="tribe.stats.sectionAriaLabel">
       <div class="stat">
         <div class="label" id="statAssessedLabel">Squads assessed</div>
         <div class="value" id="statAssessed" dir="ltr">&mdash;</div>
@@ -103,7 +103,7 @@
         <span class="beta-badge" data-i18n="admin.language.betaBadge">Beta</span>
       </h2>
       <p class="hint" data-i18n="admin.language.hint">Choose the language for the Admin panel. More of the app will follow as translation coverage grows.</p>
-      <div class="view-switch lang-switch" role="tablist" aria-label="Language">
+      <div class="view-switch lang-switch" role="tablist" aria-label="Language" data-i18n-aria-label="admin.language.ariaLabel">
         <button class="lang-btn" data-lang="en" type="button" role="tab">English</button>
         <button class="lang-btn" data-lang="he" type="button" role="tab">עברית</button>
       </div>
@@ -162,7 +162,7 @@
           <div class="join-link-col">
             <div class="field-label" style="margin-top:0;" data-i18n="admin.teamSync.linkLabel">Team link</div>
             <div class="join-link-row">
-              <input class="join-link-input" id="teamLinkInput" type="text" readonly aria-label="Team link">
+              <input class="join-link-input" id="teamLinkInput" type="text" readonly aria-label="Team link" data-i18n-aria-label="admin.teamSync.linkLabel">
               <button class="btn" id="teamCopyLinkBtn" type="button" data-i18n="admin.teamSync.copy">Copy</button>
             </div>
           </div>
