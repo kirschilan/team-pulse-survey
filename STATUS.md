@@ -2547,3 +2547,19 @@ not just in this repo's own tests.
   the persisted store is untouched, same before/after-equality-snapshot rigor as finding #5's
   regression. Stress-tested 10x clean. Full suite green: 112/112 unit tests, all 48 Playwright
   files, relay's own protocol suite. Same branch/PR a third time.
+- 2026-09-15 — **Fixed two gaps from a full app-wide untranslated-text scan** (findings #1/#2 of
+  4; #3, five untranslated `aria-label`s, deferred; #4/#5, CSV import/export chrome and file
+  content, explicitly out of scope -- product owner call): the generic confirm modal
+  (`modals.js`'s `openConfirm()`, shared by every "remove/close/delete/finish" confirmation in the
+  app) had two real gaps under Hebrew. (1) Its Cancel button (`#confirmCancel`) was never touched
+  by `openConfirm()` -- title/message/OK button are all set per-call via `t()`, but Cancel stayed
+  at its static English HTML default in every locale, on every confirm dialog in the app. Fixed
+  with a new shared `common.cancel` key (`locales/en.js`/`he.js`, alongside the existing
+  `common.ok`) and a `data-i18n="common.cancel"` on the static button -- no `modals.js` change
+  needed, since `i18n.js`'s `applyStaticTranslations()`/`setLocale()` already handle a static
+  `data-i18n` element for free. (2) `#confirmBackdrop` was missing from `i18n.js`'s
+  `RTL_SCOPED_CONTAINERS` list, so even with correctly-translated Hebrew text, the dialog box
+  itself never got `dir="rtl"` -- added it. Test-first: extended
+  `test_dim_manager_language.py`'s existing remove-confirm-dialog scenario with both assertions,
+  confirmed failing before either fix, passing after. Full 81-test unit suite + 47-file Playwright
+  suite green.
