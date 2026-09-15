@@ -22,23 +22,30 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
 
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('#templatesBtn')
-    page.wait_for_timeout(150)
+    # eval_on_selector_all()/click() below don't auto-wait for a not-yet-
+    # attached element -- wait for the real "templates list rendered"
+    # signal instead of guessing.
+    page.wait_for_selector('#tplList .tpl-row', state="attached")
     page.click('#tplList .tpl-row[data-id="starter-5dysfunctions"] [data-action="load"]')
-    page.wait_for_timeout(100)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     page.click('#confirmOk')
-    page.wait_for_timeout(300)
+    # evaluate() below doesn't auto-wait -- wait for the real "Five
+    # Dysfunctions' dimensions landed" signal (loadTemplate()'s own Promise
+    # chain) instead of guessing how long it takes.
+    page.wait_for_function("() => window.__FAKE_STORE__['dimensions/trust'] !== undefined")
+    # setLocale() (i18n.js) is fully synchronous -- state, localStorage, DOM
+    # re-render all happen inline in the click handler -- so no wait is
+    # needed here.
     page.click('.lang-btn[data-lang="he"]')
-    page.wait_for_timeout(150)
 
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
+    # eval_on_selector() below doesn't auto-wait -- wait for the real
+    # "squad-1's own detail rendered" signal instead of guessing.
+    page.wait_for_selector('#startSessionBtn', state="attached")
 
     print("=== no-session card: Hebrew hint + Start button, no more forced ltr opt-out ===")
     assert page.eval_on_selector('.session-card', 'el=>el.getAttribute("dir")') != "ltr"
@@ -49,7 +56,10 @@ with sync_playwright() as p:
     assert start_btn_he != "Start retro session" and start_btn_he.strip()
 
     page.click('#startSessionBtn')
-    page.wait_for_timeout(250)
+    # evaluate() below doesn't auto-wait -- the fake store's set() writes
+    # into __FAKE_STORE__ synchronously, but poll for the real condition
+    # rather than assume that timing.
+    page.wait_for_function("() => Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/')).length === 1")
 
     session_info = page.evaluate("""
       (function(){
@@ -91,8 +101,10 @@ with sync_playwright() as p:
     assert save_note_btn_he != "Save note" and save_note_btn_he.strip()
 
     page.fill('#experimentNoteBox', 'test note')
+    # No wait needed here -- the click handler (retro-facilitator.js) sets
+    # hint.hidden = false SYNCHRONOUSLY; the setTimeout it also schedules
+    # only re-hides the hint 1800ms later, it doesn't gate showing it.
     page.click('#saveExperimentNoteBtn')
-    page.wait_for_timeout(100)
     saved_hint_he = page.eval_on_selector('#expNoteSavedHint', 'el=>el.textContent')
     print("'Saved' hint (Hebrew):", saved_hint_he)
     assert saved_hint_he != "Saved" and saved_hint_he.strip()
@@ -123,9 +135,15 @@ with sync_playwright() as p:
         window.__NOTIFY__('sessions/%s/responses');
       })(%s);
     """ % (sid, sid, json.dumps(responses)))
-    page.wait_for_timeout(200)
+    # No wait needed here -- window.__NOTIFY__() calls the fake store's
+    # notify() SYNCHRONOUSLY (unlike a real onSnapshot's first delivery,
+    # which the fixture delays), which synchronously updates
+    # state.sessionResponses inside retro-facilitator.js's listener before
+    # this evaluate() call even returns.
     page.click('.reveal-btn[data-reveal="live"]')
-    page.wait_for_timeout(200)
+    # eval_on_selector() below doesn't auto-wait -- wait for the real
+    # "live rows rendered" signal instead of guessing.
+    page.wait_for_selector('.live-dim-row', state="attached")
 
     live_heading_he = page.eval_on_selector('.live-block .field-label', 'el=>el.textContent')
     count_line_he = page.eval_on_selector('.live-block > .hint', 'el=>el.textContent')
@@ -141,25 +159,31 @@ with sync_playwright() as p:
     print("response-table summary (Hebrew):", resp_summary_he)
     assert resp_summary_he.strip() and "response" not in resp_summary_he.lower()
     page.click('.resp-details summary')
-    page.wait_for_timeout(100)
+    # eval_on_selector() below doesn't auto-wait, and expanding a native
+    # <details> is a synchronous browser toggle -- the response table was
+    # already rendered into the collapsed-but-attached markup, not built
+    # lazily on open.
+    page.wait_for_selector('.resp-table tbody tr th', state="attached")
     resp_row_head = page.eval_on_selector('.resp-table tbody tr th', 'el=>el.textContent')
     print("response row label (Hebrew):", resp_row_head)
     assert resp_row_head != "Response 1" and resp_row_head.strip()
 
     print("=== override editor: title/squadline/note-placeholder are Hebrew ===")
     page.click('.override-btn[data-override-dim="trust"]')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#backdrop', state="visible")  # real modal-open signal, not a guess
     squadline_he = page.eval_on_selector('#modalSquadline', 'el=>el.textContent')
     note_ph_he = page.eval_on_selector('#modalNote', 'el=>el.placeholder')
     print("override squadline / note placeholder (Hebrew):", squadline_he, "|", note_ph_he)
     assert squadline_he != "Overriding this retro’s consolidated result" and squadline_he.strip()
     assert note_ph_he != "Why override this? (optional)" and note_ph_he.strip()
+    # click() below auto-waits for its own target -- #closeSessionBtn only
+    # becomes actionable once the modal backdrop has actually closed and
+    # stops covering it, so no separate wait is needed here.
     page.click('#modalCancel')
-    page.wait_for_timeout(100)
 
     print("=== close-session confirm dialog is Hebrew ===")
     page.click('#closeSessionBtn')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     close_title_he = page.eval_on_selector('#confirmTitle', 'el=>el.textContent')
     close_msg_he = page.eval_on_selector('#confirmMessage', 'el=>el.textContent')
     close_ok_he = page.eval_on_selector('#confirmOk', 'el=>el.textContent')
@@ -167,12 +191,12 @@ with sync_playwright() as p:
     assert close_title_he != "Close this retro session?" and close_title_he.strip()
     assert "Squad 1" in close_msg_he and "existing ratings" not in close_msg_he
     assert close_ok_he.strip() and close_ok_he != "Close without applying results"
+    # Same auto-wait reasoning as #modalCancel above.
     page.click('#confirmCancel')
-    page.wait_for_timeout(100)
 
     print("=== finish confirm dialog is Hebrew, includes the dimension summary ===")
     page.click('#finishSessionBtn')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     finish_title_he = page.eval_on_selector('#confirmTitle', 'el=>el.textContent')
     finish_msg_he = page.eval_on_selector('#confirmMessage', 'el=>el.textContent')
     finish_ok_he = page.eval_on_selector('#confirmOk', 'el=>el.textContent')
@@ -180,18 +204,17 @@ with sync_playwright() as p:
     assert finish_title_he != "Finish this retro?" and finish_title_he.strip()
     assert "Squad 1" in finish_msg_he
     assert finish_ok_he != "Finish & apply" and finish_ok_he.strip()
+    # Same auto-wait reasoning as #modalCancel above.
     page.click('#confirmCancel')
-    page.wait_for_timeout(100)
 
     print("=== switching back to English restores every string above ===")
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="en"]')
-    page.wait_for_timeout(150)
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
+    # eval_on_selector() below doesn't auto-wait -- wait for the real
+    # "squad-1's own detail rendered" signal instead of guessing.
+    page.wait_for_selector('#finishSessionBtn', state="attached")
     assert page.eval_on_selector('.session-card h2', 'el=>el.textContent') == "Retro session in progress"
     assert page.eval_on_selector('#finishSessionBtn', 'el=>el.textContent') == "Finish retro & apply results"
 
