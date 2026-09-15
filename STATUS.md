@@ -2175,3 +2175,34 @@ not just in this repo's own tests.
   branch AND an untouched archive of baseline 786c3d5; this pre-existing failure
   is left visible, so the full green Definition of Done is not yet satisfied.
   Draft PR is for review, not a claim of release readiness.
+
+- 2026-09-15 — ROI review of `run_all.sh` for a proposed Playwright Clock API pass (see the
+  "clock-mocking" DoD question raised the same day) found the win too small to justify the
+  investment: only 3 `setTimeout()` calls exist anywhere in `public/js/`, one of them (the
+  save-experiment-note hint auto-hide) isn't waited on by any test at all, and the other two are
+  either isolated to one file (~1.5s) or entangled with real relay/WebSocket I/O and already
+  flagged do-not-touch. While doing that review, found a much bigger, zero-new-risk opportunity
+  instead: 22 files still carried old-style fixed `wait_for_timeout()` sleeps using the exact same
+  guessed-sleep pattern already converted in 19 files across this pass, totaling ~36 seconds of raw
+  sleep budget (2 of those 22 are the already-known deliberate exceptions). Started converting the
+  other 20. File 1/4 of this batch: `test_join_flow_language.py` (14 waits -> 0) -- standard boot
+  marker + synchronous setView()/setLocale()/joinCodeBtn-click treatment. One scenario needed real
+  thought: `joinSessionByCode()` (retro-join.js) is itself fully synchronous, and for a code that
+  never existed, its FIRST synchronous render already shows the final "not open" state (sess is
+  null both before AND after `listenJoinSession()`'s async first delivery, since the doc never
+  exists either way) -- so THAT one scenario needed no wait at all, unlike the two that pre-seed a
+  real doc (closed/open sessions), which do hit the genuine first-delivery gap and got
+  `wait_for_function()` on `state.joinSession.status`. File 2/4: `test_dim_manager_language.py`
+  (14 waits -> 0) -- `openDimManager()`/`closeDimManager()`/`openConfirm()`/`closeConfirm()` all
+  confirmed synchronous by reading `dimensions.js`/`modals.js` directly; reused established
+  templates-modal/Five-Dysfunctions-load treatment from prior files for the detour through it.
+  File 3/4: `test_templates_language.py` (13 waits -> 0) -- `openTemplates()`/`closeTemplates()`
+  confirmed synchronous; `saveCurrentAsTemplate()`'s live-branch write is picked up by the
+  long-lived "templates" `onSnapshot` listener (`db.js`), which re-renders synchronously via
+  `notify()` since the modal is open, but a `wait_for_function()` on the new row still stands in
+  for the guessed sleep rather than assuming that timing. File 4/4: `test_header_language.py`
+  (10 waits -> 0) -- `setSyncStatus()` (`db.js`) confirmed as a plain two-line synchronous DOM
+  update, so `evaluate()`'s own already-awaited script execution was sufficient. All 4 files
+  verified output byte-for-byte identical to their originals, each stress-tested 10x clean. Full
+  suite green: 74/74 unit tests, 45/45 Playwright tests (test count grew by one from the merged
+  About & help PR) via `tests/run_all.sh` (67.7s). 16 files remain in this batch.
