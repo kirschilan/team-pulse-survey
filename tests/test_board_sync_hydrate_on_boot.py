@@ -87,13 +87,11 @@ try:
         # already populated the instant goto() returns, no wait needed.
         a.click('.view-btn[data-view="admin"]')
         team_link = a.eval_on_selector("#teamLinkInput", "el=>el.value")
+        # "squads" is a purely local path (local-store.js's routedCollRef()
+        # only sends "sessions"/"boards" paths to the relay) -- addSquad()'s
+        # write is synchronous, same shape as fake_store.html, so no wait
+        # is needed before reading the new row right after this click.
         a.click("#addSquadBtn")
-        # addSquad()'s live branch (squads.js) doesn't apply a local copy at
-        # all -- the new row only appears once relay-client.js's collection
-        # .add() resolves room.ready and its optimistic local update fires
-        # the long-lived squads listener. A genuine async gap, so wait for
-        # the real row landing instead of guessing.
-        a.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).some(i => i.value === 'New squad')")
         a_squad_names = a.eval_on_selector_all("#adminSquadList input.admin-squad-name", "els=>els.map(e=>e.value)")
         print("=== device A's board after adding a squad ===")
         print(a_squad_names)
@@ -132,9 +130,8 @@ try:
 
         # ============ device B adds its own squad -- a newer push ============
         print("=== device B adds its own squad, producing a newer push ===")
+        # Same local-path synchronicity reasoning as device A's addSquadBtn click above.
         b.click("#addSquadBtn")
-        # Same genuine async-gap reasoning as device A's addSquadBtn click above.
-        b.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).filter(i => i.value === 'New squad').length === 2")
         b_squad_names_2 = b.eval_on_selector_all("#adminSquadList input.admin-squad-name", "els=>els.map(e=>e.value)")
         print("device B's board after adding its own squad:", b_squad_names_2)
         assert b_squad_names_2.count("New squad") == 2

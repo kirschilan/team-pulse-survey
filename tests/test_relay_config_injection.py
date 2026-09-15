@@ -82,7 +82,9 @@ try:
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.goto("file://" + str(harness_path.resolve()))
-        page.wait_for_timeout(100)
+        # No wait needed -- these are plain, synchronous top-level <script>
+        # tags, and page.goto()'s default waitUntil="load" already
+        # guarantees they've all executed by the time it returns.
         value = page.evaluate("window.SQUAD_PULSE_RELAY_URL")
         print("resolved SQUAD_PULSE_RELAY_URL on a file:// (would-otherwise-default) page:", value)
         assert value == "wss://relay.example.com", "the build-injected value must win over the file://-is-local default"
