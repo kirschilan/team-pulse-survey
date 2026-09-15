@@ -74,9 +74,9 @@ function buildBoardExport(){
       if(d.i18n) out.i18n = d.i18n;
       return out;
     }),
-    templates: (state.templates||[]).map(function(t){
-      var out = { id:t.id, name:t.name, unit:t.unit, unitPlural:t.unitPlural, attribution:t.attribution||"", dimensions:t.dimensions };
-      if(t.i18n) out.i18n = t.i18n;
+    templates: (state.templates||[]).map(function(tpl){
+      var out = { id:tpl.id, name:tpl.name, unit:tpl.unit, unitPlural:tpl.unitPlural, attribution:tpl.attribution||"", dimensions:tpl.dimensions };
+      if(tpl.i18n) out.i18n = tpl.i18n;
       return out;
     }),
     squads: sortedSquads().map(function(sq){
