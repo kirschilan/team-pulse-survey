@@ -1909,3 +1909,14 @@ not just in this repo's own tests.
   load-then-reload-the-original sequence rather than a first-time load. Verified output identical
   to the original (aside from timestamps), then stress-tested 10x clean at ~1.9-2.0s per run (down
   from ~5.0-5.1s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+- 2026-09-15 — Copilot pass file 5/8: `test_retro_statement_language.py` (17 waits). Setup mirrors
+  the established Tuckman-load treatment from earlier in this pass. One condition needed more
+  thought than the usual synchronous-fake-store case: `joinSessionByCode()` (retro-join.js) renders
+  the "Connecting..." placeholder synchronously (`state.joinSession` starts null), and only shows
+  the real statement form once `listenJoinSession()`'s `onSnapshot` listener delivers its FIRST
+  snapshot -- a genuine async gap the fake store deliberately delays (unlike its later, synchronous
+  `notify()` calls) -- so this waits for `.stmt-row` to attach instead of guessing. The answer
+  loop's per-click waits were removed too, same `refreshSubmitEnabled()`-is-synchronous finding as
+  the statement-survey file's identical loop. Verified output byte-for-byte identical to the
+  original, then stress-tested 10x clean at ~2.9-3.2s per run (down from ~5.7-6.0s). Full 44-file
+  Playwright suite + 74-test unit suite green, zero regressions.
