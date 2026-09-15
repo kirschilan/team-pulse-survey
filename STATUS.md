@@ -1871,3 +1871,19 @@ not just in this repo's own tests.
   idiom from the tooltip and RTL files earlier in this pass. Verified output byte-for-byte
   identical to the original, then stress-tested 10x clean at ~2.3-2.4s per run (down from
   ~5.3-5.4s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+- 2026-09-15 — Copilot pass file 3/8: `test_bilingual_dimension_editor.py` (19 waits, tied for
+  highest in the new list). The dimension-manager's field-edit functions
+  (`updateDimensionField`/`updateDimensionI18nField`/`updateDimensionArrayItem`/
+  `updateDimensionI18nArrayItem`, all in `dimensions.js`) mutate the dimension, call
+  `renderAll()`/`renderDimList()`, AND write to the store all SYNCHRONOUSLY inside the 'change'
+  handler -- confirmed by reading the handlers, not assumed -- so every `dispatch_event("change")`
+  in this file needed no wait at all before the next read or re-query (the file's own existing
+  comment about `renderDimList()` rebuilding `#dimList`'s innerHTML on every change already covers
+  the correctness angle of re-querying; this only removes the now-unnecessary timing guess around
+  it). The i18n-panel toggle click needed no wait either -- it only flips `panel.hidden` directly,
+  no store write or re-render involved. Everything else got the by-now-established treatment: the
+  initial boot marker, `wait_for_selector(state="attached"/"visible")` for renders and the confirm
+  modal, `wait_for_function()` polling the store for the new-dimension and Tuckman-load writes.
+  Verified output byte-for-byte identical to the original, then stress-tested 10x clean at
+  ~2.0-2.2s per run (down from ~4.8-4.9s). Full 44-file Playwright suite + 74-test unit suite green,
+  zero regressions.
