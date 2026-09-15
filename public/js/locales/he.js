@@ -110,6 +110,7 @@ var LOCALE_HE = {
   "admin.boardSetup.templates": "תבניות",
   "admin.boardSetup.importCsv": "ייבוא CSV",
   "admin.boardSetup.exportCsv": "ייצוא CSV",
+  "admin.boardSetup.exportJson": "ייצוא JSON (בטא)",
 
   "admin.teamSync.heading": "סנכרון צוות",
   "admin.teamSync.hint": "הלוח הזה מסתנכרן, בזמן אמת, עם כל מכשיר אחר שפותח את הקישור למטה — דרך אותו ריליי מוצפן ששיחות הרטרו כבר משתמשות בו. אף אחד בלי הקישור לא יכול לקרוא או לשנות אותו.",
