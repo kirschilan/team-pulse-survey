@@ -1951,3 +1951,22 @@ not just in this repo's own tests.
   at ~1.9-2.0s per run (down from ~4.6-4.8s). Full 44-file Playwright suite + 74-test unit suite
   green, zero regressions. Full-suite `tests/run_all.sh` now **79.5s** (down from 81.1s two entries
   ago, 102.5s at the start of this pass).
+- 2026-09-15 — Copilot pass file 8/8 (last local-fake-store file): `test_dimension_and_template_admin.py`
+  (16 waits). Builds its page via its own custom fake Firestore-like store (`FAKE_CLAUDE_JS`, not
+  the shared `fixtures/fake_store.html`) -- confirmed it has the same synchronous-`notify()`/
+  async-first-`onSnapshot`-delivery shape as the shared one before relying on that assumption, same
+  discipline as every other file in this pass (read the handler, don't assume from precedent). Same
+  established treatment throughout: `wait_for_function()` polling the store for dimension add/
+  reorder/delete/rate and template save/load, `wait_for_selector(state="attached"/"visible")` for
+  renders and modals, no wait for confirmed-synchronous field edits. The template-load step needed
+  a one-time marker rather than a generic "dimensions changed" check: `meta/config` is never
+  written by anything before the first `loadTemplate()` call in this fixture, so its mere existence
+  is a reliable signal. Verified output identical to the original (aside from timestamps -- this
+  included confirming a pre-existing, unrelated test quirk where an unqualified selector loads the
+  first starter template row instead of the just-saved custom one, present identically before and
+  after, left untouched as out of scope for a timing-only pass), then stress-tested 10x clean at
+  ~2.8-3.0s per run (down from ~5.8-5.9s). Full 44-file Playwright suite + 74-test unit suite green,
+  zero regressions. Full-suite `tests/run_all.sh` now **82.9s** (within normal run-to-run variance
+  of the 79.5s/81.1s figures above -- this pass's 8 local-fake-store files are now all done; only
+  the relay-backed `test_retro_join_link_carries_team_sync.py` remains from Copilot's second-pass
+  list).
