@@ -89,6 +89,12 @@ with sync_playwright() as p:
     assert confirm_title_he != "Remove dimension?" and confirm_title_he.strip()
     assert "Easy to release" in confirm_msg_he and "hidden (not deleted)" not in confirm_msg_he
     assert confirm_btn_he != "Remove" and confirm_btn_he.strip()
+    confirm_cancel_he = page.eval_on_selector('#confirmCancel', 'el=>el.textContent')
+    print("confirm dialog's Cancel button (Hebrew):", confirm_cancel_he)
+    assert confirm_cancel_he != "Cancel" and confirm_cancel_he.strip()
+    confirm_dir = page.eval_on_selector('#confirmBackdrop', 'el=>el.getAttribute("dir")')
+    print("confirm dialog dir attribute (should be rtl under Hebrew):", confirm_dir)
+    assert confirm_dir == "rtl"
     # closeConfirm()/closeDimManager() are synchronous hidden-attribute
     # toggles with no store write -- no wait needed before the next click.
     page.click('#confirmCancel')  # don't actually remove

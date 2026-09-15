@@ -199,6 +199,7 @@ var LOCALE_EN = {
   "common.breakdownLine": "{crit} red · {warn} yellow",
   "common.hasNoteTitle": "Has a note",
   "common.ok": "OK",
+  "common.cancel": "Cancel",
 
   "tribe.stats.assessedLabel": "{unitPlural} assessed",
   "tribe.stats.assessedSub": "{countUnit} tracked",

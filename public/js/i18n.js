@@ -26,7 +26,7 @@ var LOCALES = { en: LOCALE_EN, he: LOCALE_HE };
 var DEFAULT_LOCALE = "en";
 var SUPPORTED_LOCALES = ["en", "he"];
 var LANG_STORAGE_KEY = "squadpulse:lang";
-var RTL_SCOPED_CONTAINERS = ["viewAdmin", "viewTribe", "viewSquad", "backdrop", "appHeader", "templatesBackdrop", "viewJoin", "joinCodeBackdrop", "dimBackdrop", "aboutDialog", "importJsonBackdrop"];
+var RTL_SCOPED_CONTAINERS = ["viewAdmin", "viewTribe", "viewSquad", "backdrop", "appHeader", "templatesBackdrop", "viewJoin", "joinCodeBackdrop", "dimBackdrop", "aboutDialog", "importJsonBackdrop", "confirmBackdrop"];
 
 function t(key, vars){
   var loc = (state && state.ui && state.ui.locale) || DEFAULT_LOCALE;

@@ -187,6 +187,7 @@ var LOCALE_HE = {
   "common.breakdownLine": "{crit} אדום · {warn} צהוב",
   "common.hasNoteTitle": "יש הערה",
   "common.ok": "אישור",
+  "common.cancel": "ביטול",
 
   "tribe.stats.assessedLabel": "{unitPlural} שהוערכו",
   "tribe.stats.assessedSub": "{countUnit} במעקב",
