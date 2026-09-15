@@ -66,6 +66,7 @@ function start(){
     renderAll();
   }
   initDb();
+  showWelcomeOnFirstVisit();
 }
 
 if(window.claude && window.claude.hot){
