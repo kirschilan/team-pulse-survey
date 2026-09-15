@@ -69,6 +69,15 @@ cd "$(dirname "$0")/.."
 
 JOBS="${TEST_JOBS:-2}"
 
+if ! python3 -c 'import playwright' >/dev/null 2>&1; then
+  echo "Playwright is unavailable to python3. Activate the project environment or install it with: python3 -m pip install -r tests/requirements.txt" >&2
+  exit 2
+fi
+if [ ! -f relay/node_modules/ws/package.json ]; then
+  echo "Relay dependency ws is unavailable. Install it with: (cd relay && npm ci)" >&2
+  exit 2
+fi
+
 case "$JOBS" in
   ''|*[!0-9]*|0) echo "TEST_JOBS must be a positive integer" >&2; exit 2 ;;
 esac
