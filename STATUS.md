@@ -499,6 +499,58 @@ Chrome warning occurred while idle; the user's exact tab count was not confirmed
 - No runtime fix or stored-data shape change is included in this backlog update;
   no migration is required.
 
+## Security hardening backlog (2026-09-16)
+
+Reviewed the product owner's supplied Copilot pentest against shared preview
+commit `763bb45` and passively rechecked the reported Preview's response headers.
+Backlog priorities below are delivery priorities, not claims of demonstrated
+exploitation. No live room guessing, destructive relay probes, or access to other
+users' data was performed.
+
+| Priority | Story | User value and acceptance criteria | Status |
+|---|---|---|---|
+| P1 | SEC-1 — Bound relay abuse | As a facilitator, keep sessions available despite abusive connections or writes. Add configurable connection, concurrent-client, room-creation and message/write budgets, plus a transport payload ceiling before JSON parsing. Define per-client, per-room and global bounds; account for trusted proxy/IP handling and shared-office NAT. Test throttling, oversized frames, cleanup and recovery on a local relay, while normal participant bursts/reconnects work. Verify hosting-layer protections separately; CORS and Origin checks are not authentication. | Application-layer gap confirmed; deployment-layer limits unknown |
+| P2 | SEC-2 — Harden retro join credentials | As a participant, retain usable code/link entry with explicit confidentiality and write-access guarantees. Replace `Math.random()` session-code generation with unbiased Web Crypto randomness. Document the roughly 29.7-bit code space and that the room code also derives the encryption key. Evaluate guessing resistance and room-enumeration exposure with SEC-1; review any separation of routing ID, encryption secret and write capability with the product owner before changing the locked typed-code flow. Cover code/link/QR compatibility and define existing-session migration if the protocol changes. | Source confirmed; protocol/UX redesign requires review |
+| P2 | SEC-3 — Define and enforce browser hardening policy | As a user, avoid unauthorized framing and reduce the impact of future injection mistakes. Decide the permitted embedding origins before enforcing `frame-ancestors` (embedding remains an open product decision), with compatible X-Frame-Options where appropriate. Add a tested CSP covering actual scripts, styles, fonts and relay connections; explicitly set nosniff, Referrer-Policy and required Permissions-Policy directives. Verify deployed headers, EN/HE flows, QR/downloads and relay use; test a disallowed cross-origin parent with browser frame/navigation evidence, plus an allowed parent if embedding is supported. | Missing headers confirmed; clickjacking exploit not demonstrated |
+| P2 | SEC-4 — Reduce team-link secret exposure | As a facilitator, share a sensitive team link without sending its secret in the initial HTTP query. Plan fragment-based team links and QR codes, retaining legacy query-link compatibility; scrub a consumed secret even when it already matches localStorage. Verify initial requests contain no secret for new links, URL cleanup for new and returning users, reload/paste/join flows, and no secret-bearing diagnostics. Explain that possession grants board access and that localStorage remains readable by same-origin scripts; do not claim fragment links prevent XSS or accidental sharing. | Query-link and repeat-link cleanup gap confirmed; no secret theft demonstrated |
+| P3 | SEC-5 — Document static CORS requirements | As a maintainer, distinguish public asset sharing from access to sensitive endpoints. Identify which hosting layer adds wildcard ACAO, document whether consumers need it, and remove/restrict it only where appropriate. Verify headers and legitimate integrations after any change; require a separate explicit CORS/auth policy for future sensitive endpoints. | Wildcard header confirmed; no sensitive CORS exposure demonstrated |
+
+### Review evidence and qualifications
+
+- Copilot assessed the immutable Preview at
+  `https://team-pulse-survey-ibkehdp81-ilan-kirschenbaums-projects.vercel.app/`.
+  A fresh passive GET returned 200, HSTS and `Access-Control-Allow-Origin: *`,
+  but no CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy or
+  Permissions-Policy headers. `vercel.json` also defines no such policy.
+  The local source review is pinned independently to `763bb45`; the report does
+  not establish that every deployed asset came from that exact commit.
+- `relay/server.js` bounds room/document counts and envelope size, so the relay
+  is not wholly unbounded. It has no application-level rate limiter or write
+  authorization beyond knowing the room routing code; envelope validation happens
+  after JSON parsing. Snapshot delivery reveals stored ciphertext to a client
+  knowing that code. Rate limiting mitigates abuse, but does not by itself provide
+  read/write authorization or eliminate the room-existence signal.
+- `SESSION_CODE_ALPHABET` has 31 symbols: 31^6 = 887,503,681 possible retro codes.
+  `generateSessionCode()` uses `Math.random()`; `crypto.js` derives the AES key
+  from that same code. This is an existing documented tradeoff for typed-code
+  entry, not proof that any live session was guessed or decrypted. Team boards
+  instead use a separate 128-bit random secret and derived routing ID; knowledge
+  of their routing ID does not provide the decryption key, but the relay still
+  does not authenticate destructive writes by possession of that secret.
+- Copilot's cross-origin `iframe.contentDocument` probe is inconclusive: the
+  same-origin policy itself prevents reading a cross-origin frame. Missing
+  framing policy is confirmed; successful clickjacking was not demonstrated.
+- Team secrets in localStorage are intentional bearer credentials, not a finding
+  of secret theft. New query links are normally scrubbed by `autoConnectFromLink()`
+  after load, too late to remove them from the initial HTTP request. Its early
+  return when the secret already matches localStorage skips URL cleanup entirely.
+- Wildcard CORS on public static content is a configuration decision, not an
+  authentication bypass. Copilot's reported squad-name injection probe did not
+  execute and its common secret-file probes returned 404; these limited negative
+  checks do not establish that every input or deployed path is safe.
+- These are backlog entries only. No runtime, deployment or protocol changes are
+  included; no stored-data migration is needed for this documentation update.
+
 ## Deliberately not built yet (and why)
 
 | Not built | Why it's cut for now | What would trigger building it |
@@ -2653,3 +2705,10 @@ not just in this repo's own tests.
   sync feedback, P1) and PERF-2 (follow-up rendering profile, P2), with reproduction
   evidence, acceptance criteria, test gaps, and a temporary workaround. Documentation
   only; the diagnostic suppression experiment remains outside the repository.
+
+- 2026-09-16 — Reviewed the supplied Copilot Preview pentest against `763bb45`
+  and a fresh passive header check. Added SEC-1 through SEC-5 with acceptance
+  criteria and evidence limits: relay abuse controls, retro credential hardening,
+  browser headers/framing, team-link secrecy, and static CORS policy. Corrected
+  the distinction between missing protection and a proven exploit. Documentation
+  only; no live relay probing or application changes.
