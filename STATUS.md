@@ -2073,3 +2073,21 @@ not just in this repo's own tests.
   ("re-subscribes correctly"). Verified output identical to the original (aside from the randomized
   session code), then stress-tested 10x clean at ~1.9-2.0s per run (down from ~4.6-4.7s). Full
   44-file Playwright suite + 74-test unit suite green, zero regressions.
+- 2026-09-15 — File 5/6 of the remaining local candidates from Copilot's third top-10 list:
+  `test_join_link_carries_language.py` (13 waits). The session-start and locale/view-switch clicks
+  got the by-now-established synchronicity treatment (`setView()`/`setLocale()`/`selectSquad()` all
+  render synchronously); the one write needing a real wait was `startSessionBtn`'s click, covered
+  with `wait_for_function()` polling the fake store for the new session doc, since `startSession()`'s
+  live branch writes through the fake store's `set()` -- which mutates `STORE` and calls `notify()`
+  synchronously, re-rendering `#sessionJoinLink`/`#coFacilitateLink` via the long-lived
+  `db.collection("sessions").onSnapshot()` listener `db.js` registers at boot, in that same
+  synchronous call. Both fresh-participant-device joins got the same genuine-async-gap treatment as
+  other join-screen files, this time as `wait_for_function("() => state.joinSession && ... === 'open'")`
+  rather than a DOM selector, since `listenJoinSession()`'s callback calls `renderJoinScreen()`
+  synchronously right after setting `state.joinSession`. One of the two participant devices' first
+  page load (only there to seed `localStorage` before the real navigation) needed no wait at all --
+  `page.goto()` already waits for the load event, and that throwaway page's own boot state doesn't
+  matter. Verified output byte-for-byte identical to the original (aside from the randomized
+  session/team codes), then stress-tested 10x clean at ~1.85-1.89s per run (down from
+  ~4.58-4.59s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+  Full-suite `tests/run_all.sh` now **71.9s**.
