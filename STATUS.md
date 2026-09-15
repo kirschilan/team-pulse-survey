@@ -2091,3 +2091,29 @@ not just in this repo's own tests.
   session/team codes), then stress-tested 10x clean at ~1.85-1.89s per run (down from
   ~4.58-4.59s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
   Full-suite `tests/run_all.sh` now **71.9s**.
+- 2026-09-15 — File 6/6, the last of Copilot's third top-10 list: `test_uncaught_error_diagnostics.py`
+  (10 waits, 3300ms total). Unlike every other file in this pass, most of the win here came from
+  removing waits outright rather than swapping in a condition: the initial boot-completion wait
+  dropped entirely, since nothing in this file reads anything gated on the async store load --
+  `#diagLog`/`#diagPanel`/the copy buttons are all static `index.html` markup, already present the
+  instant `page.goto()` returns (its default `waitUntil="load"` guarantees `helpers.js`'s own
+  `error`/`unhandledrejection` listener registration has already run). The admin-view click and both
+  `<details>` toggles needed no wait either, same synchronous-setView()/synchronous-native-toggle
+  reasoning as every prior file. The two synthetic-error scenarios (a bare `setTimeout` throw, an
+  uncaught promise rejection) got `wait_for_function()` polling `#diagLog` for the specific message,
+  since `evaluate()` only awaits the scheduling call, not the callback the window listener catches.
+  Both copy-button clicks got the same treatment, polling for the "Copied!" label instead of
+  guessing how long `navigator.clipboard.writeText()` takes. One wait stayed a REAL wait, the first
+  of its kind flagged and deliberately left in this pass: `showCopied()`'s own `setTimeout(...,
+  1500)` reverting the button label is a genuine, intentional UI timer being tested (same category
+  as the 1500ms in `test_board_sync_template_switch_race.py`) -- converted to `wait_for_function()`
+  polling for the actual revert (shaving the original's ~200ms padding) rather than eliminated;
+  doing that would need clock-mocking (Playwright 1.62, installed here, has a Clock API for this),
+  which this pass deliberately did not introduce given it would virtualize `Date`/timers
+  page-wide and change what's actually being verified, a bigger step than this pass's scope.
+  Verified output byte-for-byte identical to the original (aside from timestamps), then
+  stress-tested 10x clean at ~2.8-2.9s per run (down from ~4.6-4.65s -- the smallest percentage cut
+  in this pass, since ~1.5s of what remains is that one legitimate timer). Full 44-file Playwright
+  suite + 74-test unit suite green, zero regressions. Full-suite `tests/run_all.sh` now **69.2s**.
+  This closes out Copilot's screened third top-10 list -- the two deliberately-skipped race/retry-
+  timing files remain untouched, and no further candidates are queued pending a future re-scan.
