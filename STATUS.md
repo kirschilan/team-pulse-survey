@@ -477,12 +477,12 @@ are on `codex/about-guides` for review before integration.
 | Priority | Story | User value and acceptance criteria | Status |
 |---|---|---|---|
 | 1 | 1 — On-demand introduction | As a visitor, open About & help from every view, including participant mode, understand the app's purpose, and close back to the same context without changing data or drafts. | Merged via PR #2 (2026-09-15) |
-| 2 | 6 — First-visit introduction | As a first-time visitor, see an introduction on an ordinary visit. Remember dismissal locally; bypass it for participant/co-facilitator/team links; retain manual access; storage failure never blocks entry. | Not started |
+| 2 | 6 — First-visit introduction | As a first-time visitor, see an introduction on an ordinary visit. Remember dismissal locally; bypass it for participant/co-facilitator/team links; retain manual access; storage failure never blocks entry. | Implemented on `codex/welcome-credits-terms`; review pending |
 | 3 | 2 — Participant guide | As a participant, understand code/link entry and answering; open the existing join flow or return to an active retro without losing answers. | Implemented on `codex/about-guides`; PR review pending |
 | 4 | 3 — Facilitator guide | As a facilitator, follow setup, template and squad selection, start, invite, discuss, and finish/apply; distinguish team and session links. | Implemented on `codex/about-guides`; PR review pending |
 | 5 | 4 — Reading results | As a viewer, understand colors, trends, Squad/Tribe views, and hotspots through expandable guidance matching actual behavior. | Implemented on `codex/about-guides`; PR review pending |
-| 6 | 5 — Credits and licenses | As a user, inspect verified model sources, Dr. Agile contributions, application license, and third-party notices; preserve contextual board credits. Verify the source of Tuckman assessment scoring. | Not started |
-| 7 | 7 — Terms and conditions of use | As a user, read terms before choosing to use the app and reopen them from About & help. Publish owner-approved English/Hebrew terms covering permitted use, responsibilities, data/sharing behavior, and limitations; show effective date/version and accessible links. Explicitly decide whether acceptance tracking is needed before implementation; do not imply consent through mere dismissal. | Not started; wording and acceptance policy need owner review |
+| 6 | 5 — Credits and licenses | As a user, inspect verified model sources, Dr. Agile contributions, application license, and third-party notices; preserve contextual board credits. Verify the source of Tuckman assessment scoring. | Credits UI implemented; source/rights questions remain in `docs/credits-and-terms-review.md` |
+| 7 | 7 — Terms and conditions of use | As a user, read terms before choosing to use the app and reopen them from About & help. Publish owner-approved English/Hebrew terms covering permitted use, responsibilities, data/sharing behavior, and limitations; show effective date/version and accessible links. Explicitly decide whether acceptance tracking is needed before implementation; do not imply consent through mere dismissal. | Informational/no tracking confirmed by owner; draft wording implemented for review |
 
 Stories are small independently testable UI increments; stories 2–5 and 7 can
 be ordered independently once the common panel is available. Story 6 was moved
@@ -2300,3 +2300,24 @@ not just in this repo's own tests.
   the original run_all.sh ROI review with zero files skipped except the intentional exceptions.
   Verified output byte-for-byte identical to every original. Full suite green: 74/74 unit tests,
   45/45 Playwright tests via `tests/run_all.sh` (58.9s).
+
+- **2026-09-15 — Introduction stories 6, 5, and 7.** Private branch
+  `codex/welcome-credits-terms` builds on updated PR #3 (`cfea8df`), including
+  latest preview `ab2eaf5`. First ordinary visit shows the existing splash;
+  dismissal is remembered locally and invitation links bypass it even when team
+  sync strips the query parameter. Blocked storage never prevents dismissal.
+  Added English/Hebrew credits with source links and bundled Apache/MIT/font
+  license notices, plus informational draft terms (owner explicitly chose no
+  acceptance tracking). Terms wording remains for owner review before publication.
+  Source checks found unresolved assessment reuse permissions and Tuckman scale
+  provenance; see `docs/credits-and-terms-review.md` for evidence and open decisions.
+  New local preference only; no board-data migration. Existing users see the new
+  welcome once, then their browser remembers dismissal. Shared test builder marks
+  existing feature tests as returning visitors; the new first-visit test opts out.
+  Test-first new regression failed on missing automatic display before changes.
+  PR #3 merged during implementation; branch fast-forwarded to preview 01fd256
+  before delivery. Validation: 74/74 unit tests pass; two full run_all.sh runs
+  report 45/46 browser files passing, with the same existing experiment-note
+  store-write timeout. Focused first-visit checks pass, including Escape and
+  outside-click preference persistence; English/Hebrew terms visually inspected.
+  Draft PR only; full-green Definition of Done and content approval outstanding.
