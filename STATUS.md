@@ -1887,3 +1887,15 @@ not just in this repo's own tests.
   Verified output byte-for-byte identical to the original, then stress-tested 10x clean at
   ~2.0-2.2s per run (down from ~4.8-4.9s). Full 44-file Playwright suite + 74-test unit suite green,
   zero regressions.
+- 2026-09-15 — Product owner adopted four working agreements into `docs/DefinitionOfDone.md`,
+  proposed off the back of this session's perf pass and the two Copilot-sync incidents above:
+  (1) Playwright waits use a real condition, never a fixed `wait_for_timeout()`, except where no
+  positive signal can exist, with any exception commented; (2) a change to a test's wait/timing
+  logic gets stress-tested 10x (15x relay-backed/multi-device) during its own dev cycle, not folded
+  into the standing regression run; (3) the full suite's serial wall-clock time gets logged here
+  when it moves meaningfully, as the signal to suggest a performance pass rather than a hunch;
+  (4) another agent's or tool's analysis of "current" repo state gets a freshness check (synced to
+  the branch tip?) before anyone acts on it. A fifth candidate -- an OS-level per-test timeout in
+  `tests/_run_one.sh` -- was deferred: the incident that prompted it (the relay stdout-pipe
+  deadlock, already fixed above) was a real code bug, not evidence a bug-free test can legitimately
+  run that long, so it needs its own analysis before becoming a standing rule.
