@@ -28,6 +28,7 @@ with sync_playwright() as p:
     # first render() pass lands, so this is the real boot-complete marker
     # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
     page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
+    page.wait_for_function("() => state.live === true && !!state.db")
 
     page.click('.view-btn[data-view="admin"]')
     page.click('#templatesBtn')
@@ -70,6 +71,15 @@ with sync_playwright() as p:
       })();
     """)
     sid = session_info["id"]
+    page.wait_for_function(
+      "sid => state.sessions.some(s => s.id === sid)",
+      arg=sid,
+    )
+    # The fake store delivers the initial sessions snapshot on a delayed
+    # callback even though startSession() already notified the listener. There
+    # is no exposed completion signal for that second render; yield briefly
+    # before typing so it cannot replace the textarea with the empty snapshot.
+    page.wait_for_timeout(25)
     dim_keys = [d["key"] for d in session_info["doc"]["dimensions"]]
     print("=== session started ===", sid, dim_keys)
     print("experimentNote defaults to empty string:", repr(session_info["doc"].get("experimentNote")))
@@ -80,15 +90,9 @@ with sync_playwright() as p:
     page.fill('#experimentNoteBox', note_text)
     assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == True
     page.click('#saveExperimentNoteBtn')
-    # saveExperimentNote() (retro-facilitator.js) writes to the store
-    # synchronously here -- but a report surfaced an intermittent failure of
-    # this exact click/read pair on a different machine/Chromium build (see
-    # STATUS.md); rather than assume the synchronous timing holds in every
-    # environment, poll for the real write landing like every other write
-    # in this file already does.
     page.wait_for_function(
-        "([sid, expected]) => window.__FAKE_STORE__['sessions/' + sid] && window.__FAKE_STORE__['sessions/' + sid].experimentNote === expected",
-        arg=[sid, note_text],
+      "([sid, expected]) => window.__FAKE_STORE__['sessions/' + sid] && window.__FAKE_STORE__['sessions/' + sid].experimentNote === expected",
+      arg=[sid, note_text],
     )
     stored_note = page.evaluate("window.__FAKE_STORE__['sessions/%s'].experimentNote" % sid)
     print("stored note:", stored_note)

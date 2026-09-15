@@ -2387,3 +2387,15 @@ not just in this repo's own tests.
   (60s, under the 69s threshold); the trigger arithmetic was separately verified against a
   temporarily-lowered baseline. 81/81 unit tests and the full 46-file Playwright suite still pass
   unchanged -- this only added self-reporting, no test behavior changed.
+- 2026-09-15 — Local Mac reproduction and repair of the experiment-note timing
+  failure plus runner setup diagnostics. A fresh worktree initially turned relay
+  failures into misleading `Cannot find module 'ws'` errors because ignored
+  `relay/node_modules` was absent; `tests/run_all.sh` now fails fast with the
+  exact `python3`/`relay && npm ci` setup commands instead. Instrumenting the
+  real `state.db.collection().doc().update()` chain found the test's patch was
+  `{experimentNote: ""}`: the delayed initial fake-store session snapshot
+  re-rendered the textarea after the test filled it and before Save was clicked.
+  The test now waits for that session listener state, yields for the documented
+  otherwise-unobservable callback, and still polls/asserts the stored note.
+  Verified with 10 focused runs, the full 46-file Playwright suite through
+  `run_all.sh` (TEST_JOBS=2, 3 shards, 32s), and the Node unit suite; all green.
