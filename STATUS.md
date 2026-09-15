@@ -2238,3 +2238,23 @@ not just in this repo's own tests.
   scenarios now wait on that backdrop instead of guessing). Verified output byte-for-byte identical
   to each original, each stress-tested 10x clean. Full suite green: 74/74 unit tests, 45/45
   Playwright tests via `tests/run_all.sh` (66.0s). 13 files remain in this batch.
+- 2026-09-15 — Batch 3/5: `test_local_store.py` (12 waits -> 0) and
+  `test_encryption_no_plaintext_on_wire.py` (8 waits -> 0). `local-store.js`'s `docRef.set()`/
+  `update()` confirmed synchronous within a tab (same shape as `fake_store.html`) -- same-tab
+  rating saves got `wait_for_function()` polls on the cell's DOM class directly, since no
+  `window.__FAKE_STORE__` global exists outside the fake-store fixture. The one genuinely async
+  gap in that file: a second tab only picks up the first tab's write via the browser's native
+  `storage` event, which never fires in the writing tab and only fires asynchronously in others --
+  that one kept a real wait, stress-tested 15x given the cross-tab timing sensitivity. The
+  encryption file is real-relay-backed: `ensureDefaultTeamSecret()`/`renderTeamSyncStatus()`
+  (`board-sync.js`) confirmed synchronous at script-load time, so device A's team link needed no
+  wait at all (the original comment's "no click needed" was right, but the wait after it wasn't
+  needed either). The two genuine relay round trips (squad rename, experiment-note save) can't use
+  a `page.wait_for_function()` -- what needs to settle is the Python-side WebSocket frame capture,
+  not browser state -- so a small `wait_for_new_frame()` poll on the capture replaced the guessed
+  sleep, which also makes the test strictly more rigorous: it now proves traffic for that specific
+  action actually happened rather than assuming enough time passed. Verified output byte-for-byte
+  identical to each original (one incidental, non-assertion frame-count print differs, expected
+  since the test no longer waits around collecting incidental traffic), both stress-tested 15x
+  clean given the real relay/cross-tab timing involved. Full suite green: 74/74 unit tests, 45/45
+  Playwright tests via `tests/run_all.sh` (63.9s). 11 files remain in this batch.
