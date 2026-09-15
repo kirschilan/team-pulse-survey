@@ -1935,3 +1935,19 @@ not just in this repo's own tests.
   (`172594f`, 38 Playwright files) ran in **102.5s**; now, 44 files later (6 of them added by
   unrelated concurrent feature work, not this pass) and 10 files converted, it runs in **81.1s** --
   down ~21.4s (~21%) despite running more tests.
+- 2026-09-15 — Copilot pass file 7/8: `test_retro_experiment_note_and_finish.py` (17 waits). One
+  finding reverses a caution from earlier in this pass: this file's reveal-mode toggle needed NO
+  wait before the next click, unlike the identical-looking click in
+  `test_board_sync_finish_retro_convergence.py`. There, a REAL relay write genuinely round-trips
+  before that device's own listener reflects it. Here, using the local fake store, the ongoing
+  sessions listener (subscribed once at boot in `db.js`) fires SYNCHRONOUSLY on every `.update()`
+  call -- so `setRevealMode()`'s write and the resulting re-render (including the `.override-btn`
+  the next click needs) are both already done by the time `click()` returns. The lesson: "this
+  exact click needed a wait in file X" doesn't transfer to file Y without checking which backend
+  (real relay vs. local fake store) that specific test uses -- confirmed by reading the handlers
+  each time, not assumed from precedent. Same synchronous-write reasoning covered
+  `saveExperimentNote()`, `setSessionOverride()`, and `finishRetroAndApply()`. Verified output
+  identical to the original (aside from the randomized session code), then stress-tested 10x clean
+  at ~1.9-2.0s per run (down from ~4.6-4.8s). Full 44-file Playwright suite + 74-test unit suite
+  green, zero regressions. Full-suite `tests/run_all.sh` now **79.5s** (down from 81.1s two entries
+  ago, 102.5s at the start of this pass).
