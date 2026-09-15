@@ -458,6 +458,47 @@ recall exercise instead of something anyone could just read.
 | 12 | Dimension detail and Edit Dimensions modal (Admin) | **DONE** (2026-09-14) |
 | 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass. Redesigned as a full JSON board export/import replacing CSV (see session log): (1) JSON board export (beta), additive — **DONE** (2026-09-15); (2) JSON import — squads/ratings — **DONE** (2026-09-15); (3) JSON import — dimensions/templates/config; (4) delete the CSV runtime code | **In progress** |
 
+## Runtime performance backlog (2026-09-16)
+
+These items concern the running app, separate from test-suite execution time.
+Evidence was gathered against shared preview commit `763bb45`, using an isolated
+Chromium browser, the real local store, and a local WebSocket relay. The reported
+Chrome warning occurred while idle; the user's exact tab count was not confirmed.
+
+| Priority | Story | User value and acceptance criteria | Status |
+|---|---|---|---|
+| P1 — next runtime fix | PERF-1 — Stop idle cross-tab sync feedback | As a facilitator with two app tabs open in the same browser, keep an idle board responsive without repeated uploads. Reproduce with two same-origin pages in ONE browser context and a real relay; distinguish storage/remote notifications from new local edits so they cannot circulate as fresh changes. After boot and after an edit has converged, render/upload/remote-apply counters stop increasing during a bounded idle observation window. A real edit in either tab still reaches the other tab and a separate browser context; reload and reconnect preserve convergence and data. Add a regression that fails on the current implementation and run the full unit, browser (`tests/run_all.sh`), and relay suites. | Confirmed; implementation pending |
+| P2 — after PERF-1 | PERF-2 — Measure render amplification during sync | As a facilitator receiving board updates, keep the UI responsive as the board grows. Profile a single edit and a remote snapshot at documented squad/dimension counts; record render counts, main-thread work, and any long tasks, including work on hidden views. Use measurements to decide whether batching writes/renders or skipping unchanged sections is warranted; preserve immediate visible updates, view-switch freshness, and live-sync correctness. | Profiling follow-up; no independent idle cause established |
+
+### PERF-1 evidence and implementation guidance
+
+- **Single idle tab:** about 3 ms of renderer main-thread work over 5 seconds;
+  zero `renderAll()` calls, board uploads, or remote-board applications.
+- **Two idle tabs sharing storage:** OS samples showed the two isolated renderer
+  processes at approximately 128% and 138% CPU (process percentages can exceed
+  100% across cores). One became unresponsive to browser evaluation and had to be
+  terminated. This is a local reproduction, not a measurement of the user's tab.
+- **Cause:** `public/local-store.js`'s `storage` handler calls `notifyEverything()`;
+  `public/js/db.js`'s squad/dimension/config listeners each render and request a
+  board push. A remote apply rewrites local storage, waking the other tab, which
+  republishes the board with a fresh timestamp. The hydration guard is tab-local
+  and does not stop the other tab from restarting the cycle.
+- **Diagnostic confirmation:** suppressing board pushes while processing storage
+  notifications, only in a temporary copy, reduced both tabs to about 1 ms of
+  main-thread work each over 5 seconds with zero renders/uploads/remote applies.
+  This proves the feedback path; that prototype is not a production fix and still
+  needs the convergence/error-path coverage in PERF-1.
+- The existing live-subscription test opens separate browser contexts; it does
+  not cover two tabs sharing local storage. Use the real store for this regression.
+  A fixed, documented observation interval is appropriate for proving idle
+  inactivity; readiness and convergence waits must use causal conditions.
+- Repeated full `renderAll()` calls and per-document persistence amplify the loop.
+  Investigate their separate cost under PERF-2 after stopping the loop first.
+- Temporary workaround: keep one app tab open per browser profile. A warning with
+  only one app tab remains unconfirmed and needs a separate trace if it recurs.
+- No runtime fix or stored-data shape change is included in this backlog update;
+  no migration is required.
+
 ## Deliberately not built yet (and why)
 
 | Not built | Why it's cut for now | What would trigger building it |
@@ -2607,3 +2648,8 @@ not just in this repo's own tests.
   10 focused runs of `test_retro_experiment_note_and_finish.py` (all clean), the full
   47-file Playwright suite via `run_all.sh` (TEST_JOBS=4, 3 shards, 48s), and the 82/82
   Node unit suite -- zero regressions from the shared fixture's added instrumentation.
+
+- 2026-09-16 — Recorded runtime CPU findings as PERF-1 (confirmed idle cross-tab
+  sync feedback, P1) and PERF-2 (follow-up rendering profile, P2), with reproduction
+  evidence, acceptance criteria, test gaps, and a temporary workaround. Documentation
+  only; the diagnostic suppression experiment remains outside the repository.
