@@ -144,7 +144,11 @@ with sync_playwright() as p:
     console_errors = []
     page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # eval_on_selector()/eval_on_selector_all() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
     print("=== initial load ===")
     print("sync text:", page.eval_on_selector("#syncText", "el=>el.textContent"))
     print("grid header count:", page.eval_on_selector_all("table.grid thead th", "els=>els.length"))
@@ -153,52 +157,65 @@ with sync_playwright() as p:
     # ---- 1. rate a cell (regression: existing flow still works) ----
     # Rating now happens from Squad view (per-squad entry list), not by
     # clicking the grid directly -- the grid is Tribe view's read-only drill-down.
+    # Every step here is click()/fill() -- Playwright auto-waits for each
+    # target to become actionable, so the chain needs no waits of its own.
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(120)
     page.click('#squadDetail .cell-btn[data-squad="squad-1"][data-dim="release"]')
-    page.wait_for_timeout(150)
     page.click('.swatch.crit')
     page.click('#trendsel button[data-trend="down"]')
     page.fill('#modalNote', "test note")
     page.click('#modalSave')
-    page.wait_for_timeout(300)
+    # evaluate() below doesn't auto-wait -- poll for the real write landing
+    # instead of guessing.
+    page.wait_for_function("() => { var s = window.__FAKE_STORE__['squads/squad-1']; return s && s.dimensions && s.dimensions.release && s.dimensions.release.color === 'crit'; }")
     print("=== after rating squad-1/release ===")
     print("store squad-1:", page.evaluate("window.__FAKE_STORE__['squads/squad-1']"))
     print("JS errors:", errors)
 
     # ---- 2. open dimension manager (Admin view), edit a label, verify grid header updates ----
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('#dimManageBtn')
-    page.wait_for_timeout(150)
+    # query_selector() below doesn't auto-wait -- wait for the real "dim
+    # list rendered" signal instead of guessing.
+    page.wait_for_selector('.dim-row[data-key="release"] input.dim-label', state="attached")
     label_input = page.query_selector('.dim-row[data-key="release"] input.dim-label')
+    # No wait needed after this -- updateDimensionField() (dimensions.js)
+    # mutates, re-renders, AND writes to the store all SYNCHRONOUSLY inside
+    # the 'change' handler.
     label_input.fill("Release Ease RENAMED")
     label_input.dispatch_event("change")
-    page.wait_for_timeout(200)
     print("=== after rename dimension ===")
     print("store dimensions/release:", page.evaluate("window.__FAKE_STORE__['dimensions/release']"))
     header_text = page.eval_on_selector('.dim-th-label[data-dim-key="release"]', 'el=>el.textContent')
     print("grid header shows renamed label:", header_text)
 
     # ---- 3. add a new dimension ----
+    # evaluate()/eval_on_selector_all() below don't auto-wait -- poll for
+    # the 13th dimension actually landing in the store instead of guessing
+    # (addDimension()'s own comment explains the DOM update comes from the
+    # dimensions listener firing, not a direct call here -- but the fake
+    # store's notify() invokes it synchronously either way).
     page.click('#addDimBtn')
-    page.wait_for_timeout(200)
+    page.wait_for_function("() => Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('dimensions/')).length === 13")
     n_rows = page.eval_on_selector_all('#dimList .dim-row', 'els=>els.length')
     print("dim rows after add:", n_rows)
 
     # ---- 4. reorder: move release down ----
+    # evaluate() below doesn't auto-wait -- poll for the real write landing
+    # (moveDimension() calls renderAll() synchronously) instead of guessing.
     page.click('.dim-row[data-key="release"] .dim-down')
-    page.wait_for_timeout(150)
+    page.wait_for_function("() => { var d = window.__FAKE_STORE__['dimensions/release']; return d && d.order === 2; }")
     print("release order after move down:", page.evaluate("window.__FAKE_STORE__['dimensions/release'].order"))
 
     # ---- 5. delete a dimension (with confirm modal) ----
     page.click('.dim-row[data-key="codebase"] .dim-del')
-    page.wait_for_timeout(100)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     print("confirm modal visible:", page.eval_on_selector('#confirmBackdrop', 'el=>!el.hidden'))
     page.click('#confirmOk')
-    page.wait_for_timeout(200)
+    # evaluate() below doesn't auto-wait -- poll for the real deletion
+    # landing instead of guessing.
+    page.wait_for_function("() => window.__FAKE_STORE__['dimensions/codebase'] === undefined")
     print("codebase deleted from store:", page.evaluate("window.__FAKE_STORE__['dimensions/codebase']"))
     print("JS errors:", errors)
 
@@ -206,10 +223,14 @@ with sync_playwright() as p:
 
     # ---- 6. save current setup as a template ----
     page.click('#templatesBtn')
-    page.wait_for_timeout(150)
     page.fill('#tplNameInput', "My Custom Setup")
+    # eval_on_selector_all() below doesn't auto-wait -- poll for the real
+    # write landing (saveCurrentAsTemplate()'s own comment explains the DOM
+    # update comes from the templates listener firing, not a direct call
+    # here -- but the fake store's notify() invokes it synchronously either
+    # way) instead of guessing.
     page.click('#tplSaveBtn')
-    page.wait_for_timeout(200)
+    page.wait_for_function("() => Object.keys(window.__FAKE_STORE__).some(k => k.startsWith('templates/'))")
     tpl_rows = page.eval_on_selector_all('#tplList .tpl-row', 'els=>els.length')
     print("=== after saving template ===")
     print("template rows:", tpl_rows)
@@ -218,10 +239,15 @@ with sync_playwright() as p:
     # ---- 7. load a different (synthetic) template via direct state manipulation, then via UI load ----
     # Load the just-saved template back (should be a no-op-ish reload) to exercise loadTemplate()
     page.click('#tplList .tpl-row [data-action="load"]')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     print("load confirm visible:", page.eval_on_selector('#confirmBackdrop', 'el=>!el.hidden'))
     page.click('#confirmOk')
-    page.wait_for_timeout(400)
+    # evaluate() below doesn't auto-wait -- wait for the real "template
+    # loaded" signal instead of guessing. meta/config is never written by
+    # anything before the first loadTemplate() call in this fixture (only
+    # saveCurrentAsTemplate() ran so far, which doesn't touch it), so its
+    # mere existence is a reliable one-time marker here.
+    page.wait_for_function("() => window.__FAKE_STORE__['meta/config'] !== undefined")
     dims_after_load = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k=>k.startsWith('dimensions/'))")
     print("dimension keys after loading template:", dims_after_load)
     config_after = page.evaluate("window.__FAKE_STORE__['meta/config']")
