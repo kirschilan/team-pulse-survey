@@ -2117,3 +2117,23 @@ not just in this repo's own tests.
   suite + 74-test unit suite green, zero regressions. Full-suite `tests/run_all.sh` now **69.2s**.
   This closes out Copilot's screened third top-10 list -- the two deliberately-skipped race/retry-
   timing files remain untouched, and no further candidates are queued pending a future re-scan.
+- 2026-09-15 — Closed the open Copilot dispute over `test_retro_experiment_note_and_finish.py`
+  (first flagged, and not corroborated, earlier the same day). Copilot came back with an actual
+  reproduction this time: a hand-rolled diagnostic harness (not the real test file) run on a
+  different machine/Chromium build, reproducing 8/10 times, with a trace showing the "Saved" hint
+  going visible (proving the click handler ran) while the fake-store value stayed unchanged and a
+  condition wait on it timed out completely. Re-traced the full chain from source a third time
+  (`liveOr()` -> `saveExperimentNote()` -> the fake store's `docRef.update()`) and it's still
+  provably synchronous on every machine this session has access to -- 26/26 clean here (20 isolated
+  + 6 concurrent, on top of the original investigation's own 26/26) -- and found no code-level
+  mechanism that would make it race; the most likely explanation is the harness itself, which
+  Copilot's own trial-and-error log shows going through several self-admitted bugs while being
+  built, not the app's actual write path. Regardless of root cause, this exact click/read pair
+  turned out to be the ONE place in the whole wait-condition pass that read a "provably
+  synchronous" fake-store write with a bare `evaluate()` and no defensive `wait_for_function()`
+  poll -- every analogous site (session creation, override save, finish-retro) already polls
+  despite identical synchronicity reasoning, specifically as insurance against exactly this kind of
+  environment-dependent report. Added the poll, matching that established convention, which closes
+  the report either way (a genuine environment difference, or a harness artifact) at zero cost.
+  Verified output byte-for-byte identical to the original, full 44-file Playwright suite + 74-test
+  unit suite green.
