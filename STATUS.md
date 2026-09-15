@@ -2059,3 +2059,17 @@ not just in this repo's own tests.
   the randomized session code), then stress-tested 10x clean at ~1.9-2.0s per run (down from
   ~4.5-4.7s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
   Full-suite `tests/run_all.sh` now **74.0s**.
+- 2026-09-15 — File 4/6 of the remaining local candidates from Copilot's third top-10 list:
+  `test_retro_reveal_mode_and_consolidation.py` (14 waits). Standard treatment for the Five
+  Dysfunctions-load setup; the reveal-mode toggle got the same local-fake-store synchronicity
+  finding as `test_retro_experiment_note_and_finish.py`'s identical click (explicitly distinguished
+  in the test's own new comment from the REAL relay case in the board-sync convergence file, where
+  the write genuinely round-trips before the device's own listener reflects it). One spot needed
+  real thought: switching to squad-2 and back to squad-1 re-subscribes
+  `subscribeSessionResponses()` from scratch, and a fresh subscription's first `onSnapshot`
+  delivery is a genuine async gap this fixture deliberately delays -- unlike every other reveal-mode
+  read in this file. Kept a real `wait_for_function` on the reveal-btn's active class there rather
+  than assume it's already correct, since this is precisely the scenario the test exists to verify
+  ("re-subscribes correctly"). Verified output identical to the original (aside from the randomized
+  session code), then stress-tested 10x clean at ~1.9-2.0s per run (down from ~4.6-4.7s). Full
+  44-file Playwright suite + 74-test unit suite green, zero regressions.
