@@ -2616,7 +2616,57 @@ not just in this repo's own tests.
   - Full suite green: 143/143 unit tests, all 48 Playwright files (78s, at the existing baseline --
     no new file added this time, so no baseline update needed), relay's own protocol suite.
   - Story 13 table status: item 3b now **DONE**. Remaining: item 4 (delete the CSV runtime code).
-    Implemented directly on `story13-json-import-squads` (PR #7, still open under review as of this
-    entry) rather than a new branch/PR -- this item's code is a direct, sequential extension of the
-    same functions PR #7 already introduced, in the same file, so splitting it into a second PR
-    stacked on unmerged code would only have added review friction, not independence.
+    Implemented directly on `story13-json-import-squads`, continuing to push to the same branch --
+    PR #7 (item 3a) turned out to have already been merged into `claude/optimistic-keller-holuql`
+    partway through this session, so this item's own commit needed a fresh PR (#12) rather than
+    riding PR #7; noted, not treated as a problem, since the branch itself was untouched either way.
+- **2026-09-15 — Story 13, item 3b: a real review finding on PR #12 (P1), the product owner acting
+  as reviewer, "fix before approval."** A combined squads+dimensions import silently dropped
+  ratings whenever a rating's dimension key didn't literally exist on THIS board -- true for
+  every genuine cross-board import, not an edge case, since item 3b's own design (see above)
+  deliberately matches dimensions by LABEL rather than key, so two boards/devices never share a
+  dimension's random `"local-dim-"+Date.now()` key even for "the same" labeled dimension.
+  Reproduced independently before touching anything (`node -e` against the real functions,
+  matching the reviewer's own real-browser repro exactly): a file with a brand-new custom
+  dimension and a squad rating for it imported the dimension, but persisted the squad with
+  `dimensions: {}` -- the preview even claimed "0 ratings to import" despite showing that exact
+  dimension ready to add, since `buildSquadImportPlan()` only ever matched a rating's file-key
+  against the board's CURRENT dimension set, built before either a new dimension exists or an
+  existing one's real (different) key is known.
+  Fixed two ways, both in `csv.js`:
+  1. `buildSquadImportPlan()` now also tries a file-key -> label -> CURRENT-board-dimension-by-label
+     fallback (using the file's own `dimensions` section to look up what label a rating's key
+     refers to) before giving up -- covers an EXISTING same-labeled dimension whose key just
+     differs from the file's, unconditionally (doesn't depend on the Templates scope being
+     checked, since no dimension needs to be created for this case).
+  2. A new optional third argument, `extraDimensionLabels` (`buildDimensionImportPlan()`'s own
+     `added` list, passed in only when the Templates scope is actually checked -- otherwise
+     nothing will create that dimension this round, and the rating correctly still reports "not
+     found"), lets a rating for a dimension that doesn't exist YET but WILL by the time Apply
+     finishes resolve to a `pendingDimensionKey()` marker instead of being skipped.
+     `resolvePendingDimensionKeys()` turns that marker into the dimension's real key once it
+     actually exists -- called from the Apply-button handler, which now sequences the two applies
+     instead of firing them in parallel: `applyDimensionTemplateConfigImportPlan()` gained an
+     optional `onDone` callback, fired only once every dimension/template write (including a
+     brand-new dimension's real generated key) has actually landed in `state.dimensions`, and the
+     squads/ratings apply now runs from that callback instead of immediately. Verified safe for
+     both the fake-store test harness and real deployments before relying on it: both
+     `tests/fixtures/fake_store.html` and the real `public/local-store.js` call their `add()`'s
+     `notify()` SYNCHRONOUSLY, before the returned Promise even resolves, so `state.dimensions`
+     is already current by the time the sequenced callback runs, in both.
+  Found and fixed a second, self-inflicted bug while writing this fix: the first draft used an
+  actual embedded NUL byte (`" pending-dimension:"`) as the marker prefix, meant as a
+  belt-and-suspenders "can never collide with a real key" guard -- caught immediately because it
+  turned `csv.js` into a binary file (`file` reported "data", `grep` refused to match it as
+  text). Replaced with a plain, printable prefix (`"pending-dimension:"`); a collision was never
+  actually reachable either way, since `fileDims`'s keys are always either a real destination
+  dimension's own key or this constructed marker, never a file-supplied key used as-is.
+  6 new unit tests (`tests/unit/test_json_import.js`, 62 -> 68: the label-fallback match, the
+  "still not found" negative, the pending-marker path with and without `extraDimensionLabels`,
+  and `resolvePendingDimensionKeys()`'s resolve/drop cases) plus one new Playwright scenario
+  (`tests/test_json_import.py`) reproducing the reviewer's exact repro end to end -- a new custom
+  dimension AND an existing dimension referenced under a different source key, both with real
+  ratings, both scopes checked -- asserting the persisted squad doc under `window.__FAKE_STORE__`
+  carries the ratings under real destination keys, with zero leftover pending markers. Stress-tested
+  5x clean. Full suite green: 149/149 unit tests, all 48 Playwright files (75s, under the 78s
+  baseline), relay's own protocol suite. Same branch/PR (#12).

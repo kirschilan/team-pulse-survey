@@ -311,6 +311,94 @@ test("mergeSquadDimensions() in REPLACE mode drops a squad's existing ratings th
   assert.deepEqual(result, { release: { color: "crit" } });
 });
 
+// ---------- PR #12 review finding (P1): combined squads+dimensions import
+// dropped ratings whenever a rating's dimension key didn't literally exist
+// on the destination board -- true for EVERY cross-board import once
+// dimensions started matching by label instead of key (item 3b's own
+// design), since two different boards/devices never share a dimension's
+// random "local-dim-"+Date.now() key even for "the same" labeled
+// dimension. Fixed two ways: (1) buildSquadImportPlan() now also tries a
+// file-key -> label -> CURRENT-board-dimension-by-label fallback before
+// giving up, covering an EXISTING same-labeled dimension whose key just
+// differs from the file's; (2) an optional third argument
+// (extraDimensionLabels -- buildDimensionImportPlan()'s own `added` list)
+// lets a rating for a dimension that doesn't exist YET, but WILL once the
+// dimension plan is applied in the same operation, resolve to a pending
+// marker (pendingDimensionKey()) instead of being silently skipped --
+// resolvePendingDimensionKeys() turns that marker into the dimension's
+// real key once it actually exists, called right after the dimension
+// import runs (see csv.js's Apply-button handler). ----
+
+test("buildSquadImportPlan() resolves a rating via label when an EXISTING board dimension has a different key than the file", () => {
+  withBoard({
+    dimensions: [{ key: "release", label: "Easy to release", order: 1 }],
+    squads: [{ id: "sq-1", name: "Squad 1", dimensions: {} }]
+  }, () => {
+    const plan = csv.buildSquadImportPlan({
+      formatVersion: 1,
+      squads: [{ name: "Squad 1", dimensions: { source_board_key: { color: "warn" } } }],
+      dimensions: [{ key: "source_board_key", label: "Easy to release" }]
+    }, "merge");
+    assert.equal(plan.ratingCount, 1);
+    assert.equal(plan.skipped.length, 0);
+    assert.deepEqual(plan.patches[0].fileDims, { release: { color: "warn" } });
+  });
+});
+
+test("buildSquadImportPlan() still reports 'not found' when no board dimension matches by key OR by label", () => {
+  withBoard({ dimensions: [{ key: "release", label: "Easy to release", order: 1 }], squads: [] }, () => {
+    const plan = csv.buildSquadImportPlan({
+      formatVersion: 1,
+      squads: [{ name: "Squad 1", dimensions: { source_board_key: { color: "warn" } } }],
+      dimensions: [{ key: "source_board_key", label: "Something else entirely" }]
+    }, "merge");
+    assert.equal(plan.ratingCount, 0);
+    assert.equal(plan.skipped.length, 1);
+  });
+});
+
+test("buildSquadImportPlan() counts a rating for a not-yet-existing dimension as pending when its label is in extraDimensionLabels", () => {
+  withBoard({ dimensions: [], squads: [{ id: "sq-1", name: "Squad 1", dimensions: {} }] }, () => {
+    const plan = csv.buildSquadImportPlan({
+      formatVersion: 1,
+      squads: [{ name: "Squad 1", dimensions: { psych_key: { color: "good", note: "great" } } }],
+      dimensions: [{ key: "psych_key", label: "Psychological safety" }]
+    }, "merge", ["Psychological safety"]);
+    assert.equal(plan.ratingCount, 1);
+    assert.equal(plan.skipped.length, 0);
+    const pendingKey = csv.pendingDimensionKey("Psychological safety");
+    assert.deepEqual(plan.patches[0].fileDims, { [pendingKey]: { color: "good", note: "great" } });
+  });
+});
+
+test("buildSquadImportPlan() reports 'not found' for the same file, without extraDimensionLabels (e.g. templates scope unchecked)", () => {
+  withBoard({ dimensions: [], squads: [{ id: "sq-1", name: "Squad 1", dimensions: {} }] }, () => {
+    const plan = csv.buildSquadImportPlan({
+      formatVersion: 1,
+      squads: [{ name: "Squad 1", dimensions: { psych_key: { color: "good" } } }],
+      dimensions: [{ key: "psych_key", label: "Psychological safety" }]
+    }, "merge");
+    assert.equal(plan.ratingCount, 0);
+    assert.equal(plan.skipped.length, 1);
+  });
+});
+
+test("resolvePendingDimensionKeys() resolves a pending marker to the dimension's real key once it exists on the board", () => {
+  withBoard({ dimensions: [{ key: "local-dim-999", label: "Psychological safety", order: 1 }] }, () => {
+    const pendingKey = csv.pendingDimensionKey("Psychological safety");
+    const resolved = csv.resolvePendingDimensionKeys({ [pendingKey]: { color: "good" }, release: { color: "warn" } });
+    assert.deepEqual(resolved, { "local-dim-999": { color: "good" }, release: { color: "warn" } });
+  });
+});
+
+test("resolvePendingDimensionKeys() drops a pending marker that still doesn't resolve to any board dimension", () => {
+  withBoard({ dimensions: [] }, () => {
+    const pendingKey = csv.pendingDimensionKey("Nonexistent");
+    const resolved = csv.resolvePendingDimensionKeys({ [pendingKey]: { color: "good" } });
+    assert.deepEqual(resolved, {});
+  });
+});
+
 // ---------- item 3b: parseBoardImportFile() validating dimensions/templates/config ----------
 // Same rationale as the squad/rating validation above: a structurally-
 // malformed dimensions/templates/config section must be rejected at the
