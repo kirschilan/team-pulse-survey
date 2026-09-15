@@ -1797,3 +1797,23 @@ not just in this repo's own tests.
   polled for it to change. Verified output identical to the original (aside from timestamps), then
   stress-tested 10x clean at ~2.2-2.3s per run (down from ~5.7s). Landed via a clean fast-forward,
   full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+- 2026-09-15 — Copilot perf pass, file 9/9 (last one): `test_retro_statement_survey_submission.py`.
+  Removed every `wait_for_timeout()`, including the small per-click waits inside a 14-iteration
+  answer loop: `refreshSubmitEnabled()` (retro-join.js) runs synchronously inside each scale-btn's
+  own click handler, so `submitBtn.disabled` is already up to date the instant `click()` returns --
+  no wait needed between clicks, or before reading it right after the loop ends. The setup section
+  mirrors the Tuckman/Five Dysfunctions files' established treatment (same starter-template-load +
+  start-session shape); the facilitator's manual store write + `window.__NOTIFY__()` call needed no
+  wait at all, for the same synchronous-listener reason established in the Tuckman file. Verified
+  output identical to the original (aside from the randomized session code), then stress-tested 10x
+  clean at ~2.5-2.7s per run (down from ~5.2s). Full 44-file Playwright suite + 74-test unit suite
+  green, zero regressions.
+
+  This closes out Copilot's flagged test-performance list (9 files: `test_hebrew_rtl_coverage.py`,
+  `test_template_switching_and_csv_import.py`, `test_tribe_hotspots.py`,
+  `test_tooltip_busy_overlay_and_csv_key.py`, `test_cofacilitator_join.py`,
+  `test_retro_join_flow.py`, `test_scored_template_tuckman.py`,
+  `test_scored_template_five_dysfunctions.py`, `test_retro_statement_survey_submission.py`). Not
+  touched: `test_board_sync_finish_retro_convergence.py` (lowest Copilot priority, largest/most
+  relay-timing-sensitive file in the list) -- left for its own dedicated pass rather than folded in
+  here.
