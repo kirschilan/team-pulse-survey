@@ -77,6 +77,7 @@ var LOCALE_HE = {
   "header.viewTribe": "תצוגת שבט",
   "header.viewSquad": "תצוגת צוות",
   "header.viewAdmin": "ניהול",
+  "header.viewSwitchAriaLabel": "תצוגה",
 
   "templates.title": "תבניות סקר",
   "templates.hint": "החליפו לסט מוכן מראש של ממדים, או שמרו את ההגדרה הנוכחית שלכם כדי שתוכלו (או חבר צוות) לעשות בה שימוש חוזר מאוחר יותר.",
@@ -103,6 +104,7 @@ var LOCALE_HE = {
   "admin.language.heading": "שפה",
   "admin.language.betaBadge": "בטא",
   "admin.language.hint": "בחרו את שפת מסך הניהול. חלקים נוספים באפליקציה יתווספו בהמשך ככל שכיסוי התרגום יגדל.",
+  "admin.language.ariaLabel": "שפה",
 
   "admin.boardSetup.heading": "הגדרות לוח",
   "admin.boardSetup.hint": "נהלו את מודל הסקר ואת רשימת הצוותים. שינויים כאן חלים על כל מי שצופה בלוח הזה.",
@@ -157,6 +159,7 @@ var LOCALE_HE = {
 
   "tribe.stats.assessedLabel": "{unitPlural} שהוערכו",
   "tribe.stats.assessedSub": "{countUnit} במעקב",
+  "tribe.stats.sectionAriaLabel": "תמונת מצב כללית",
   "tribe.stats.riskLabel": "פריטים בסיכון",
   "tribe.stats.riskSub": "ממדים המסומנים באדום בכל הצוותים",
   "tribe.stats.hotspotLabel": "הנקודה החמה המערכתית המובילה",
@@ -239,6 +242,7 @@ var LOCALE_HE = {
   "retro.retroLabel": "רטרו: “{name}”.",
   "retro.codeBlock.heading": "קוד המפגש",
   "retro.codeBlock.hint": "בקשו מחברי הצוות לפתוח את Squad Pulse וללחוץ על “הצטרפות לרטרו” למעלה, ואז להקליד את הקוד הזה.",
+  "retro.reveal.ariaLabel": "מצב חשיפה",
   "retro.reveal.hold": "עצירת תוצאות",
   "retro.reveal.live": "הצגה בזמן אמת",
   "retro.countLine.one": "חבר צוות אחד שלח עד כה.",

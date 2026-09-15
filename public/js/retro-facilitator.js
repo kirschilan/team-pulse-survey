@@ -158,7 +158,7 @@ function renderSessionCardHtml(sq){
     var responses = state.sessionResponses || [];
     var submittedCount = responses.length;
     var toggleHtml =
-      '<div class="view-switch reveal-toggle" role="tablist" aria-label="Reveal mode" style="margin-top:8px;">' +
+      '<div class="view-switch reveal-toggle" role="tablist" aria-label="'+esc(t("retro.reveal.ariaLabel"))+'" style="margin-top:8px;">' +
         '<button class="reveal-btn'+(revealMode==="hold"?" active":"")+'" data-reveal="hold" type="button" role="tab">'+esc(t("retro.reveal.hold"))+'</button>' +
         '<button class="reveal-btn'+(revealMode==="live"?" active":"")+'" data-reveal="live" type="button" role="tab">'+esc(t("retro.reveal.live"))+'</button>' +
       '</div>';

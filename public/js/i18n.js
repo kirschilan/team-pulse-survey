@@ -52,12 +52,13 @@ function t(key, vars){
 }
 
 // Applies every [data-i18n] element's textContent, every
-// [data-i18n-placeholder] element's placeholder, and every
-// [data-i18n-title] element's title attribute from the active locale --
-// called once at boot and again on every setLocale(). Static markup only;
-// strings built in JS (dynamic rows, confirm dialogs, aria-labels) call
-// t() directly instead, since their own render function already re-runs on
-// every relevant change.
+// [data-i18n-placeholder] element's placeholder, every [data-i18n-title]
+// element's title attribute, and every [data-i18n-aria-label] element's
+// aria-label from the active locale -- called once at boot and again on
+// every setLocale(). Static markup only; strings built in JS (dynamic
+// rows, confirm dialogs, a handful of aria-labels on JS-rendered markup)
+// call t() directly instead, since their own render function already
+// re-runs on every relevant change.
 function applyStaticTranslations(){
   document.querySelectorAll("[data-i18n]").forEach(function(el){
     el.textContent = t(el.getAttribute("data-i18n"));
@@ -67,6 +68,9 @@ function applyStaticTranslations(){
   });
   document.querySelectorAll("[data-i18n-title]").forEach(function(el){
     el.title = t(el.getAttribute("data-i18n-title"));
+  });
+  document.querySelectorAll("[data-i18n-aria-label]").forEach(function(el){
+    el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria-label")));
   });
 }
 
