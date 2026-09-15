@@ -468,6 +468,27 @@ recall exercise instead of something anyone could just read.
 | Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing | Once the marketing site (separate Claude Code project) is further along |
 | A third UI language (beyond English/Hebrew) | YAGNI, per the product owner's own call (2026-09-14) — `SUPPORTED_LOCALES`/`t()`'s fallback (i18n.js) are already written generically enough to add one without a redesign, and the bilingual-dimensions editor (see the session log) is a per-dimension `i18n` object keyed by locale code, not hardcoded to exactly two languages, so neither needs rework specifically to add a third | A real request for a specific third language — at that point, design its own toggle/picker UX (today's per-dimension editor hardcodes one Hebrew panel) rather than assuming the two-language shape generalizes without a look |
 
+## Introduction and help backlog (2026-09-15)
+
+Priority is separate from the stable story ID. Each story ships English/Hebrew,
+RTL, keyboard support, and focused regression coverage. Story 1 is proposed on
+`codex/about-help-story-1` for PR review; it is not merged into preview.
+
+| Priority | Story | User value and acceptance criteria | Status |
+|---|---|---|---|
+| 1 | 1 — On-demand introduction | As a visitor, open About & help from every view, including participant mode, understand the app's purpose, and close back to the same context without changing data or drafts. | Implemented on private PR branch; review pending |
+| 2 | 6 — First-visit introduction | As a first-time visitor, see an introduction on an ordinary visit. Remember dismissal locally; bypass it for participant/co-facilitator/team links; retain manual access; storage failure never blocks entry. | Not started |
+| 3 | 2 — Participant guide | As a participant, understand code/link entry and answering; open the existing join flow or return to an active retro without losing answers. | Not started |
+| 4 | 3 — Facilitator guide | As a facilitator, follow setup, template and squad selection, start, invite, discuss, and finish/apply; distinguish team and session links. | Not started |
+| 5 | 4 — Reading results | As a viewer, understand colors, trends, Squad/Tribe views, and hotspots through expandable guidance matching actual behavior. | Not started |
+| 6 | 5 — Credits and licenses | As a user, inspect verified model sources, Dr. Agile contributions, application license, and third-party notices; preserve contextual board credits. Verify the source of Tuckman assessment scoring. | Not started |
+| 7 | 7 — Terms and conditions of use | As a user, read terms before choosing to use the app and reopen them from About & help. Publish owner-approved English/Hebrew terms covering permitted use, responsibilities, data/sharing behavior, and limitations; show effective date/version and accessible links. Explicitly decide whether acceptance tracking is needed before implementation; do not imply consent through mere dismissal. | Not started; wording and acceptance policy need owner review |
+
+Stories are small independently testable UI increments; stories 2–5 and 7 can
+be ordered independently once the common panel is available. Story 6 was moved
+to priority 2 by the product owner. Terms are a separate content/behavior story,
+not implicit acceptance added to story 1.
+
 ## Suggested next step
 
 **Deploy the relay.** No code changes needed — the static site is already live on Vercel; the
@@ -2137,3 +2158,20 @@ not just in this repo's own tests.
   the report either way (a genuine environment difference, or a harness artifact) at zero cost.
   Verified output byte-for-byte identical to the original, full 44-file Playwright suite + 74-test
   unit suite green.
+
+- **2026-09-15 — Introduction story 1, private PR branch.** Added a header
+  About & help control and an on-demand native dialog describing Squad Pulse,
+  Squad/Tribe/Admin views, and Dr. Agile authorship. English/Hebrew, scoped RTL,
+  full-screen mobile layout, Escape dismissal, focus containment/restoration;
+  no navigation, draft mutation, automatic display, or persistence. No migration
+  needed: no stored data shape changes. Product owner authorized implementation
+  on a private branch for review before integration; preview/main remain untouched.
+  Recorded the introduction backlog above, moved story 6 to priority 2, and added
+  terms-and-conditions story 7. Test-first: new test failed on missing control
+  before implementation, then passed; existing live participant test additionally
+  verifies help preserves an actual selected answer. Reviewed English desktop and
+  Hebrew mobile screenshots. Validation: 74/74 Node tests pass; 44/45 browser files
+  pass in two full runs. The experiment-note save test fails at line 88 on this
+  branch AND an untouched archive of baseline 786c3d5; this pre-existing failure
+  is left visible, so the full green Definition of Done is not yet satisfied.
+  Draft PR is for review, not a claim of release readiness.

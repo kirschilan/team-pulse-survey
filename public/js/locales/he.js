@@ -14,6 +14,16 @@
 // sentence -- translating the unit label itself is a separate, deeper
 // feature this story doesn't attempt.
 var LOCALE_HE = {
+  "about.open": "אודות ועזרה",
+  "about.title": "ברוכים הבאים ל-Squad Pulse",
+  "about.tagline": "להבין את הצוות. לבחור מה לשפר.",
+  "about.intro": "בדקו בקצרה את בריאות הצוות, הנחו רטרוספקטיבה וזהו דפוסים משותפים בין צוותים.",
+  "about.squad": "תצוגת צוות מרכזת את דירוגי בריאות הצוות ואת הרטרוספקטיבה שלו.",
+  "about.tribe": "תצוגת שבט מדגישה אתגרים משותפים בין צוותים כדי למקד את השיפור.",
+  "about.admin": "בניהול אפשר להגדיר צוותים ולהתאים תבניות הערכה.",
+  "about.credit": "פותח על ידי Dr. Agile",
+  "about.close": "חזרה לאפליקציה",
+
   // Story 6: the app header/nav chrome. "header.appName" is a deliberate
   // brand-name pass-through -- kept as the same Latin-script text as
   // English (common practice for a product/brand name even in an RTL UI)

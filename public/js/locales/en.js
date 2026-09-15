@@ -15,6 +15,16 @@
 // itself translated here; that's a separate, deeper feature this story
 // doesn't attempt.
 var LOCALE_EN = {
+  "about.open": "About & help",
+  "about.title": "Welcome to Squad Pulse",
+  "about.tagline": "Understand your team. Choose what to improve.",
+  "about.intro": "Take a quick team health check, guide a retrospective, and spot patterns across squads.",
+  "about.squad": "Squad view brings a team's health ratings and retrospective together.",
+  "about.tribe": "Tribe view highlights shared challenges across squads to help focus improvement.",
+  "about.admin": "Admin lets you set up squads and customize assessment templates.",
+  "about.credit": "Built by Dr. Agile",
+  "about.close": "Back to the app",
+
   // Story 6: the app header/nav chrome, outside every view container. The
   // app NAME itself is a deliberate brand-name pass-through -- same literal
   // value in every locale (see locales/he.js's header comment) -- still
