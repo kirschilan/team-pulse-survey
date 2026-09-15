@@ -88,22 +88,29 @@ try:
         a_errors = []
         a.on("pageerror", lambda e: a_errors.append(str(e)))
         a.goto(INDEX_URL, wait_until="domcontentloaded")
-        a.wait_for_timeout(300)
 
         print("=== device A renames squad-1 BEFORE anyone joins, so a real, distinctive board exists to sync ===")
         a.click('.view-btn[data-view="admin"]')
-        a.wait_for_timeout(100)
+        # step 7: default-on -- device A auto-generates its own team secret at
+        # boot via crypto.subtle (a real, non-instant async API) -- poll for
+        # the real value landing instead of guessing how long key generation
+        # takes.
+        a.wait_for_function("() => document.getElementById('teamLinkInput') && document.getElementById('teamLinkInput').value.length > 0")
         team_link = a.eval_on_selector("#teamLinkInput", "el=>el.value")
         a_secret = a.evaluate("localStorage.getItem('squadpulse:teamSecret')")
         name_input = a.query_selector('.admin-squad-name[data-id="squad-1"]')
+        # renameSquad() (squads.js) updates local state and re-renders
+        # SYNCHRONOUSLY before the relay write even starts (an optimistic
+        # local update) -- the actual relay round trip is what device B's
+        # own wait_for_function below re-checks (with a far more patient
+        # budget than any local guess here), and a single WebSocket
+        # connection preserves message order regardless, so no wait is
+        # needed on device A's side before moving on.
         name_input.fill("Renamed By A")
         name_input.dispatch_event("change")
-        a.wait_for_timeout(400)
 
         a.click('.view-btn[data-view="squad"]')
-        a.wait_for_timeout(100)
         a.click('.squad-pick-btn[data-id="squad-1"]')
-        a.wait_for_timeout(150)
         a.click("#startSessionBtn")
         a.wait_for_selector(".session-code")
         code = a.eval_on_selector(".session-code", "el=>el.textContent")
@@ -144,13 +151,18 @@ try:
         assert b.eval_on_selector("#viewJoin", "el=>el.hidden") is False
         rows = b.query_selector_all(".direct-row")
         assert len(rows) > 0, "device B should see squad-1's real dimensions"
+        # Every step here is click() -- Playwright auto-waits for each
+        # target to become actionable, and joinDraftAnswers/
+        # refreshSubmitEnabled() (retro-join.js) update synchronously in
+        # the click handler, so the loop needs no waits of its own.
         for row in rows[:-1]:
             row.query_selector(".swatch.good").click()
-            b.wait_for_timeout(20)
         rows[-1].query_selector(".swatch.crit").click()
-        b.wait_for_timeout(50)
         b.click("#stmtSubmitBtn")
-        b.wait_for_timeout(400)
+        # .add() is a REAL relay round trip (this file's own db) that only
+        # resolves once the relay acks the write -- wait for the real
+        # "personal results rendered" signal instead of guessing.
+        b.wait_for_selector('.personal-result', state="attached")
         assert b.query_selector(".personal-result") is not None
 
         print("=== the reverse direction also works: device B renames a DIFFERENT squad, device A sees it live ===")
@@ -173,16 +185,17 @@ try:
 
         # ============ RAINY DAY: a facilitator who stopped syncing produces a plain, session-only link ============
         print("=== RAINY DAY: device A stops syncing, then starts a NEW session -- its join link must NOT carry a team ===")
+        # teamDisconnectBtn's handler (board-sync.js) is fully synchronous --
+        # setTeamSecret("") is a plain localStorage.removeItem(), and
+        # stopTeamBoardSubscription() just unsubscribes this device's own
+        # local listener, no relay acknowledgment needed to "disconnect" --
+        # so no wait is needed before the localStorage check below.
         a.click('.view-btn[data-view="admin"]')
-        a.wait_for_timeout(100)
         a.click("#teamDisconnectBtn")
-        a.wait_for_timeout(150)
         assert a.evaluate("localStorage.getItem('squadpulse:teamSecret')") in (None, "")
 
         a.click('.view-btn[data-view="squad"]')
-        a.wait_for_timeout(100)
         a.click('.squad-pick-btn[data-id="squad-3"]')
-        a.wait_for_timeout(150)
         a.click("#startSessionBtn")
         a.wait_for_selector(".session-code")
         code2 = a.eval_on_selector(".session-code", "el=>el.textContent")
@@ -197,6 +210,12 @@ try:
         c_errors = []
         c.on("pageerror", lambda e: c_errors.append(str(e)))
         c.goto(join_link2, wait_until="domcontentloaded")
+        # No documented DOM signal exists for "this device finished adopting
+        # (or, here, generating its own default) team via URL open" -- same
+        # precedent as test_cofacilitator_join.py's and
+        # test_board_sync_finish_retro_convergence.py's identical moment.
+        # Getting this wrong on a relay-backed, cross-device path risks a
+        # worse, harder-to-diagnose failure than the modest time this costs.
         c.wait_for_timeout(500)
         c_secret = c.evaluate("localStorage.getItem('squadpulse:teamSecret')")
         print("device C's own (untouched, default) secret:", c_secret)
