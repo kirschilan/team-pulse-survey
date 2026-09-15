@@ -93,6 +93,7 @@ var LOCALE_EN = {
   "admin.boardSetup.templates": "Templates",
   "admin.boardSetup.importCsv": "Import CSV",
   "admin.boardSetup.exportCsv": "Export CSV",
+  "admin.boardSetup.exportJson": "Export JSON (beta)",
 
   "admin.teamSync.heading": "Team sync",
   "admin.teamSync.hint": "This board syncs, live, with every other device that opens the link below — over the same encrypted relay retro sessions already use. Nobody without the link can read or change it.",
