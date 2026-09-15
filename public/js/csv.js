@@ -165,6 +165,53 @@ function isValidRating(r){
   return true;
 }
 
+// Item 3b's own validation, same parse-boundary rule as the squad/rating
+// checks above -- a malformed dimensions/templates/config section must be
+// rejected here, not thrown from inside buildDimensionImportPlan()/
+// buildTemplateImportPlan()/renderImportPreview() later. Loose on purpose:
+// only the fields this app actually reads are type-checked (green/red/
+// statements/etc.); unknown extra fields are neither validated nor
+// rejected, matching formatVersion:1's "no migration needed yet" stance --
+// a future version can add fields without old imports choking on them.
+function isValidDimensionEntry(fd){
+  if(!isPlainObject(fd)) return false;
+  if(typeof fd.label !== "string" || !fd.label.trim()) return false;
+  if(fd.key !== undefined && typeof fd.key !== "string") return false;
+  if(fd.green !== undefined && typeof fd.green !== "string") return false;
+  if(fd.red !== undefined && typeof fd.red !== "string") return false;
+  if(fd.order !== undefined && typeof fd.order !== "number") return false;
+  if(fd.statements !== undefined && !Array.isArray(fd.statements)) return false;
+  if(fd.scoreBands !== undefined && !isPlainObject(fd.scoreBands)) return false;
+  if(fd.strategies !== undefined && !Array.isArray(fd.strategies)) return false;
+  return true;
+}
+
+function isValidTemplateEntry(ft){
+  if(!isPlainObject(ft)) return false;
+  if(typeof ft.name !== "string" || !ft.name.trim()) return false;
+  if(ft.unit !== undefined && typeof ft.unit !== "string") return false;
+  if(ft.unitPlural !== undefined && typeof ft.unitPlural !== "string") return false;
+  if(ft.attribution !== undefined && typeof ft.attribution !== "string") return false;
+  if(ft.dimensions !== undefined){
+    if(!Array.isArray(ft.dimensions)) return false;
+    for(var i=0;i<ft.dimensions.length;i++){
+      if(!isValidDimensionEntry(ft.dimensions[i])) return false;
+    }
+  }
+  return true;
+}
+
+// Board settings (state.config) are 4 named fields this app understands --
+// CONFIG_IMPORT_FIELDS is the single list both validation and planning
+// (buildConfigImportPlan(), below) key off of. An unknown field is ignored,
+// not rejected -- same forward-compat stance as the rest of this file.
+var CONFIG_IMPORT_FIELDS = ["unit", "unitPlural", "activeTemplateName", "attribution"];
+function isValidConfigEntry(cfg){
+  if(cfg === undefined) return true;
+  if(!isPlainObject(cfg)) return false;
+  return CONFIG_IMPORT_FIELDS.every(function(field){ return cfg[field] === undefined || typeof cfg[field] === "string"; });
+}
+
 function parseBoardImportFile(text){
   var data;
   try{ data = JSON.parse(text); }catch(e){ return { ok:false, error:"not-json" }; }
@@ -183,6 +230,19 @@ function parseBoardImportFile(text){
       }
     }
   }
+  if(data.dimensions !== undefined){
+    if(!Array.isArray(data.dimensions)) return { ok:false, error:"invalid-dimensions" };
+    for(var di=0;di<data.dimensions.length;di++){
+      if(!isValidDimensionEntry(data.dimensions[di])) return { ok:false, error:"invalid-dimension" };
+    }
+  }
+  if(data.templates !== undefined){
+    if(!Array.isArray(data.templates)) return { ok:false, error:"invalid-templates" };
+    for(var ti=0;ti<data.templates.length;ti++){
+      if(!isValidTemplateEntry(data.templates[ti])) return { ok:false, error:"invalid-template" };
+    }
+  }
+  if(!isValidConfigEntry(data.config)) return { ok:false, error:"invalid-config" };
   return { ok:true, data:data };
 }
 
@@ -256,10 +316,103 @@ function planHasChanges(plan){
   return plan.ratingCount>0 || plan.newSquadNames.length>0 || plan.squadsToRemove.length>0 || plan.clearedRatings.length>0;
 }
 
+// ---------- item 3b: dimensions/templates/board-settings import ----------
+// Same file, same preview modal, same Merge/Replace toggle as the squads/
+// ratings import above -- these are its sibling planning functions for the
+// rest of what buildBoardExport() puts in the file.
+//
+// Matched by LABEL/NAME, not key/id -- deliberately different from how the
+// squads import matches a RATING's dimension (by KEY, against the board's
+// own CURRENT dimension set -- a different question, unaffected by this).
+// A custom dimension's key ("local-dim-"+Date.now(), dimensions.js's
+// addDimension()) and a custom template's id ("local-tpl-"+Date.now(),
+// templates.js's saveCurrentAsTemplate()) are both device-local storage
+// artifacts, not portable identities -- the same reasoning
+// buildSquadImportPlan() already applies to squad.id. Only the label/name
+// is meaningful across two different boards/devices, which is the point of
+// importing a template set from one tribe into another (the product
+// owner's stated goal for this item).
+// A file with NO "dimensions" key at all (every item 3a-only fixture is
+// exactly this shape -- formatVersion:1 makes the field genuinely optional)
+// must never be read as "this file's dimension set is empty": REPLACE mode
+// would then remove every board dimension on an ordinary squads-only file.
+// `undefined` (key absent, no opinion) and `[]` (key present, file says
+// zero) are different claims -- only the second one means anything.
+function buildDimensionImportPlan(fileDimensions, mode){
+  if(fileDimensions === undefined) return { mode:mode, patches:[], added:[], toRemove:[] };
+  var byLabel = {};
+  sortedDimensions().forEach(function(d){ byLabel[d.label.trim().toLowerCase()] = d; });
+  var patches = [], added = [];
+  var fileLabelKeys = {};
+  (fileDimensions || []).forEach(function(fd){
+    var label = (fd.label || "").trim();
+    if(!label) return;
+    fileLabelKeys[label.toLowerCase()] = true;
+    var existing = byLabel[label.toLowerCase()] || null;
+    patches.push({ existing:existing, file:fd });
+    if(!existing) added.push(label);
+  });
+  var toRemove = mode === "replace"
+    ? sortedDimensions().filter(function(d){ return !fileLabelKeys[d.label.trim().toLowerCase()]; })
+    : [];
+  return { mode:mode, patches:patches, added:added, toRemove:toRemove };
+}
+
+// Same fix, same reason as buildDimensionImportPlan() above.
+function buildTemplateImportPlan(fileTemplates, mode){
+  if(fileTemplates === undefined) return { mode:mode, patches:[], added:[], toRemove:[] };
+  var byName = {};
+  (state.templates || []).forEach(function(t){ byName[t.name.trim().toLowerCase()] = t; });
+  var patches = [], added = [];
+  var fileNameKeys = {};
+  (fileTemplates || []).forEach(function(ft){
+    var name = (ft.name || "").trim();
+    if(!name) return;
+    fileNameKeys[name.toLowerCase()] = true;
+    var existing = byName[name.toLowerCase()] || null;
+    patches.push({ existing:existing, file:ft });
+    if(!existing) added.push(name);
+  });
+  var toRemove = mode === "replace"
+    ? (state.templates || []).filter(function(t){ return !fileNameKeys[t.name.trim().toLowerCase()]; })
+    : [];
+  return { mode:mode, patches:patches, added:added, toRemove:toRemove };
+}
+
+// Board settings (state.config) are 4 named fields, not a collection --
+// there's nothing to "remove" the way a missing squad/dimension/template is
+// removed in Replace mode, so this takes no mode parameter: whatever known
+// field the file provides just overwrites that field, the same in either
+// mode -- exactly like loadTemplate() (templates.js) already writes config
+// as one whole doc regardless of what triggered the load.
+function buildConfigImportPlan(fileConfig){
+  var changes = [];
+  if(!isPlainObject(fileConfig)) return changes;
+  CONFIG_IMPORT_FIELDS.forEach(function(field){
+    if(typeof fileConfig[field] !== "string") return;
+    if(state.config[field] !== fileConfig[field]) changes.push({ field:field, from:state.config[field], to:fileConfig[field] });
+  });
+  return changes;
+}
+
+// Shared Apply-button gate for the {patches, added, toRemove} shape
+// buildDimensionImportPlan()/buildTemplateImportPlan() both return -- same
+// "presence, not diff" rule planHasChanges() already uses for squads/
+// ratings above (a matched entity counts as a change whenever the file
+// mentions it, whether or not its fields actually differ from what's
+// already stored).
+function entityImportPlanHasChanges(plan){
+  return plan.added.length>0 || plan.toRemove.length>0 || plan.patches.some(function(p){ return p.existing; });
+}
+
 var jsonFileInput = document.getElementById("jsonFileInput");
 var importJsonBackdrop = document.getElementById("importJsonBackdrop");
 var pendingSquadImportPlan = null;
+var pendingDimensionImportPlan = null;
+var pendingTemplateImportPlan = null;
+var pendingConfigImportChanges = null;
 var pendingSquadImportMode = "merge";
+var pendingImportScope = { squads:true, templates:true };
 
 document.getElementById("importJsonBtn").addEventListener("click", function(){ jsonFileInput.click(); });
 
@@ -273,8 +426,8 @@ jsonFileInput.addEventListener("change", function(){
       renderJsonImportError(parsed);
     } else {
       pendingSquadImportMode = "merge";
-      pendingSquadImportPlan = buildSquadImportPlan(parsed.data, pendingSquadImportMode);
-      renderSquadImportPreview(parsed.data, pendingSquadImportPlan);
+      pendingImportScope = { squads:true, templates:true };
+      renderJsonImportPreview(parsed.data);
     }
     importJsonBackdrop.hidden = false;
     jsonFileInput.value = "";
@@ -301,66 +454,142 @@ function renderJsonImportError(parsed){
 // plural grammar isn't just an English "+s" either way.
 function countKey(base, count){ return base + (count===1 ? "One" : "Many"); }
 
-function renderSquadImportPreview(fileData, plan){
-  var extraSections = [];
-  if(Array.isArray(fileData.dimensions) && fileData.dimensions.length){
-    var otherParts = [];
-    if(fileData.dimensions.length) otherParts.push(t("importJson.scopeDimensions", { count:fileData.dimensions.length }));
-    if(Array.isArray(fileData.templates) && fileData.templates.length) otherParts.push(t("importJson.scopeTemplates", { count:fileData.templates.length }));
-    if(fileData.config) otherParts.push(t("importJson.scopeConfig"));
-    extraSections.push('<div class="scope-note">'+esc(t("importJson.scopeNote", { list: otherParts.join(", ") }))+'</div>');
+// {field: i18n key} for buildConfigImportPlan()'s diff rows -- CONFIG_IMPORT_FIELDS
+// is the source list; this just names each one for display.
+var CONFIG_FIELD_I18N_KEY = {
+  unit: "importJson.configFieldUnit", unitPlural: "importJson.configFieldUnitPlural",
+  activeTemplateName: "importJson.configFieldActiveTemplateName", attribution: "importJson.configFieldAttribution"
+};
+
+// Shared chip-row renderer for the {patches, added, toRemove} plan shape --
+// used for both dimensions and templates, same "no changes" fallback shown
+// in the reviewed mockup.
+function entityChipsHtml(plan, newKeyBase, updatedKeyBase, removedKeyBase){
+  var updatedCount = plan.patches.filter(function(p){ return p.existing; }).length;
+  var chips = [];
+  if(plan.added.length) chips.push('<span class="chip ok">'+esc(t(countKey(newKeyBase, plan.added.length), { count:plan.added.length }))+'</span>');
+  if(updatedCount) chips.push('<span class="chip">'+esc(t(countKey(updatedKeyBase, updatedCount), { count:updatedCount }))+'</span>');
+  if(plan.mode==="replace" && plan.toRemove.length) chips.push('<span class="chip crit">'+esc(t(countKey(removedKeyBase, plan.toRemove.length), { count:plan.toRemove.length }))+'</span>');
+  if(!chips.length) chips.push('<span class="chip none">'+esc(t("importJson.chipNoChanges"))+'</span>');
+  return chips.join("");
+}
+
+function renderJsonImportPreview(fileData){
+  var mode = pendingSquadImportMode;
+  var scope = pendingImportScope;
+  var squadPlan = buildSquadImportPlan(fileData, mode);
+  var dimPlan = buildDimensionImportPlan(fileData.dimensions, mode);
+  var tplPlan = buildTemplateImportPlan(fileData.templates, mode);
+  var configChanges = buildConfigImportPlan(fileData.config);
+  pendingSquadImportPlan = squadPlan;
+  pendingDimensionImportPlan = dimPlan;
+  pendingTemplateImportPlan = tplPlan;
+  pendingConfigImportChanges = configChanges;
+
+  var squadsHtml = "";
+  if(scope.squads){
+    var updatedExisting = squadPlan.patches.filter(function(p){ return p.existing; }).length;
+    var chips = '<div class="import-stats">' +
+      '<span class="chip ok">'+esc(t(countKey("importJson.chipRatings", squadPlan.ratingCount), { count:squadPlan.ratingCount }))+'</span>' +
+      '<span class="chip">'+esc(t(countKey("importJson.chipUpdated", updatedExisting), { count:updatedExisting, unit:unitLower(), unitPlural:unitPluralLower() }))+'</span>' +
+      (squadPlan.newSquadNames.length ? '<span class="chip">'+esc(t(countKey("importJson.chipNew", squadPlan.newSquadNames.length), { count:squadPlan.newSquadNames.length, unit:unitLower(), unitPlural:unitPluralLower(), names:squadPlan.newSquadNames.join(", ") }))+'</span>' : '') +
+      (squadPlan.mode==="replace" && squadPlan.squadsToRemove.length ? '<span class="chip crit">'+esc(t(countKey("importJson.chipRemoved", squadPlan.squadsToRemove.length), { count:squadPlan.squadsToRemove.length, unit:unitLower(), unitPlural:unitPluralLower(), names:squadPlan.squadsToRemove.map(function(s){return s.name;}).join(", ") }))+'</span>' : '') +
+    '</div>';
+    var skipsHtml = "";
+    if(squadPlan.skipped.length){
+      skipsHtml = '<div class="import-skips">' + squadPlan.skipped.slice(0,50).map(function(s){
+        return '<div class="srow">'+esc(t("importJson.skippedRow", { squad:s.squad, dimension:s.dimension }))+'</div>';
+      }).join("") + '</div>';
+    }
+    squadsHtml = '<div class="section-heading"><div class="field-label">'+esc(t("importJson.scopeSquads"))+'</div></div>' + chips + skipsHtml;
   }
 
-  var updatedExisting = plan.patches.filter(function(p){ return p.existing; }).length;
-  var chips = '<div class="import-stats">' +
-    '<span class="chip ok">'+esc(t(countKey("importJson.chipRatings", plan.ratingCount), { count:plan.ratingCount }))+'</span>' +
-    '<span class="chip">'+esc(t(countKey("importJson.chipUpdated", updatedExisting), { count:updatedExisting, unit:unitLower(), unitPlural:unitPluralLower() }))+'</span>' +
-    (plan.newSquadNames.length ? '<span class="chip">'+esc(t(countKey("importJson.chipNew", plan.newSquadNames.length), { count:plan.newSquadNames.length, unit:unitLower(), unitPlural:unitPluralLower(), names:plan.newSquadNames.join(", ") }))+'</span>' : '') +
-    (plan.mode==="replace" && plan.squadsToRemove.length ? '<span class="chip crit">'+esc(t(countKey("importJson.chipRemoved", plan.squadsToRemove.length), { count:plan.squadsToRemove.length, unit:unitLower(), unitPlural:unitPluralLower(), names:plan.squadsToRemove.map(function(s){return s.name;}).join(", ") }))+'</span>' : '') +
-  '</div>';
+  var restHtml = "";
+  if(scope.templates){
+    var configHtml = "";
+    if(configChanges.length){
+      configHtml = '<div class="section-heading"><div class="field-label">'+esc(t("importJson.configHeading"))+'</div></div>' +
+        '<div class="config-diff">' + configChanges.map(function(c){
+          return '<div class="crow"><span class="cfield">'+esc(t(CONFIG_FIELD_I18N_KEY[c.field] || c.field))+'</span>' +
+            '<span class="cfrom">'+esc(c.from)+'</span><span class="carrow">&rarr;</span><span class="cto">'+esc(c.to)+'</span></div>';
+        }).join("") + '</div>';
+    }
+    restHtml =
+      '<div class="section-heading"><div class="field-label">'+esc(t("importJson.dimensionsHeading"))+'</div></div>' +
+      '<div class="import-stats">'+entityChipsHtml(dimPlan, "importJson.chipDimNew", "importJson.chipDimUpdated", "importJson.chipDimRemoved")+'</div>' +
+      '<div class="section-heading"><div class="field-label">'+esc(t("importJson.templatesHeading"))+'</div></div>' +
+      '<div class="import-stats">'+entityChipsHtml(tplPlan, "importJson.chipTplNew", "importJson.chipTplUpdated", "importJson.chipTplRemoved")+'</div>' +
+      configHtml;
+  }
+
+  var dangerGroups = [];
+  if(scope.squads && squadPlan.mode === "replace" && (squadPlan.squadsToRemove.length || squadPlan.clearedRatings.length)){
+    var squadItems = squadPlan.squadsToRemove.map(function(s){ return '<li>'+esc(t("importJson.willRemoveSquad", { name:s.name }))+'</li>'; })
+      .concat(squadPlan.clearedRatings.map(function(c){ return '<li>'+esc(t("importJson.willClearRating", { squad:c.squad, dimension:c.dimension }))+'</li>'; }));
+    dangerGroups.push('<ul>'+squadItems.join("")+'</ul>');
+  }
+  if(scope.templates && mode === "replace" && dimPlan.toRemove.length){
+    dangerGroups.push('<span class="wgroup">'+esc(t("importJson.removedDimensionsGroupTitle"))+'</span><ul>' +
+      dimPlan.toRemove.map(function(d){ return '<li>'+esc(t("importJson.willRemoveDimension", { name:d.label }))+'</li>'; }).join("") + '</ul>');
+  }
+  if(scope.templates && mode === "replace" && tplPlan.toRemove.length){
+    dangerGroups.push('<span class="wgroup">'+esc(t("importJson.removedTemplatesGroupTitle"))+'</span><ul>' +
+      tplPlan.toRemove.map(function(tpl){ return '<li>'+esc(t("importJson.willRemoveTemplate", { name:tpl.name }))+'</li>'; }).join("") + '</ul>');
+  }
 
   var replaceWarning = "";
-  if(plan.mode === "replace" && (plan.squadsToRemove.length || plan.clearedRatings.length)){
-    var items = plan.squadsToRemove.map(function(s){ return '<li>'+esc(t("importJson.willRemoveSquad", { name:s.name }))+'</li>'; })
-      .concat(plan.clearedRatings.map(function(c){ return '<li>'+esc(t("importJson.willClearRating", { squad:c.squad, dimension:c.dimension }))+'</li>'; }));
-    replaceWarning = '<div class="import-warning danger"><b>'+esc(t("importJson.replaceWarningTitle"))+'</b><ul>'+items.join("")+'</ul>' +
+  if(dangerGroups.length){
+    replaceWarning = '<div class="import-warning danger"><b>'+esc(t("importJson.replaceWarningTitle"))+'</b>' + dangerGroups.join("") +
       '<div class="backup-offer"><button class="btn" id="importJsonBackupBtn" type="button">'+esc(t("importJson.downloadBackup"))+'</button>' +
       '<span class="backup-done" id="importJsonBackupDone" hidden>'+esc(t("importJson.backupDone"))+'</span>' +
       '<span class="backup-failed" id="importJsonBackupFailed" hidden>'+esc(t("importJson.backupFailed"))+'</span></div></div>';
   }
 
-  var skipsHtml = "";
-  if(plan.skipped.length){
-    skipsHtml = '<div class="import-skips">' + plan.skipped.slice(0,50).map(function(s){
-      return '<div class="srow">'+esc(t("importJson.skippedRow", { squad:s.squad, dimension:s.dimension }))+'</div>';
-    }).join("") + '</div>';
-  }
+  var scopeChosen = scope.squads || scope.templates;
+  var hasChanges = (scope.squads && planHasChanges(squadPlan)) ||
+    (scope.templates && (entityImportPlanHasChanges(dimPlan) || entityImportPlanHasChanges(tplPlan) || configChanges.length>0));
 
   document.getElementById("importJsonBody").innerHTML =
     '<h3>'+esc(t("importJson.title"))+'</h3>' +
     '<p class="hint">'+esc(t("importJson.hint"))+'</p>' +
+    '<div class="field-label">'+esc(t("importJson.scopeLabel"))+'</div>' +
+    '<div class="scope-row">' +
+      '<label class="scope-check"><input type="checkbox" id="importJsonScopeSquads" '+(scope.squads?"checked":"")+'> '+esc(t("importJson.scopeSquads"))+'</label>' +
+      '<label class="scope-check"><input type="checkbox" id="importJsonScopeTemplates" '+(scope.templates?"checked":"")+'> '+esc(t("importJson.scopeRest"))+'</label>' +
+    '</div>' +
     '<div class="field-label">'+esc(t("importJson.modeLabel"))+'</div>' +
     '<div class="mode-switch">' +
-      '<button class="mode-btn'+(plan.mode==="merge"?" active":"")+'" data-mode="merge" type="button">'+esc(t("importJson.modeMerge"))+'</button>' +
-      '<button class="mode-btn'+(plan.mode==="replace"?" active":"")+'" data-mode="replace" type="button">'+esc(t("importJson.modeReplace"))+'</button>' +
+      '<button class="mode-btn'+(mode==="merge"?" active":"")+'" data-mode="merge" type="button">'+esc(t("importJson.modeMerge"))+'</button>' +
+      '<button class="mode-btn'+(mode==="replace"?" active":"")+'" data-mode="replace" type="button">'+esc(t("importJson.modeReplace"))+'</button>' +
     '</div>' +
     '<p class="external-tip">'+esc(t("importJson.externalTip"))+' <a href="https://meldmerge.org" target="_blank" rel="noopener">Meld</a>.</p>' +
-    chips + replaceWarning + skipsHtml + extraSections.join("") +
+    squadsHtml + restHtml + replaceWarning +
+    (scopeChosen ? '' : '<p class="hint" style="margin-top:14px;">'+esc(t("importJson.noScopeHint"))+'</p>') +
     '<div class="modal-actions">' +
       '<button class="btn ghost" id="importJsonCancel" type="button">'+esc(t("importJson.cancel"))+'</button>' +
-      '<button class="btn primary" id="importJsonApplyBtn" type="button" '+(planHasChanges(plan) ? "" : "disabled")+'>'+esc(t("importJson.apply"))+'</button>' +
+      '<button class="btn primary" id="importJsonApplyBtn" type="button" '+((scopeChosen && hasChanges) ? "" : "disabled")+'>'+esc(t("importJson.apply"))+'</button>' +
     '</div>';
 
   document.querySelectorAll("#importJsonBody .mode-btn").forEach(function(btn){
     btn.addEventListener("click", function(){
       pendingSquadImportMode = btn.getAttribute("data-mode");
-      pendingSquadImportPlan = buildSquadImportPlan(fileData, pendingSquadImportMode);
-      renderSquadImportPreview(fileData, pendingSquadImportPlan);
+      renderJsonImportPreview(fileData);
     });
+  });
+  document.getElementById("importJsonScopeSquads").addEventListener("change", function(){
+    pendingImportScope = Object.assign({}, pendingImportScope, { squads: this.checked });
+    renderJsonImportPreview(fileData);
+  });
+  document.getElementById("importJsonScopeTemplates").addEventListener("change", function(){
+    pendingImportScope = Object.assign({}, pendingImportScope, { templates: this.checked });
+    renderJsonImportPreview(fileData);
   });
   document.getElementById("importJsonCancel").addEventListener("click", closeSquadImport);
   document.getElementById("importJsonApplyBtn").addEventListener("click", function(){
-    applySquadImportPlan(pendingSquadImportPlan);
+    if(pendingImportScope.squads) applySquadImportPlan(pendingSquadImportPlan);
+    if(pendingImportScope.templates){
+      applyDimensionTemplateConfigImportPlan(pendingDimensionImportPlan, pendingTemplateImportPlan, pendingConfigImportChanges, pendingSquadImportMode);
+    }
     closeSquadImport();
   });
   var backupBtn = document.getElementById("importJsonBackupBtn");
@@ -391,7 +620,13 @@ function renderSquadImportPreview(fileData, plan){
   }
 }
 
-function closeSquadImport(){ importJsonBackdrop.hidden = true; pendingSquadImportPlan = null; }
+function closeSquadImport(){
+  importJsonBackdrop.hidden = true;
+  pendingSquadImportPlan = null;
+  pendingDimensionImportPlan = null;
+  pendingTemplateImportPlan = null;
+  pendingConfigImportChanges = null;
+}
 importJsonBackdrop.addEventListener("click", function(e){ if(e.target===importJsonBackdrop) closeSquadImport(); });
 
 function applySquadImportPlan(plan){
@@ -450,6 +685,143 @@ function applySquadImportPlan(plan){
       p.existing = sq;
     });
     applyAll();
+  }
+}
+
+// A matched dimension's file fields, excluding `order` -- same rule
+// applySquadImportPlan()'s REPLACE write already applies to a matched
+// squad's own order (only .dimensions is ever patched from the file; a
+// dimension's position in its list is board-local sequencing, not
+// something a file from another board should be allowed to scramble).
+function dimensionImportFields(fd){
+  // Only label is unconditional (isValidDimensionEntry() requires it) --
+  // every other field is included only when the file actually has it, same
+  // "MERGE leaves what's not mentioned alone" rule the squads/ratings import
+  // already applies: update() (MERGE) only touches keys present in this
+  // object, so an omitted green/red/etc. leaves the board's own value
+  // exactly as it was, rather than silently blanking it. In REPLACE mode
+  // (set(), the whole doc), a field genuinely absent from the file just
+  // isn't in the stored doc at all -- db.js's dimension listener already
+  // reads a missing green/red/etc. back as "" when it loads, so there's
+  // nothing left to default here.
+  var fields = { label: fd.label };
+  if(fd.green !== undefined) fields.green = fd.green;
+  if(fd.red !== undefined) fields.red = fd.red;
+  if(fd.statements) fields.statements = fd.statements;
+  if(fd.scoreBands) fields.scoreBands = fd.scoreBands;
+  if(fd.strategies) fields.strategies = fd.strategies;
+  if(fd.i18n) fields.i18n = fd.i18n;
+  return fields;
+}
+
+// Same "only include what the file actually has" rule as
+// dimensionImportFields() above, and for the same reason -- db.js's own
+// template snapshot listener already defaults every one of these fields
+// when reading a doc back (data.unit||"", (data.dimensions||[]).map(...),
+// etc.), for both a brand-new template and a matched one, so there's
+// nothing to default here either.
+function templateImportFields(ft){
+  var fields = { name: ft.name };
+  if(ft.unit !== undefined) fields.unit = ft.unit;
+  if(ft.unitPlural !== undefined) fields.unitPlural = ft.unitPlural;
+  if(ft.attribution !== undefined) fields.attribution = ft.attribution;
+  if(ft.dimensions !== undefined) fields.dimensions = ft.dimensions;
+  if(ft.i18n) fields.i18n = ft.i18n;
+  return fields;
+}
+
+// Applies the dimensions/templates/board-settings plans buildDimensionImportPlan()/
+// buildTemplateImportPlan()/buildConfigImportPlan() built. Mirrors
+// applySquadImportPlan()'s own two-phase shape (create any brand-new
+// entities first, since their ids only exist once the write returns; then
+// apply every matched update, removal, and the config diff together).
+function applyDimensionTemplateConfigImportPlan(dimPlan, tplPlan, configChanges, mode){
+  if(!dimPlan || !tplPlan) return;
+  function applyMatchedAndConfig(){
+    dimPlan.patches.forEach(function(p){
+      if(!p.existing) return;
+      var fields = dimensionImportFields(p.file);
+      Object.assign(p.existing, fields);
+      syncLiveIfConnected(function(){
+        if(mode === "replace"){
+          return state.db.collection("dimensions").doc(p.existing.key).set(Object.assign({ order:p.existing.order, updatedAt: nowIso() }, fields));
+        }
+        return state.db.collection("dimensions").doc(p.existing.key).update(Object.assign({ updatedAt: nowIso() }, fields));
+      }, "JSON import write for dimensions/" + p.existing.key);
+    });
+    // Templates always write via update(), even in Replace mode -- unlike
+    // squads/dimensions, a saved template's own createdAt (its position in
+    // "My templates") is never mirrored into state.templates at all
+    // (db.js's template listener doesn't read it back), so a full set()
+    // here would silently lose it. Every field this app tracks on a
+    // template (name/unit/unitPlural/attribution/dimensions) is always
+    // present in a valid export (isValidTemplateEntry() requires it) --
+    // only i18n is ever genuinely absent, and leaving a stale one behind on
+    // Replace is a deliberately accepted, narrow simplification rather than
+    // risking the saved-templates list losing its order.
+    tplPlan.patches.forEach(function(p){
+      if(!p.existing) return;
+      var fields = templateImportFields(p.file);
+      Object.assign(p.existing, fields);
+      syncLiveIfConnected(function(){
+        return state.db.collection("templates").doc(p.existing.id).update(Object.assign({ updatedAt: nowIso() }, fields));
+      }, "JSON import write for templates/" + p.existing.id);
+    });
+    if(mode === "replace"){
+      dimPlan.toRemove.forEach(function(d){ removeDimension(d.key); });
+      tplPlan.toRemove.forEach(function(tpl){ deleteTemplate(tpl.id); });
+    }
+    if(configChanges && configChanges.length){
+      var newConfig = Object.assign({}, state.config);
+      configChanges.forEach(function(c){ newConfig[c.field] = c.to; });
+      state.config = newConfig;
+      syncLiveIfConnected(function(){
+        return state.db.doc("meta/config").set(Object.assign({}, newConfig, { updatedAt: nowIso() }));
+      }, "JSON import write for meta/config");
+    }
+    renderAll();
+    if(!dimBackdrop.hidden) renderDimList();
+    if(!templatesBackdrop.hidden) renderTemplateList();
+    diag("JSON import applied to dimensions/templates/board settings (" + mode + "): " +
+      dimPlan.patches.filter(function(p){ return p.existing; }).length + " dimension(s) updated, " + dimPlan.added.length + " new" +
+      (mode==="replace" ? ", " + dimPlan.toRemove.length + " removed" : "") + "; " +
+      tplPlan.patches.filter(function(p){ return p.existing; }).length + " template(s) updated, " + tplPlan.added.length + " new" +
+      (mode==="replace" ? ", " + tplPlan.toRemove.length + " removed" : "") + "; " +
+      (configChanges ? configChanges.length : 0) + " board setting(s) changed.");
+  }
+
+  var newDims = dimPlan.patches.filter(function(p){ return !p.existing; });
+  var newTpls = tplPlan.patches.filter(function(p){ return !p.existing; });
+  if(newDims.length===0 && newTpls.length===0){ applyMatchedAndConfig(); return; }
+
+  var maxDimOrder = state.dimensions.reduce(function(m,d){ return Math.max(m, d.order||0); }, 0);
+  if(state.live && state.db){
+    showBusy("Importing " + (newDims.length+newTpls.length) + " new item(s)…");
+    var writes = newDims.map(function(p, i){
+      var payload = Object.assign({ order: maxDimOrder+1+i, updatedAt: nowIso() }, dimensionImportFields(p.file));
+      return state.db.collection("dimensions").add(payload).then(function(ref){ p.existing = Object.assign({ key: ref.id }, payload); });
+    }).concat(newTpls.map(function(p){
+      var payload = Object.assign({ createdAt: nowIso() }, templateImportFields(p.file));
+      return state.db.collection("templates").add(payload).then(function(ref){ p.existing = Object.assign({ id: ref.id }, payload); });
+    }));
+    Promise.all(writes).then(function(){ hideBusy(); applyMatchedAndConfig(); }).catch(function(err){
+      hideBusy();
+      diag("JSON import: creating new dimensions/templates failed: " + (err && err.code ? err.code : String(err)));
+    });
+  } else {
+    newDims.forEach(function(p, i){
+      var payload = Object.assign({ order: maxDimOrder+1+i }, dimensionImportFields(p.file));
+      var d = Object.assign({ key:"local-dim-"+Date.now()+"-"+i }, payload);
+      state.dimensions.push(d);
+      p.existing = d;
+    });
+    newTpls.forEach(function(p, i){
+      var payload = templateImportFields(p.file);
+      var tpl = Object.assign({ id:"local-tpl-"+Date.now()+"-"+i }, payload);
+      state.templates.push(tpl);
+      p.existing = tpl;
+    });
+    applyMatchedAndConfig();
   }
 }
 
@@ -671,7 +1043,9 @@ if (typeof module !== "undefined" && module.exports) {
     mapImportColumns: mapImportColumns, buildImportPlan: buildImportPlan, toCSV: toCSV,
     buildBoardExport: buildBoardExport, toJSON: toJSON,
     parseBoardImportFile: parseBoardImportFile, buildSquadImportPlan: buildSquadImportPlan,
-    mergeSquadDimensions: mergeSquadDimensions, planHasChanges: planHasChanges
+    mergeSquadDimensions: mergeSquadDimensions, planHasChanges: planHasChanges,
+    buildDimensionImportPlan: buildDimensionImportPlan, buildTemplateImportPlan: buildTemplateImportPlan,
+    buildConfigImportPlan: buildConfigImportPlan, entityImportPlanHasChanges: entityImportPlanHasChanges
   };
 }
 
