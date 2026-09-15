@@ -7,7 +7,9 @@
 // modal. Story 10: the retro JOIN flow (participant screens + the "Join a
 // retro" code modal). Story 11: the retro FACILITATOR flow (session card,
 // override editor, confirm dialogs). Story 12: the Edit Dimensions modal.
-// Still English-only: CSV import (its own future story). RTL_SCOPED_CONTAINERS
+// Story 13: the JSON board export button and the JSON import preview modal
+// (#importJsonBackdrop) -- item 1/3a, translated from the start; CSV export/
+// import remain English-only (their own future item 4). RTL_SCOPED_CONTAINERS
 // below lists every container currently translated -- each gets its own
 // dir/lang flip; nothing else does, so a still-English screen never
 // visually breaks under an RTL layout it was never translated for. A
@@ -24,7 +26,7 @@ var LOCALES = { en: LOCALE_EN, he: LOCALE_HE };
 var DEFAULT_LOCALE = "en";
 var SUPPORTED_LOCALES = ["en", "he"];
 var LANG_STORAGE_KEY = "squadpulse:lang";
-var RTL_SCOPED_CONTAINERS = ["viewAdmin", "viewTribe", "viewSquad", "backdrop", "appHeader", "templatesBackdrop", "viewJoin", "joinCodeBackdrop", "dimBackdrop", "aboutDialog"];
+var RTL_SCOPED_CONTAINERS = ["viewAdmin", "viewTribe", "viewSquad", "backdrop", "appHeader", "templatesBackdrop", "viewJoin", "joinCodeBackdrop", "dimBackdrop", "aboutDialog", "importJsonBackdrop", "confirmBackdrop"];
 
 function t(key, vars){
   var loc = (state && state.ui && state.ui.locale) || DEFAULT_LOCALE;

@@ -133,7 +133,12 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
           <span data-i18n="admin.boardSetup.exportJson">Export JSON (beta)</span>
         </button>
+        <button class="btn" id="importJsonBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3m0 0L8 7m4-4l4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          <span data-i18n="admin.boardSetup.importJson">Import JSON (beta)</span>
+        </button>
         <input type="file" id="csvFileInput" accept=".csv,text/csv" hidden>
+        <input type="file" id="jsonFileInput" accept=".json,application/json" hidden>
       </div>
     </div>
 
@@ -301,13 +306,20 @@
   </div>
 </div>
 
+<!-- ---------- JSON board import (beta) preview modal: squads & ratings, Story 13 item 3a ---------- -->
+<div class="backdrop" id="importJsonBackdrop" hidden>
+  <div class="modal wide" role="dialog" aria-modal="true">
+    <div id="importJsonBody"></div>
+  </div>
+</div>
+
 <!-- ---------- generic confirm modal ---------- -->
 <div class="backdrop" id="confirmBackdrop" hidden>
   <div class="modal" role="dialog" aria-modal="true">
     <h3 id="confirmTitle">Are you sure?</h3>
     <p class="hint" id="confirmMessage" style="margin-bottom:4px;"></p>
     <div class="modal-actions">
-      <button class="btn ghost" id="confirmCancel" type="button">Cancel</button>
+      <button class="btn ghost" id="confirmCancel" type="button" data-i18n="common.cancel">Cancel</button>
       <button class="btn primary danger" id="confirmOk" type="button">Confirm</button>
     </div>
   </div>
