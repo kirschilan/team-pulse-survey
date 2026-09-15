@@ -2258,3 +2258,25 @@ not just in this repo's own tests.
   since the test no longer waits around collecting incidental traffic), both stress-tested 15x
   clean given the real relay/cross-tab timing involved. Full suite green: 74/74 unit tests, 45/45
   Playwright tests via `tests/run_all.sh` (63.9s). 11 files remain in this batch.
+- 2026-09-15 — Batch 4/5: three real-relay-backed board-sync files (`test_board_sync_default_on.py`,
+  `test_board_sync_hydrate_on_boot.py`, `test_board_sync_live_subscribe.py`, 9+7+7 = 23 waits -> 1
+  deliberate). The key finding was distinguishing which writes are genuinely async from which only
+  looked that way: `ensureDefaultTeamSecret()`/`renderTeamSyncStatus()`/`autoConnectFromLink()`/
+  `connectWithSecret()` (`board-sync.js`) are all synchronous at script-load/click time, so a
+  device's team link, connected status, and the disconnect handler's own immediate UI effects
+  needed no wait at all -- contrary to what several of these files' own original comments assumed
+  ("no click needed" was right, but the wait after it wasn't). By contrast, `relay-client.js`'s
+  `collRef.add()` (used by every `addSquadBtn` click) is genuinely async even for its OWN device's
+  optimistic local update -- unlike `putDoc()` elsewhere, `add()` gates entirely on `room.ready`
+  resolving first -- so those kept or gained a real `wait_for_function`, reusing the style
+  `test_board_sync_hydrate_on_boot.py` already had for its hydrate checks. The default-on file's
+  squad-rename push needed a different mechanism since what has to settle is the RELAY's own copy
+  of the board doc, not local browser state -- a small Python-side `poll_pushed_board()` helper
+  re-fetches it until the rename shows up. The live-subscribe file's disconnect-then-push scenario
+  is "proving a negative" (same category as `test_board_sync_finish_retro_convergence.py`'s
+  established device-C-never-syncs check) -- kept a real fixed wait there, but strengthened it: the
+  writing device's own optimistic update is now waited on for real first, before the fixed window
+  checks the disconnected device never got it. Verified output byte-for-byte identical to each
+  original, each stress-tested 15x clean given the real relay round trips. Full suite green:
+  74/74 unit tests, 45/45 Playwright tests via `tests/run_all.sh` (60.6s). Only
+  `test_board_sync_opt_in_push.py` plus the relay re-check task remain in this batch.
