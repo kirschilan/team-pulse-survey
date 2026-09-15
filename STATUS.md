@@ -1809,11 +1809,34 @@ not just in this repo's own tests.
   clean at ~2.5-2.7s per run (down from ~5.2s). Full 44-file Playwright suite + 74-test unit suite
   green, zero regressions.
 
-  This closes out Copilot's flagged test-performance list (9 files: `test_hebrew_rtl_coverage.py`,
-  `test_template_switching_and_csv_import.py`, `test_tribe_hotspots.py`,
-  `test_tooltip_busy_overlay_and_csv_key.py`, `test_cofacilitator_join.py`,
-  `test_retro_join_flow.py`, `test_scored_template_tuckman.py`,
-  `test_scored_template_five_dysfunctions.py`, `test_retro_statement_survey_submission.py`). Not
-  touched: `test_board_sync_finish_retro_convergence.py` (lowest Copilot priority, largest/most
-  relay-timing-sensitive file in the list) -- left for its own dedicated pass rather than folded in
-  here.
+  This closed out 9 of Copilot's flagged test-performance list. The 10th and last,
+  `test_board_sync_finish_retro_convergence.py` (lowest Copilot priority, largest/most
+  relay-timing-sensitive file in the list), got its own dedicated pass -- see below.
+- 2026-09-15 — Copilot perf pass, file 10/10 (the last one): `test_board_sync_finish_retro_convergence.py`.
+  A real two-device, relay-backed convergence test (not the local fake-store harness the other 9
+  files use), so treated with more caution throughout. Replaced 30 of its 32 `wait_for_timeout()`
+  calls: click chains needed no wait (including the direct-rating swatch-click loops --
+  `refreshSubmitEnabled()` updates synchronously in the click handler, same finding as the
+  statement-survey file's scale-btn loop); device A/C's team-link generation got
+  `wait_for_function` polling `#teamLinkInput`'s value (step 7's `crypto.subtle`-backed key
+  generation is genuinely async), matching `test_cofacilitator_join.py`'s established fix.
+  Two spots needed real thought specific to this file being genuinely relay-backed: submitting the
+  statement/direct-rating survey calls `state.db.add()`, a REAL relay round trip here (this file's
+  own db, not a fake store) that only resolves once the relay acks the write, and
+  `afterSubmit()` (retro-join.js) only re-renders the personal-result page once that resolves --
+  waited for `.personal-result` to appear instead of guessing, which also closes a real
+  navigate-away-before-the-write-lands risk the original fixed wait didn't guarantee against.
+  Switching reveal mode to "live" is ALSO a real, non-optimistic relay round trip on the clicking
+  device's own UI (`setRevealMode()`'s live branch waits for its own session listener to reflect
+  the write rather than rendering immediately) -- waited for the toggle to gain `.active` instead
+  of guessing. Kept exactly 2 waits: device B's initial team-link open (same "no documented
+  adoption-finished signal" precedent as `test_cofacilitator_join.py`), and the rainy-day check's
+  margin for proving a cell STAYS unscored (this file's own `wait_for_scored()` helper already
+  documents that it can't be used to prove a negative -- there's no positive condition to poll for
+  "nothing arrived and nothing ever will"). Verified output identical to the original (aside from
+  randomized session codes/secrets), then stress-tested 15x clean at ~5.7-6.0s per run (down from
+  ~11.6-11.7s), matching the larger stress-test batch this pass reserves for relay/multi-device
+  stakes. Full 44-file Playwright suite + 74-test unit suite green, zero regressions -- re-verified
+  again after a clean fast-forward onto the preview branch (5x rerun).
+
+  This closes out all 10 of Copilot's flagged test-performance files.
