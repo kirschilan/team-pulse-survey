@@ -29,13 +29,22 @@ with sync_playwright() as p:
     ctx = browser.new_context(permissions=["clipboard-write", "clipboard-read"])
     page = ctx.new_page()
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(300)
+    # No boot-completion wait needed here -- unlike most other files in this
+    # pass, nothing below reads anything gated on the async store load
+    # (#adminSquadList etc.). #diagLog, #diagPanel and the copy buttons are
+    # all static markup in index.html, and page.goto()'s default
+    # waitUntil="load" already guarantees every top-level script (including
+    # helpers.js's window "error"/"unhandledrejection" listener
+    # registration) has run by the time it returns.
 
     print("=== a synchronous throw with no surrounding try/catch reaches the diag log ===")
     page_errors = []
     page.on("pageerror", lambda e: page_errors.append(str(e)))
     page.evaluate("setTimeout(function(){ throw new Error('synthetic-sync-boom'); }, 0);")
-    page.wait_for_timeout(200)
+    # evaluate() above only awaits the setTimeout() CALL, not its callback --
+    # wait for the real "window's error listener ran diag()" signal instead
+    # of guessing how long a 0ms timer takes to actually fire.
+    page.wait_for_function("() => document.querySelector('#diagLog').textContent.indexOf('synthetic-sync-boom') !== -1")
     diag_text = page.eval_on_selector("#diagLog", "el=>el.textContent")
     print("diag log:", diag_text.strip().split("\n")[-1])
     assert "Uncaught error" in diag_text and "synthetic-sync-boom" in diag_text
@@ -48,16 +57,20 @@ with sync_playwright() as p:
     # instead of leaving it genuinely unhandled in the page for the
     # browser's own "unhandledrejection" event to fire on.
     page.evaluate("() => { Promise.reject(new Error('synthetic-rejection-boom')); }")
-    page.wait_for_timeout(200)
+    # Same reasoning as the sync-throw wait above -- wait for the real
+    # "unhandledrejection listener ran diag()" signal.
+    page.wait_for_function("() => document.querySelector('#diagLog').textContent.indexOf('synthetic-rejection-boom') !== -1")
     diag_text2 = page.eval_on_selector("#diagLog", "el=>el.textContent")
     print("diag log:", diag_text2.strip().split("\n")[-1])
     assert "Unhandled promise rejection" in diag_text2 and "synthetic-rejection-boom" in diag_text2
 
     print("=== the diagnostics panel has a one-click copy button, not just select-and-copy ===")
+    # setView() (app.js) is synchronous, and expanding a native <details> is
+    # a synchronous browser toggle -- #diagLog/the copy button are already
+    # in the collapsed-but-attached markup, not built lazily on open -- so
+    # neither click below needs a wait before the next one.
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('#diagPanel summary')
-    page.wait_for_timeout(100)
     copy_btn = page.query_selector('.copy-diag-btn[data-diag-target="diagLog"]')
     print("copy button present in the Admin diagnostics panel:", copy_btn is not None)
     assert copy_btn is not None
@@ -65,14 +78,21 @@ with sync_playwright() as p:
     diag_text_before_copy = page.eval_on_selector("#diagLog", "el=>el.textContent")
     errors_before_copy = list(page_errors)  # earlier scenarios above deliberately threw -- only the copy click's OWN errors matter here
     copy_btn.click()
-    page.wait_for_timeout(100)
+    # click handler above writes via navigator.clipboard.writeText(...).then(showCopied)
+    # -- genuinely async (a promise .then()) -- wait for the real label
+    # change instead of guessing how long the clipboard write takes.
+    page.wait_for_function("() => document.querySelector('.copy-diag-btn[data-diag-target=\"diagLog\"]').textContent === 'Copied!'")
     label_after_click = page.eval_on_selector('.copy-diag-btn[data-diag-target="diagLog"]', 'el=>el.textContent')
     print("button label right after clicking (should confirm the copy):", label_after_click)
     assert label_after_click == "Copied!"
     clipboard_text = page.evaluate("navigator.clipboard.readText()")
     print("clipboard now really contains the log (first line):", clipboard_text.split("\n")[0])
     assert clipboard_text == diag_text_before_copy, "the button must copy the log's real, current text, not something else"
-    page.wait_for_timeout(1700)
+    # showCopied()'s own setTimeout(..., 1500) reverting the label is a
+    # real, intentional UI timer, not a missing signal -- this wait can't
+    # be removed, but poll for the actual revert instead of sleeping a
+    # padded guess past it.
+    page.wait_for_function("() => document.querySelector('.copy-diag-btn[data-diag-target=\"diagLog\"]').textContent !== 'Copied!'")
     label_after_reset = page.eval_on_selector('.copy-diag-btn[data-diag-target="diagLog"]', 'el=>el.textContent')
     print("button label after the confirmation fades (should revert):", label_after_reset)
     assert label_after_reset == original_label
@@ -84,15 +104,22 @@ with sync_playwright() as p:
     join_errors = []
     join_page.on("pageerror", lambda e: join_errors.append(str(e)))
     join_page.goto("file://" + str(out_path.resolve()) + "?session=NOSUCHCODE")
-    join_page.wait_for_timeout(400)
+    # listenJoinSession()'s FIRST onSnapshot delivery is the one genuine
+    # async gap this pass has established everywhere (the fake store
+    # deliberately delays it) -- its callback calls diag() synchronously
+    # once it lands, so wait for the real "join snapshot processed" signal
+    # instead of guessing.
+    join_page.wait_for_function("() => document.querySelector('#joinDiagLog').textContent !== '(no activity yet)'")
+    # Expanding a native <details> is a synchronous browser toggle, same
+    # reasoning as the admin diag panel above -- no wait needed.
     join_page.click('#joinDiagPanel summary')
-    join_page.wait_for_timeout(100)
     join_copy_btn = join_page.query_selector('.copy-diag-btn[data-diag-target="joinDiagLog"]')
     print("copy button present on the join screen's diagnostics panel:", join_copy_btn is not None)
     assert join_copy_btn is not None
     join_diag_before_copy = join_page.eval_on_selector("#joinDiagLog", "el=>el.textContent")
     join_copy_btn.click()
-    join_page.wait_for_timeout(100)
+    # Same genuinely-async clipboard-write reasoning as the admin copy button above.
+    join_page.wait_for_function("() => document.querySelector('.copy-diag-btn[data-diag-target=\"joinDiagLog\"]').textContent === 'Copied!'")
     join_label = join_page.eval_on_selector('.copy-diag-btn[data-diag-target="joinDiagLog"]', 'el=>el.textContent')
     assert join_label == "Copied!"
     join_clipboard_text = join_page.evaluate("navigator.clipboard.readText()")
