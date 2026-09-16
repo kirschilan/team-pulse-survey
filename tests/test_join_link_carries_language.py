@@ -19,7 +19,7 @@ from fixtures.build_page import build_page, test_output_path
 # (test_retro_join_link_carries_team_sync.py): joinUrlFor()/
 # coFacilitateUrlFor() (helpers.js) now also carry the facilitator's
 # CURRENT locale as a `&lang=` param (only when it isn't the "en" default,
-# same minimalism as teamParamFor()'s `&team=`), and state.js's boot-time
+# same minimalism as teamHashFor()'s `#team=`), and state.js's boot-time
 # loadUiPrefs() applies it -- but ONLY as a fallback default when this
 # device has no locale of its own already saved in localStorage, so a
 # participant who has their own explicit language preference is never

@@ -614,8 +614,26 @@ var state = {
 function getQueryParam(name){
   try{ return new URLSearchParams(window.location.search).get(name); }catch(e){ return null; }
 }
-// Capture invitation intent before board-sync removes the team secret from the URL.
-var openedFromInvitation = ["session", "cofacilitate", "team"].some(function(key){ return getQueryParam(key) !== null; });
+// SEC-4 (STATUS.md's "Security hardening backlog"): the team secret lives
+// in the URL FRAGMENT now, not the query string -- a fragment never leaves
+// the browser (not sent in the HTTP request, so it can't land in a server
+// access log or get echoed in a Referer header the way a query param can;
+// see board-sync.js's own header comment for the full writeup). location.hash
+// includes the leading "#", which URLSearchParams would otherwise treat as
+// part of the first key -- strip it before parsing.
+function getFragmentParam(name){
+  try{ return new URLSearchParams(window.location.hash.replace(/^#/, "")).get(name); }catch(e){ return null; }
+}
+// Capture invitation intent before board-sync removes the team secret from
+// the URL. SEC-4: a team link's secret now rides in the URL FRAGMENT
+// (#team=...), not the query string (see board-sync.js's own header
+// comment) -- a bare team link with no ?session=/?cofacilitate= alongside
+// it has NOTHING in the query string at all, so this must also check the
+// fragment or a fresh device opening only a team link would incorrectly
+// see the first-visit welcome dialog instead of being recognized as an
+// invitation.
+var openedFromInvitation = ["session", "cofacilitate"].some(function(key){ return getQueryParam(key) !== null; }) ||
+  getFragmentParam("team") !== null || getQueryParam("team") !== null;
 state.joinSessionId = getQueryParam("session");
 // Story 10: a co-facilitator link (?cofacilitate=<code>) is a completely
 // different join shape from a participant's (?session=<id>) -- it boots

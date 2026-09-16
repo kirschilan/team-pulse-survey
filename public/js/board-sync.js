@@ -45,35 +45,63 @@ function setTeamSecret(secret){
     }
   }catch(e){ /* storage unavailable -- team sync just won't persist across reloads on this device */ }
 }
+// SEC-4 (STATUS.md's "Security hardening backlog"): the secret lives in
+// the URL FRAGMENT (#team=...), not the query string -- a fragment is
+// never sent to any server at all (not in the initial request, not in a
+// Referer header on the next click), unlike a query param, which a static
+// host's own access logs can capture before this page's JS ever runs.
+// Kept as its own function (rather than inlined into the two callers
+// below) since generating and parsing it need to agree on the exact same
+// shape.
 function teamLinkFor(secret){
-  return window.location.origin + window.location.pathname + "?team=" + encodeURIComponent(secret);
+  return window.location.origin + window.location.pathname + "#team=" + encodeURIComponent(secret);
 }
 // Accepts either a bare secret or a full team link someone pasted (the
 // input takes both, so "paste the link you were sent" and "the link
-// worked and you're just re-entering it" both just work).
+// worked and you're just re-entering it" both just work). Checks the
+// fragment first (the current, only form this app itself generates), then
+// falls back to the legacy ?team= query form so a link shared/bookmarked
+// before SEC-4 still works.
 function parseTeamSecretInput(raw){
   raw = String(raw||"").trim();
   if(!raw) return "";
   try{
     var url = new URL(raw, window.location.href);
-    var fromLink = url.searchParams.get("team");
-    if(fromLink) return fromLink;
+    var fromHash = new URLSearchParams(url.hash.replace(/^#/, "")).get("team");
+    if(fromHash) return fromHash;
+    var fromQuery = url.searchParams.get("team");
+    if(fromQuery) return fromQuery;
   }catch(e){ /* not a URL -- fall through and treat it as a bare secret */ }
   return raw;
 }
 
-// Opening a real team link (?team=<secret>) persists it to this device
-// immediately, then strips it from the visible URL/history -- the same
-// hygiene a magic-link auth flow uses, so the secret doesn't linger in
-// browser history or get echoed in a Referer header on the next click.
+// Opening a real team link persists it to this device immediately, then
+// strips it from the visible URL/history -- the same hygiene a magic-link
+// auth flow uses, so the secret doesn't linger in browser history. Checks
+// the fragment (#team=, current) first, then the legacy ?team= query form,
+// same precedence as parseTeamSecretInput() above.
+//
+// SEC-4 fix: the cleanup below used to be skipped entirely whenever the
+// URL's secret already matched what this device had stored (an early
+// `return` before ever reaching the history rewrite) -- e.g. re-opening the
+// same bookmarked/shared link a second time, or a reload. That left the
+// secret sitting in the visible URL (and, for a query-string link, already
+// sent to the server on THIS load) indefinitely. Cleanup now always runs
+// when the URL carries a team param at all; only the (idempotent)
+// setTeamSecret() call itself is skipped when there's nothing new to store.
 (function autoConnectFromLink(){
-  var fromUrl = getQueryParam("team");
-  if(!fromUrl || fromUrl === getTeamSecret()) return;
-  setTeamSecret(fromUrl);
+  var fromHash = getFragmentParam("team");
+  var fromQuery = !fromHash && getQueryParam("team");
+  var found = fromHash || fromQuery;
+  if(!found) return;
+  if(found !== getTeamSecret()) setTeamSecret(found);
   try{
     var url = new URL(window.location.href);
     url.searchParams.delete("team");
-    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    var hashParams = new URLSearchParams(url.hash.replace(/^#/, ""));
+    hashParams.delete("team");
+    var newHash = hashParams.toString();
+    window.history.replaceState({}, "", url.pathname + url.search + (newHash ? "#" + newHash : ""));
   }catch(e){ /* history API unavailable -- the param just stays visible, harmless */ }
 })();
 

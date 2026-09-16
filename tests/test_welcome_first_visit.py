@@ -35,6 +35,17 @@ with sync_playwright() as p:
         expect(q.locator('#aboutDialog')).not_to_be_visible()
         assert q.evaluate("localStorage.getItem('squadpulse:welcomeSeen')") is None
         ctx.close()
+    # SEC-4: a team link's secret rides in the URL FRAGMENT now (see
+    # board-sync.js's teamLinkFor()), so a BARE team link -- no ?session=/
+    # ?cofacilitate= alongside it, nothing in the query string at all --
+    # must still be recognized as an invitation (openedFromInvitation, in
+    # state.js), not treated as a plain first-ever visit.
+    ctx = browser.new_context()
+    q = ctx.new_page()
+    q.goto(out.resolve().as_uri() + '#team=0123456789abcdef0123456789abcdef')
+    expect(q.locator('#aboutDialog')).not_to_be_visible()
+    assert q.evaluate("localStorage.getItem('squadpulse:welcomeSeen')") is None
+    ctx.close()
     for dismissal in ['escape', 'outside']:
         ctx = browser.new_context()
         q = ctx.new_page()

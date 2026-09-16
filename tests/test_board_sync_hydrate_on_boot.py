@@ -122,7 +122,7 @@ try:
         b_status = b.eval_on_selector("#teamSyncStatus", "el=>el.textContent")
         print("B's team sync status:", b_status)
         assert "connected" in b_status.lower()
-        assert "?team=" not in b.url, "the secret should be stripped from the visible URL after being captured"
+        assert "#team=" not in b.url, "the secret should be stripped from the visible URL after being captured"
         b_squad_names = b.eval_on_selector_all("#adminSquadList input.admin-squad-name", "els=>els.map(e=>e.value)")
         print("device B's board after boot-time hydrate:", b_squad_names)
         assert "New squad" in b_squad_names, "device B should have pulled device A's board on boot, with no click beyond following the link"
