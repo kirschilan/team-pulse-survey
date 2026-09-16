@@ -518,6 +518,71 @@ than rewritten, plus one new case in `test_welcome_first_visit.py` for the `open
 dialog wrongly appeared). Full suite green: 144/144 unit tests, all 48 Playwright files (47s, under
 the 78s baseline), relay's protocol + storage suites passing.
 
+### Codex review fixes on PR #14 (2026-09-16): the join/co-facilitate secret itself was still in the query string, a legacy-storage crash, and a CSP-unsafe test wait
+
+A Codex review of the combined security-hardening PR (#14, bundling SEC-2/SEC-3/SEC-4 above) found
+three real issues, all fixed here:
+
+**P1 — `joinUrlFor()`/`coFacilitateUrlFor()` (helpers.js) still put the SESSION's own secret in the
+query string** (`?session=<secret>`/`?cofacilitate=<secret>`) even after SEC-4 moved the piggybacked
+TEAM secret to the fragment — the exact exposure SEC-4 closed for one secret but missed for the
+other. Fixed by moving session/co-facilitate into the fragment too, combined with `team` into one
+fragment via a new `buildFragment()` helper (a URL only has one `#`; `teamHashFor()`'s own
+`#team=...` can't just be concatenated with a second `#session=...`). `state.js`'s boot-time
+`getLinkParam()` (new — fragment-first, falls back to the legacy query form) replaces the old
+query-only `getQueryParam("session")`/`getQueryParam("cofacilitate")` reads, same precedence
+`parseTeamSecretInput()` already used for a pasted team link. `lang` is the only thing left in the
+query string now, since it isn't a secret and is meant to be visible/bookmarkable. Legacy
+`?session=`/`?cofacilitate=`/`?team=` links (shared/bookmarked before this fix) still work.
+Test-first: `tests/unit/test_helpers.js` (`buildFragment()`, the new fragment shape, asserting
+`?session=`/`?cofacilitate=` never appear), `tests/unit/test_state.js` (new — `getLinkParam()`
+precedence), and a new **request-level** Playwright test,
+`tests/test_join_link_secret_not_in_http_request.py`, that serves a built test page over a real
+local HTTP server (not `file://` — this is what actually proves nothing lands in a server's access
+log) and captures every real HTTP request Playwright fires while navigating to a freshly-generated
+join/co-facilitate link, asserting neither secret ever appears in a request's query string.
+
+**A genuinely new class of test fragility, found fixing the above**: two URLs that differ only in
+their fragment (e.g. a stale `#cofacilitate=BAD&team=X` vs. the real `#cofacilitate=GOOD&team=X`)
+trigger a same-document "fragment navigation" per the HTML spec when navigated between on an
+ALREADY-OPEN page — true in every real browser, not a Playwright quirk — so the page never actually
+reloads and never reruns its boot-time fragment parsing. This silently broke two existing tests that
+reused one page/context across two different session-scoped links
+(`test_cofacilitator_join.py`, `test_board_sync_finish_retro_convergence.py`); fixed by forcing a
+real reload via an intermediate `about:blank` navigation between the two `goto()` calls. A brand-new
+page/tab opening a link for the first time is never affected (there's no prior document to
+fragment-navigate from), which is the overwhelmingly common real case — this is a same-tab,
+sequential-different-link edge case already latent for the team link since SEC-4 shipped it to the
+fragment first, not a new risk introduced here.
+
+**P2 — a device with a session saved under the OLDER `knownCodes` localStorage shape (a bare code
+string, from before SEC-2's redesign above) crashed `relay-client.js`'s reconnect logic**: `getRoom()`
+received `{roomId: undefined, secret: undefined}` and opened a WebSocket asking the relay to route
+`?code=undefined`, every single reload, forever. **Migration decision, per
+`docs/DefinitionOfDone.md`'s "new data shape" rule — RETIRE, don't migrate**: a legacy entry's bare
+string WAS the human-typed code itself; there is no secret to derive it into under the new
+`{roomId, secret}` shape, and a typed-code session was already short-lived by design (forgotten
+within minutes of the retro ending). Any such saved entry, by the time this ships, is for a retro
+that ended long ago. `loadKnownCodes()` now filters out anything that isn't a well-formed
+`{roomId, secret}` pair on every read — never attempting to reconnect it, never crashing, and never
+affecting any OTHER, well-formed entry sitting next to it in the same array. Test-first:
+`tests/test_relay_legacy_known_codes.py` (new) — a real relay + the same crypto.js/relay-client.js
+isolation harness `test_relay_error_handling.py` already uses, seeding a legacy bare-string entry
+alongside a well-formed one and confirming the legacy entry is silently dropped (no `?code=undefined`
+connection, no crash) while the well-formed one still reconnects.
+
+**P3 — `tests/test_welcome_first_visit.py`'s two `wait_for_function()` calls used a bare expression
+string** (`"localStorage.getItem(...) === '1'"`, no `() => ...`), which Codex's own repro (matching
+this repo's pinned Playwright/Chromium versions) hit as a CSP `unsafe-eval` violation — every OTHER
+`wait_for_function()` call in this suite already uses an explicit arrow-function predicate, so these
+two were the outliers. Fixed to match the rest of the suite; did not reproduce locally (this
+environment's Chromium build didn't trigger it), but the fix is a strict, zero-risk improvement that
+matches the suite's own established convention regardless.
+
+Full suite green: 154/154 unit tests, all 51 Playwright files (54s, under the 78s baseline — 2 more
+files than the PR's own last entry, both new tests from this fix), relay's protocol + storage suites
+passing.
+
 ## Multi-language rollout backlog
 
 The product owner is driving Hebrew/RTL support in one story at a time on this branch (see the
@@ -3027,3 +3092,29 @@ not just in this repo's own tests.
   backlog item's own acceptance criteria. Full detail in the "Security fix" section under "Board
   sync" above. Full suite green: 144/144 unit tests, 48/48 Playwright files, relay's protocol +
   storage suites.
+- 2026-09-16 — Merged SEC-2/SEC-3/SEC-4 (all three above) into one `security-hardening-combined`
+  branch and opened PR #14 against `claude/optimistic-keller-holuql`, per an explicit user request to
+  combine all three (sibling branches off the same base commit, not stacked) into a single PR rather
+  than three separate ones. Real, non-mechanical merge conflicts in `STATUS.md` (session-log
+  append-order), `index.html`/`helpers.js`/`en.js`/`he.js` (SEC-2's removal of the false "session code
+  derives the key" claim needed to be kept AND SEC-4's new fragment/localStorage caveats needed to be
+  added -- neither side's version alone was correct once the other branch's changes were also true).
+  One cross-branch regression only visible after merging, not from either branch's own isolated
+  suite: `test_security_headers.py` (authored on the pre-SEC-2 branch) still called
+  `joinSessionByCode()` with a raw room id instead of a secret -- fixed with the same
+  `SquadPulseRelay.secretForRoom()` pattern the other 17 SEC-2-era test files already used. Full
+  suite green after every merge step (not just the final one, to isolate which step introduced any
+  given regression): 148/148 unit tests, 49/49 Playwright files (50s), relay's protocol + storage
+  suites.
+- 2026-09-16 — Fixed three issues a Codex review found on PR #14: `joinUrlFor()`/
+  `coFacilitateUrlFor()` still put the session/co-facilitate secret in the query string (SEC-4 had
+  only moved the piggybacked team secret to the fragment); a legacy `knownCodes` localStorage entry
+  (pre-SEC-2 bare-string shape) crashed `relay-client.js`'s reconnect logic with a
+  `?code=undefined` WebSocket connection attempt; and two `wait_for_function()` calls in
+  `test_welcome_first_visit.py` used a bare expression string that Codex's own repro caught as a CSP
+  `unsafe-eval` violation. Full writeup (migration decision for the localStorage shape, the new
+  request-level HTTP test, and a genuinely new class of test fragility found and fixed along the way
+  -- two same-tab links differing only by URL fragment don't force a real page reload, a real browser
+  behavior, not a Playwright quirk) in the "Codex review fixes on PR #14" section under "Board sync"
+  above. Full suite green: 154/154 unit tests, all 51 Playwright files (54s, under the 78s baseline),
+  relay's protocol + storage suites passing.

@@ -121,8 +121,11 @@ try:
         join_link = a.eval_on_selector("#sessionJoinLink", "el=>el.value")
         print("co-facilitator link:", cofac_link)
         print("participant join link:", join_link)
-        secret = parse_qs(urlparse(join_link).query)["session"][0]
-        cofac_secret = parse_qs(urlparse(cofac_link).query)["cofacilitate"][0]
+        # Codex review on PR #14 (P1): session/co-facilitate secrets ride in
+        # the URL FRAGMENT now, not the query string (helpers.js's
+        # joinUrlFor()/coFacilitateUrlFor()).
+        secret = parse_qs(urlparse(join_link).fragment)["session"][0]
+        cofac_secret = parse_qs(urlparse(cofac_link).fragment)["cofacilitate"][0]
         assert cofac_secret == secret, "the join and co-facilitate links carry the SAME session secret, just under different params"
         assert cofac_link != join_link
         assert a.eval_on_selector("#coFacilitateQr svg", "el=>!!el") is True, "a QR code should render for the co-facilitator link too"
@@ -189,6 +192,16 @@ try:
         print("errors so far:", b_errors)
 
         print("=== HAPPY PATH: device B co-facilitates the REAL open session by its real link ===")
+        # Codex review on PR #14 (P1): now that the secret rides in the URL
+        # FRAGMENT (bad_cofac_link and cofac_link differ ONLY in their
+        # fragment, same page path), a plain goto() from one straight to the
+        # other is a same-document "fragment navigation" per the HTML spec --
+        # true in every real browser too, not a Playwright quirk -- so the
+        # page never actually reloads/reruns its boot-time fragment parsing.
+        # An intermediate about:blank forces the real, full navigation this
+        # scenario (device B opens a bad link, then a corrected one) means to
+        # exercise.
+        b.goto("about:blank")
         b.goto(cofac_link, wait_until="domcontentloaded")
         b.wait_for_selector(".session-card")  # real relay round trip -- wait for it, don't guess how long
 

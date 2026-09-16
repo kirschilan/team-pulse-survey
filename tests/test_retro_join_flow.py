@@ -75,7 +75,13 @@ with sync_playwright() as p:
 
     join_link_value = page.eval_on_selector('#sessionJoinLink', 'el=>el.value')
     print("join link value:", join_link_value)
-    assert secret in join_link_value and "?session=" in join_link_value
+    # Codex review on PR #14 (P1): the session secret rides in the URL
+    # FRAGMENT now, not the query string (helpers.js's joinUrlFor()) -- a
+    # query param is sent in the initial HTTP navigation request, unlike a
+    # fragment. See tests/test_join_link_secret_not_in_http_request.py for
+    # the request-level proof.
+    assert secret in join_link_value and "#session=" in join_link_value
+    assert "?session=" not in join_link_value, "the session secret must never appear in the query string"
     assert session_id not in join_link_value, "the relay room id must never appear in a shareable link -- only the secret does"
 
     security_notice = page.eval_on_selector('.join-share-block .security-notice', 'el=>el.textContent')

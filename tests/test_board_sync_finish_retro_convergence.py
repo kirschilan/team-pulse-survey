@@ -150,6 +150,17 @@ try:
         # the real link now (no typed-code modal) -- device B is already
         # team-synced, and join_link1 carries device A's team secret too, so
         # this one navigation both re-confirms the team and joins the session.
+        #
+        # Codex review on PR #14 (P1): join_link1 and device B's CURRENT
+        # document (team_link, just above) share the same URL apart from
+        # their fragment (#session=...&team=... vs #team=...) -- a plain
+        # goto() between two URLs that differ only by fragment is a same-
+        # document "fragment navigation" per the HTML spec (true in every
+        # real browser, not a Playwright quirk), so it would never actually
+        # reload/rerun the app's boot-time fragment parsing. An intermediate
+        # about:blank forces the real, full navigation this scenario means
+        # to exercise.
+        b.goto("about:blank")
         b.goto(join_link1, wait_until="domcontentloaded")
         b.wait_for_selector(".direct-row")  # real relay round trip -- wait for it, don't guess how long
         rows = b.query_selector_all(".direct-row")
@@ -214,6 +225,12 @@ try:
         print("session 2 join link:", join_link2)
         assert join_link2 != join_link1
 
+        # Codex review on PR #14 (P1): same fragment-only-navigation issue as
+        # round 1's identical b.goto(join_link1) above -- device A's current
+        # document (INDEX_URL, no fragment) and join_link2 share the same
+        # URL apart from the fragment, so this needs the same about:blank
+        # step to force a real reload.
+        a.goto("about:blank")
         a.goto(join_link2, wait_until="domcontentloaded")
         a.wait_for_selector(".direct-row")  # real relay round trip -- wait for it, don't guess how long
         rows2 = a.query_selector_all(".direct-row")

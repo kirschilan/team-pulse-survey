@@ -39,8 +39,31 @@ var SquadPulseRelay = (function(){
   // param below) -- a board room's secret already lives in board-sync.js's
   // own TEAM_SECRET_KEY, and mixing the two lists was a real bug once
   // (see getRoom()'s own comment on why board rooms must never land here).
+  // Codex review on PR #14 (P2): SEC-2 changed this list's stored shape
+  // from bare code strings to {roomId, secret} objects (see this file's own
+  // header comment above), but a device that saved entries under the OLDER
+  // shape, before SEC-2 shipped, would otherwise hand a `{roomId:
+  // undefined, secret: undefined}` pair to getRoom() -- connecting a
+  // WebSocket asking the relay to route "?code=undefined" on every single
+  // reload, forever, and silently failing to rediscover that session.
+  //
+  // Migration decision (per docs/DefinitionOfDone.md's "new data shape"
+  // rule): RETIRE, don't migrate. A legacy entry's bare string WAS the
+  // human-typed code itself -- there is no secret to derive it into under
+  // the new shape, and a typed-code session was already short-lived by
+  // design (forgotten within minutes of the retro ending). Any such saved
+  // entry, by the time this ships, is for a retro that ended long ago.
+  // Filtering here means it's simply never acted on again -- no crash, no
+  // reconnect attempt, and no effect on any OTHER, well-formed entry
+  // sitting right next to it in the same array.
   function loadKnownCodes(){
-    try{ return JSON.parse(localStorage.getItem(KNOWN_CODES_KEY) || "[]"); }catch(e){ return []; }
+    try{
+      var raw = JSON.parse(localStorage.getItem(KNOWN_CODES_KEY) || "[]");
+      if(!Array.isArray(raw)) return [];
+      return raw.filter(function(c){
+        return c && typeof c.roomId === "string" && c.roomId && typeof c.secret === "string" && c.secret;
+      });
+    }catch(e){ return []; }
   }
   function rememberCode(roomId, secret){
     try{

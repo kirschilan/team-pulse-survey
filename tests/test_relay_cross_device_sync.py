@@ -89,7 +89,9 @@ try:
         fac.wait_for_function("() => document.getElementById('sessionJoinLink') && document.getElementById('sessionJoinLink').value.length > 0")
 
         join_link = fac.eval_on_selector('#sessionJoinLink', 'el=>el.value')
-        secret = parse_qs(urlparse(join_link).query)["session"][0]
+        # Codex review on PR #14 (P1): the session secret rides in the URL
+        # FRAGMENT now, not the query string (helpers.js's joinUrlFor()).
+        secret = parse_qs(urlparse(join_link).fragment)["session"][0]
         print("=== facilitator started a session ===")
         print("join link:", join_link)
         assert secret
@@ -168,7 +170,7 @@ try:
         late = late_ctx.new_page()
         late_errors = []
         late.on("pageerror", lambda e: late_errors.append(str(e)))
-        late.goto(INDEX_URL + "?session=" + secret, wait_until="domcontentloaded")
+        late.goto(INDEX_URL + "#session=" + secret, wait_until="domcontentloaded")
         late.wait_for_function("() => { var h = document.querySelector('#joinCard h2'); return h && h.textContent.indexOf('Connecting') === -1; }")
         late_heading = late.eval_on_selector('#joinCard h2', 'el=>el.textContent')
         print("late joiner heading:", late_heading)

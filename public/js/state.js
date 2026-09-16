@@ -628,24 +628,36 @@ function getQueryParam(name){
 function getFragmentParam(name){
   try{ return new URLSearchParams(window.location.hash.replace(/^#/, "")).get(name); }catch(e){ return null; }
 }
+// Codex review on PR #14 (P1): a join/co-facilitate/team link's secret can
+// now arrive in either the URL FRAGMENT (current form, never sent to a
+// server) or the legacy query string (a link shared/bookmarked before this
+// fix, or SEC-4's own team-secret move) -- checked in that precedence,
+// same as board-sync.js's parseTeamSecretInput() uses for a pasted link.
+function getLinkParam(name){
+  var fromHash = getFragmentParam(name);
+  return fromHash !== null ? fromHash : getQueryParam(name);
+}
 // Capture invitation intent before board-sync removes the team secret from
-// the URL. SEC-4: a team link's secret now rides in the URL FRAGMENT
-// (#team=...), not the query string (see board-sync.js's own header
-// comment) -- a bare team link with no ?session=/?cofacilitate= alongside
-// it has NOTHING in the query string at all, so this must also check the
-// fragment or a fresh device opening only a team link would incorrectly
-// see the first-visit welcome dialog instead of being recognized as an
-// invitation.
-var openedFromInvitation = ["session", "cofacilitate"].some(function(key){ return getQueryParam(key) !== null; }) ||
-  getFragmentParam("team") !== null || getQueryParam("team") !== null;
-state.joinSessionId = getQueryParam("session");
+// the URL. A bare team link with no session=/cofacilitate= alongside it has
+// NOTHING in the query string at all once every one of these lives in the
+// fragment (see helpers.js's joinUrlFor()/coFacilitateUrlFor() and
+// board-sync.js's teamLinkFor()) -- checking both forms via getLinkParam()
+// is what keeps a fresh device opening only a link like that from
+// incorrectly seeing the first-visit welcome dialog instead of being
+// recognized as an invitation.
+var openedFromInvitation = ["session", "cofacilitate", "team"].some(function(key){ return getLinkParam(key) !== null; });
+// Codex review on PR #14 (P1): this secret used to be read only from the
+// query string (?session=<secret>) -- now that joinUrlFor() puts it in the
+// fragment instead (the query string was sent in the initial HTTP
+// navigation request, unlike a fragment), it has to be read the same way.
+state.joinSessionId = getLinkParam("session");
 // Story 10: a co-facilitator link (?cofacilitate=<secret>) is a completely
 // different join shape from a participant's (?session=<secret>) -- it boots
 // the NORMAL Tribe/Squad/Admin app (never join mode) and just attaches
 // this device to an already-open session by its secret, landing on Squad
 // view for that session's squad -- see retro-facilitator.js's
 // coFacilitateSessionByCode(), called once from db.js's initDb().
-state.coFacilitateSessionId = getQueryParam("cofacilitate");
+state.coFacilitateSessionId = getLinkParam("cofacilitate");
 (function loadUiPrefs(){
   try{
     var v = localStorage.getItem("squadpulse:view");
@@ -689,6 +701,7 @@ if (typeof module !== "undefined" && module.exports) {
     localizedDimText: localizedDimText,
     localizedAttribution: localizedAttribution,
     builtinDimTranslation: builtinDimTranslation,
+    getQueryParam: getQueryParam, getFragmentParam: getFragmentParam, getLinkParam: getLinkParam,
     state: state
   };
 }

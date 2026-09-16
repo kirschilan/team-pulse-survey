@@ -191,14 +191,37 @@ test("teamHashFor() builds a #team= fragment when a team secret is connected, em
   assert.equal(helpers.teamHashFor(), "", "no team connected -- omit the fragment entirely, don't force one on");
 });
 
-test("joinUrlFor()/coFacilitateUrlFor() put ?session=/?cofacilitate= and &lang= in the query string, and #team= LAST as the fragment", () => {
+// Codex review on PR #14 (P1): joinUrlFor()/coFacilitateUrlFor() were still
+// putting the SESSION's own secret in the query string (?session=/
+// ?cofacilitate=) -- only the piggybacked team secret had moved to the
+// fragment. A query param is sent in the initial HTTP navigation request
+// (can land in the app host's own access logs, gets echoed in a Referer
+// header on the next click) exactly the exposure SEC-4 set out to close --
+// so both the session/co-facilitate secret AND the team secret now ride in
+// the fragment together; only the non-secret `lang` stays in the query
+// string, since it's not sensitive and IS meant to be visible/bookmarkable.
+test("joinUrlFor()/coFacilitateUrlFor() put lang= in the query string, and session=/cofacilitate=+team= together in the fragment -- never a secret in the query string", () => {
   global.state = { ui: { locale: "he" } };
   global.getTeamSecret = () => "the-team-secret";
   const joinUrl = helpers.joinUrlFor("abc123");
-  assert.equal(joinUrl, "http://localhost/?session=abc123&lang=he#team=the-team-secret");
+  assert.equal(joinUrl, "http://localhost/?lang=he#session=abc123&team=the-team-secret");
+  assert.ok(!joinUrl.includes("?session="), "the session secret must never appear in the query string");
   const cofacUrl = helpers.coFacilitateUrlFor("abc123");
-  assert.equal(cofacUrl, "http://localhost/?cofacilitate=abc123&lang=he#team=the-team-secret");
-  // no team connected -- the fragment is omitted, not left dangling as a bare "#"
+  assert.equal(cofacUrl, "http://localhost/?lang=he#cofacilitate=abc123&team=the-team-secret");
+  assert.ok(!cofacUrl.includes("?cofacilitate="), "the co-facilitate secret must never appear in the query string");
+
+  // no team connected -- just the session secret in the fragment
   global.getTeamSecret = () => "";
-  assert.ok(!helpers.joinUrlFor("abc123").includes("#"), "no trailing # when there's no team secret to carry");
+  assert.equal(helpers.joinUrlFor("abc123"), "http://localhost/?lang=he#session=abc123");
+
+  // English (default) locale -- no query string at all, just the fragment
+  global.state = { ui: { locale: "en" } };
+  assert.equal(helpers.joinUrlFor("abc123"), "http://localhost/#session=abc123");
+});
+
+test("buildFragment() joins non-empty pairs into one '#'-prefixed fragment, in order, omitting empty values and the '#' itself when nothing qualifies", () => {
+  assert.equal(helpers.buildFragment([["session", "abc"], ["team", "xyz"]]), "#session=abc&team=xyz");
+  assert.equal(helpers.buildFragment([["session", "abc"], ["team", ""]]), "#session=abc");
+  assert.equal(helpers.buildFragment([["session", ""], ["team", ""]]), "");
+  assert.equal(helpers.buildFragment([]), "");
 });

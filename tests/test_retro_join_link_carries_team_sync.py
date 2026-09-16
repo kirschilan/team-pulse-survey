@@ -120,7 +120,9 @@ try:
         print("join link:", join_link)
 
         print("=== the join link carries the facilitator's OWN team secret, distinct from the plain team link ===")
-        secret = parse_qs(urlparse(join_link).query)["session"][0]
+        # Codex review on PR #14 (P1): the session secret rides in the URL
+        # FRAGMENT now, not the query string (helpers.js's joinUrlFor()).
+        secret = parse_qs(urlparse(join_link).fragment)["session"][0]
         assert secret
         assert "team=" + a_secret in join_link, "the join link should carry the facilitator's current team secret"
         assert join_link != team_link, "the join link and the plain team link are not the same URL"
@@ -141,8 +143,8 @@ try:
         print("device A's secret:", a_secret)
         print("device B's secret after opening only the join link:", b_secret)
         assert b_secret == a_secret, "opening the retro's join link should adopt the facilitator's team secret"
-        assert "?team=" not in b.url, "the secret should be stripped from the visible URL, same as opening a team link directly"
-        assert "?session=" in b.url, "the session param must survive -- device B still needs to join THIS retro"
+        assert "team=" not in b.url, "the secret should be stripped from the visible URL, same as opening a team link directly"
+        assert "#session=" in b.url, "the session param must survive -- device B still needs to join THIS retro"
 
         print("=== device B's local board already reflects device A's real board, not a fresh default one ===")
         b_squad1_name = b.evaluate("(state.squads.find(s=>s.id==='squad-1')||{}).name")
@@ -202,7 +204,7 @@ try:
         a.wait_for_function("() => document.getElementById('sessionJoinLink') && document.getElementById('sessionJoinLink').value.length > 0")
         join_link2 = a.eval_on_selector("#sessionJoinLink", "el=>el.value")
         print("disconnected facilitator's join link:", join_link2)
-        assert "?session=" in join_link2
+        assert "#session=" in join_link2
         assert "team=" not in join_link2, "no team secret to carry -- must not force one onto a joining device"
 
         c_ctx = browser.new_context(viewport={"width": 420, "height": 1400})
