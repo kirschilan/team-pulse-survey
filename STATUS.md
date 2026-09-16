@@ -155,6 +155,25 @@ every other device on the same team link.
 - **Retro-session feature behavior** (consolidation rule, anonymity model, per-template scoring)
   is specified and versioned in `docs/facilitated-retro-spec.md` — that file has its own session
   log for that feature's history; don't duplicate it here.
+- **SEC-2 (split from SEC-1), PO decision, NOT YET IMPLEMENTED as of 2026-09-16: drop the typed
+  6-character join code, QR/link only.** Product owner call: the "type this code in" join path
+  (the join-code modal, and the code front-and-center on the session card — see Story 3 in
+  `docs/facilitated-retro-spec.md`) goes away entirely. A retro session is joined only by scanning
+  its QR code or opening its link — the existing "Or scan/share a link" fallback becomes the *only*
+  path, promoted out of "collapsed by default." This also retires the premise the code-derived-key
+  decision above leaned on ("the app's *primary* join path is typing the 6-character code by
+  hand") — whoever implements this should decide then whether the session key stays derived from
+  the code (now purely internal, never shown/typed) or moves to a separate link/QR-carried secret
+  to match the board-sync model (see "Security fix" below). Ship it with a security notice
+  wherever a join or co-facilitate link/QR is shown (the session card, the link/QR fallback, and
+  the co-facilitator link/QR from Story 10 — all carry the same exposure):
+  > Note: Anyone with this link — or who scans this QR code — can see the data in this Squad Pulse
+  > session. Share it only over a secure channel, and make sure the QR code itself is visible only
+  > to people who should have access.
+
+  (Tightened from the PO's original draft — "secure media" → "secure channel," and calling out that
+  the link and the QR grant identical access rather than treating them as separately risky.) Not
+  coded yet; tracked here for whoever picks up the implementation.
 - **"This retro has ended" vs. "this retro isn't open" is a real distinction, but only within the
   relay's own room lifetime — not indefinitely.** `closeSession()` writes `status:"closed"` instead
   of deleting the doc, so the join screen can say "ended" for as long as that doc still exists (the
@@ -2841,3 +2860,8 @@ not just in this repo's own tests.
     in this container; not a code change and not committed.
   - Full suite green: 141/141 unit tests, all 47 Playwright files (67s, under the 78s baseline),
     relay's protocol + storage suites passing.
+- 2026-09-16 — Recorded a PO decision, not implemented yet (another session has the code): drop the
+  retro session's typed 6-character join code, leaving QR code and link as the only ways to join,
+  plus a security notice shown alongside the link/QR. Split out of a broader security backlog item
+  (SEC-1 → SEC-2). Full detail, the exact notice copy, and the open question this raises for the
+  session-key-derivation decision are in "Decisions locked in" above.
