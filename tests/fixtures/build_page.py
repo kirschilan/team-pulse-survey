@@ -36,7 +36,7 @@ _TEST_INDEX_HTML = re.sub(
 assert _TEST_INDEX_HTML != INDEX_HTML, "expected to find and strip the Google Fonts <link> in index.html"
 
 
-def build_page(extra_seed_js="", out_name="_test_preview.html"):
+def build_page(extra_seed_js="", out_name="_test_preview.html", show_welcome=False):
     """Write a test copy of index.html into public/, with the fake store
     injected into <head> (so window.claude exists before app.js loads).
 
@@ -60,6 +60,8 @@ def build_page(extra_seed_js="", out_name="_test_preview.html"):
         idx = fake.index(marker) + len(marker)
         fake = fake[:idx] + "\n  " + extra_seed_js + "\n" + fake[idx:]
     html = _TEST_INDEX_HTML.replace("</head>", fake + "\n</head>")
+    if not show_welcome:
+        html = returning_visitor(html)
     out_path = PUBLIC_DIR / out_name
     out_path.write_text(html, encoding="utf-8")
     return out_path
@@ -82,7 +84,7 @@ def build_custom_page(extra_head_html, out_name):
     out_name: as build_page() -- must start with "_test_".
     """
     assert out_name.startswith("_test_"), "test preview files must match the _test_* .gitignore pattern"
-    html = _TEST_INDEX_HTML.replace("</head>", extra_head_html + "\n</head>")
+    html = returning_visitor(_TEST_INDEX_HTML.replace("</head>", extra_head_html + "\n</head>"))
     out_path = PUBLIC_DIR / out_name
     out_path.write_text(html, encoding="utf-8")
     return out_path
@@ -98,7 +100,7 @@ def write_plain_index(out_name):
     public/index.html directly."""
     assert out_name.startswith("_test_"), "test preview files must match the _test_* .gitignore pattern"
     out_path = PUBLIC_DIR / out_name
-    out_path.write_text(_TEST_INDEX_HTML, encoding="utf-8")
+    out_path.write_text(returning_visitor(_TEST_INDEX_HTML), encoding="utf-8")
     return out_path
 
 
@@ -107,6 +109,13 @@ OUTPUT_DIR = REPO_ROOT / "tests" / "output"
 
 def test_output_path(name):
     """Path under tests/output/ (gitignored) for any test-run artifact --
-    a verification screenshot, a scratch CSV fixture for an import test, etc."""
+    a verification screenshot, a scratch JSON fixture for an import test, etc."""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     return OUTPUT_DIR / name
+
+
+def returning_visitor(html):
+    """Existing feature tests start as returning visitors; welcome has its own test.
+    Seed only the production preference, not a production-only test switch.
+    """
+    return html.replace("</head>", "<script>try { localStorage.setItem('squadpulse:welcomeSeen', '1'); } catch(e) {}</script>\n</head>")

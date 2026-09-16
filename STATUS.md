@@ -68,7 +68,7 @@ along the seams the original file already had (`// ---------- section ----------
 | `retro-join.js` | The PARTICIPANT half: the join screen, the blind interleaved statement survey, direct-rating swatches, submission, and the personal-result view. Shares almost no code with `retro-facilitator.js` (different device, different role) — that's what made the split clean. |
 | `dimensions.js` | The dimension manager (add/rename/reorder/remove). Split out of a combined `dimensions-templates.js` on 2026-09-12. |
 | `templates.js` | Template save/load/delete. Split out of the same combined file, same day. |
-| `csv.js` | CSV export and import (parsing, column matching, preview, apply). |
+| `board-export-import.js` | JSON board export and import (squads/ratings, dimensions, templates, board settings) — the only board export/import format; CSV's own runtime code was deleted, and this file was renamed from `csv.js` to match, in Story 13 item 4. |
 | `db.js` | `initDb()` — the Firestore-shaped snapshot listeners that wire `db` writes into `state` and back into a render. |
 | `crypto.js` | AES-256-GCM encrypt/decrypt. For a retro session, the key derives from the session code itself; for a team board, `generateSecret()`/`roomIdFor()` split a high-entropy secret (the key) from a separate one-way-derived room id (routing only) — see "Board sync" below. |
 | `relay-client.js` | The other half of `local-store.js`'s router: a `collection()`/`doc()` implementation for `sessions`- and `boards`-rooted paths, backed by a real WebSocket to `relay/server.js` instead of `localStorage`. `doc(path, secret)`/`collection(path, secret)` take an optional second argument so a caller (board-sync.js) can supply the encryption key separately from the path's own routing id; omitted, behavior is unchanged (the path's own code IS the key, as sessions have always used). |
@@ -107,7 +107,7 @@ whole board too, genuinely sync across different devices/browsers** through the 
 bullet above, `relay/README.md`, and "Board sync" below. `localStorage` is still each device's own
 source of truth (nothing here changes that), but by default it now also stays in sync, live, with
 every other device on the same team link.
-(There's one other `window.claude.use(...)` call, for `"downloads"` in `public/js/csv.js`, and a
+(There's one other `window.claude.use(...)` call, for `"downloads"` in `public/js/board-export-import.js`, and a
 `window.claude.hot` hot-reload guard at the bottom of `app.js` that already degrades safely with no
 `window.claude` present — neither of those blocks anything.)
 
@@ -456,7 +456,7 @@ recall exercise instead of something anyone could just read.
 | 10 | Retro join flow (participant-facing screens) | **DONE** (2026-09-14) |
 | 11 | Retro facilitation flow (facilitator-facing screens, session cards, overrides) | **DONE** (2026-09-14) |
 | 12 | Dimension detail and Edit Dimensions modal (Admin) | **DONE** (2026-09-14) |
-| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass | Not started |
+| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass. Redesigned as a full JSON board export/import replacing CSV (see session log): (1) JSON board export (beta), additive — **DONE** (2026-09-15); (2) JSON import — squads/ratings — **DONE** (2026-09-15); (3) JSON import — dimensions/templates/board settings — **DONE** (2026-09-15); (4) delete the CSV runtime code, rename `csv.js` → `board-export-import.js` — **DONE** (2026-09-16) | **DONE** |
 
 ## Deliberately not built yet (and why)
 
@@ -467,6 +467,27 @@ recall exercise instead of something anyone could just read.
 | Relay deployed on Vercel itself (one deployment, not two) | Deliberately rejected, not just deferred — see the locked decision above and `relay/README.md`'s "Why not a Vercel Function" | Only if Vercel's WebSocket support later guarantees same-instance routing without an external store, which would remove the reason this was rejected |
 | Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing | Once the marketing site (separate Claude Code project) is further along |
 | A third UI language (beyond English/Hebrew) | YAGNI, per the product owner's own call (2026-09-14) — `SUPPORTED_LOCALES`/`t()`'s fallback (i18n.js) are already written generically enough to add one without a redesign, and the bilingual-dimensions editor (see the session log) is a per-dimension `i18n` object keyed by locale code, not hardcoded to exactly two languages, so neither needs rework specifically to add a third | A real request for a specific third language — at that point, design its own toggle/picker UX (today's per-dimension editor hardcodes one Hebrew panel) rather than assuming the two-language shape generalizes without a look |
+
+## Introduction and help backlog (2026-09-15)
+
+Priority is separate from the stable story ID. Each story ships English/Hebrew,
+RTL, keyboard support, and focused regression coverage. Story 1 was merged through PR #2. Stories 2–4 and outside-click dismissal
+are on `codex/about-guides` for review before integration.
+
+| Priority | Story | User value and acceptance criteria | Status |
+|---|---|---|---|
+| 1 | 1 — On-demand introduction | As a visitor, open About & help from every view, including participant mode, understand the app's purpose, and close back to the same context without changing data or drafts. | Merged via PR #2 (2026-09-15) |
+| 2 | 6 — First-visit introduction | As a first-time visitor, see an introduction on an ordinary visit. Remember dismissal locally; bypass it for participant/co-facilitator/team links; retain manual access; storage failure never blocks entry. | Implemented on `codex/welcome-credits-terms`; review pending |
+| 3 | 2 — Participant guide | As a participant, understand code/link entry and answering; open the existing join flow or return to an active retro without losing answers. | Implemented on `codex/about-guides`; PR review pending |
+| 4 | 3 — Facilitator guide | As a facilitator, follow setup, template and squad selection, start, invite, discuss, and finish/apply; distinguish team and session links. | Implemented on `codex/about-guides`; PR review pending |
+| 5 | 4 — Reading results | As a viewer, understand colors, trends, Squad/Tribe views, and hotspots through expandable guidance matching actual behavior. | Implemented on `codex/about-guides`; PR review pending |
+| 6 | 5 — Credits and licenses | As a user, inspect verified model sources, Dr. Agile contributions, application license, and third-party notices; preserve contextual board credits. Verify the source of Tuckman assessment scoring. | Credits UI implemented; source/rights questions remain in `docs/credits-and-terms-review.md` |
+| 7 | 7 — Terms and conditions of use | As a user, read terms before choosing to use the app and reopen them from About & help. Publish owner-approved English/Hebrew terms covering permitted use, responsibilities, data/sharing behavior, and limitations; show effective date/version and accessible links. Explicitly decide whether acceptance tracking is needed before implementation; do not imply consent through mere dismissal. | Informational/no tracking confirmed by owner; draft wording implemented for review |
+
+Stories are small independently testable UI increments; stories 2–5 and 7 can
+be ordered independently once the common panel is available. Story 6 was moved
+to priority 2 by the product owner. Terms are a separate content/behavior story,
+not implicit acceptance added to story 1.
 
 ## Suggested next step
 
@@ -1770,3 +1791,1053 @@ not just in this repo's own tests.
   (5 new unit tests in `test_template_locale.js` proving the fallback, its value-gating, and its
   per-element array behavior, written and confirmed failing before the `state.js` change). Full
   74-test unit suite + 44-file Playwright suite green, on its own short-lived branch.
+- 2026-09-15 — Copilot perf pass, file 7/9: `test_scored_template_tuckman.py`. Removed every
+  `wait_for_timeout()` call. Most click-then-click chains needed no wait at all (`click()`/`fill()`
+  auto-wait for their own next target); reads via `query_selector()`/`eval_on_selector()`/
+  `evaluate()` got real conditions instead: `wait_for_selector(state="attached")` for native
+  `<details>` content and per-view renders that are synchronous once the target lands,
+  `state="visible"` for the confirm modal's open toggle, and `wait_for_function()` polling
+  `window.__FAKE_STORE__` for the template-load and session-creation writes. One spot needed no
+  wait for a non-obvious reason: directly writing to `window.__FAKE_STORE__` and calling
+  `window.__NOTIFY__()` (simulating a relay push) invokes the fake store's listener callbacks
+  SYNCHRONOUSLY -- unlike a real `onSnapshot`'s first delivery, which the fixture intentionally
+  delays via `setTimeout` -- so `state.sessionResponses` is already updated by the time that
+  `evaluate()` call returns, before the facilitator even clicks to reveal the live tally. Verified
+  output identical to the original (aside from a timestamp), then stress-tested 10x clean at
+  ~3.1-3.4s per run (down from ~6.5s). Landed via a clean fast-forward (no concurrent changes to
+  this file), full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+- 2026-09-15 — Copilot perf pass, file 8/9: `test_scored_template_five_dysfunctions.py`. Same
+  treatment as its Tuckman sibling (same starter-template test shape): removed every
+  `wait_for_timeout()`, using auto-wait for click chains, `wait_for_selector(state="attached")` for
+  synchronous-once-rendered content, `state="visible"` for the confirm modal, and
+  `wait_for_function()` polling the store for template-load/rating writes. One condition needed
+  more thought than Tuckman's: reloading the SAME already-active template rewrites the same
+  dimension keys, so "dimensions/trust exists" is already true before the reload even starts -- not
+  a real completion signal there. Used `meta/config.updatedAt` instead, which `loadTemplate()`
+  stamps fresh on every load regardless of content -- captured its value before the reload and
+  polled for it to change. Verified output identical to the original (aside from timestamps), then
+  stress-tested 10x clean at ~2.2-2.3s per run (down from ~5.7s). Landed via a clean fast-forward,
+  full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+- 2026-09-15 — Copilot perf pass, file 9/9 (last one): `test_retro_statement_survey_submission.py`.
+  Removed every `wait_for_timeout()`, including the small per-click waits inside a 14-iteration
+  answer loop: `refreshSubmitEnabled()` (retro-join.js) runs synchronously inside each scale-btn's
+  own click handler, so `submitBtn.disabled` is already up to date the instant `click()` returns --
+  no wait needed between clicks, or before reading it right after the loop ends. The setup section
+  mirrors the Tuckman/Five Dysfunctions files' established treatment (same starter-template-load +
+  start-session shape); the facilitator's manual store write + `window.__NOTIFY__()` call needed no
+  wait at all, for the same synchronous-listener reason established in the Tuckman file. Verified
+  output identical to the original (aside from the randomized session code), then stress-tested 10x
+  clean at ~2.5-2.7s per run (down from ~5.2s). Full 44-file Playwright suite + 74-test unit suite
+  green, zero regressions.
+
+  This closed out 9 of Copilot's flagged test-performance list. The 10th and last,
+  `test_board_sync_finish_retro_convergence.py` (lowest Copilot priority, largest/most
+  relay-timing-sensitive file in the list), got its own dedicated pass -- see below.
+- 2026-09-15 — Copilot perf pass, file 10/10 (the last one): `test_board_sync_finish_retro_convergence.py`.
+  A real two-device, relay-backed convergence test (not the local fake-store harness the other 9
+  files use), so treated with more caution throughout. Replaced 30 of its 32 `wait_for_timeout()`
+  calls: click chains needed no wait (including the direct-rating swatch-click loops --
+  `refreshSubmitEnabled()` updates synchronously in the click handler, same finding as the
+  statement-survey file's scale-btn loop); device A/C's team-link generation got
+  `wait_for_function` polling `#teamLinkInput`'s value (step 7's `crypto.subtle`-backed key
+  generation is genuinely async), matching `test_cofacilitator_join.py`'s established fix.
+  Two spots needed real thought specific to this file being genuinely relay-backed: submitting the
+  statement/direct-rating survey calls `state.db.add()`, a REAL relay round trip here (this file's
+  own db, not a fake store) that only resolves once the relay acks the write, and
+  `afterSubmit()` (retro-join.js) only re-renders the personal-result page once that resolves --
+  waited for `.personal-result` to appear instead of guessing, which also closes a real
+  navigate-away-before-the-write-lands risk the original fixed wait didn't guarantee against.
+  Switching reveal mode to "live" is ALSO a real, non-optimistic relay round trip on the clicking
+  device's own UI (`setRevealMode()`'s live branch waits for its own session listener to reflect
+  the write rather than rendering immediately) -- waited for the toggle to gain `.active` instead
+  of guessing. Kept exactly 2 waits: device B's initial team-link open (same "no documented
+  adoption-finished signal" precedent as `test_cofacilitator_join.py`), and the rainy-day check's
+  margin for proving a cell STAYS unscored (this file's own `wait_for_scored()` helper already
+  documents that it can't be used to prove a negative -- there's no positive condition to poll for
+  "nothing arrived and nothing ever will"). Verified output identical to the original (aside from
+  randomized session codes/secrets), then stress-tested 15x clean at ~5.7-6.0s per run (down from
+  ~11.6-11.7s), matching the larger stress-test batch this pass reserves for relay/multi-device
+  stakes. Full 44-file Playwright suite + 74-test unit suite green, zero regressions -- re-verified
+  again after a clean fast-forward onto the preview branch (5x rerun).
+
+  This closes out all 10 of Copilot's flagged test-performance files.
+- 2026-09-15 — Copilot's re-run (after syncing to the pulled branch) flagged a fresh top-10 slowest
+  list; started a new pass on the 8 local-fake-store files it flagged (deferring the one relay-
+  backed file in that list to its own careful pass, and deprioritizing
+  `test_relay_error_handling.py`, which deliberately times a real bounded-retry/give-up window
+  against an unreachable relay rather than working around a missing signal). File 1/8:
+  `test_facilitator_language.py` (23 waits, the highest count in the new list). Same treatment as
+  the rest of this pass: click chains needed no wait, including a modal-closing click immediately
+  followed by clicking a target the modal's backdrop was covering (actionability itself waits for
+  the backdrop to close); `wait_for_selector(state="attached"/"visible")` for native `<details>`
+  content, session-card renders, and the rating/override modal (`#backdrop`) plus confirm dialogs;
+  `wait_for_function()` polling the store for template-load/session-creation writes. Two spots had
+  a checked reason for no wait: saving the sprint-experiment note sets its "Saved" hint's
+  `hidden=false` SYNCHRONOUSLY in the click handler (the `setTimeout` it also schedules only
+  re-hides it 1800ms later), and the manual store write + `window.__NOTIFY__()` call needed none
+  either, matching the by-now-established synchronous-listener finding. Verified output identical
+  to the original (aside from the randomized session code), then stress-tested 10x clean at
+  ~2.3-2.4s per run (down from ~5.7s). Full 44-file Playwright suite + 74-test unit suite green,
+  zero regressions.
+- 2026-09-15 — Copilot pass file 2/8: `test_view_navigation_and_squad_admin.py` (19 waits, tied for
+  highest in the new list). Same established treatment throughout: `wait_for_selector`
+  `state="attached"`/`"visible"` for renders/modals, `wait_for_function()` polling the store for
+  squad rename/add/remove/rate writes. Two spots got a stronger justification than "probably
+  synchronous": clicking a read-only Tribe-grid cell (asserted to do nothing) needed no wait at
+  all, confirmed STRUCTURALLY by reading render.js/squads.js -- Tribe's cells are plain `<div>`s
+  with no click listener bound anywhere, so nothing could ever open the modal, delayed or not; and
+  the pre-reload squad selection needed no wait before `reload()` either, since `selectSquad()`
+  writes to `localStorage` synchronously (a blocking browser API). The dimension-header tooltip
+  hover kept a real `wait_for_function` on `#dimTooltip`'s hidden state, matching the established
+  idiom from the tooltip and RTL files earlier in this pass. Verified output byte-for-byte
+  identical to the original, then stress-tested 10x clean at ~2.3-2.4s per run (down from
+  ~5.3-5.4s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+- 2026-09-15 — Copilot pass file 3/8: `test_bilingual_dimension_editor.py` (19 waits, tied for
+  highest in the new list). The dimension-manager's field-edit functions
+  (`updateDimensionField`/`updateDimensionI18nField`/`updateDimensionArrayItem`/
+  `updateDimensionI18nArrayItem`, all in `dimensions.js`) mutate the dimension, call
+  `renderAll()`/`renderDimList()`, AND write to the store all SYNCHRONOUSLY inside the 'change'
+  handler -- confirmed by reading the handlers, not assumed -- so every `dispatch_event("change")`
+  in this file needed no wait at all before the next read or re-query (the file's own existing
+  comment about `renderDimList()` rebuilding `#dimList`'s innerHTML on every change already covers
+  the correctness angle of re-querying; this only removes the now-unnecessary timing guess around
+  it). The i18n-panel toggle click needed no wait either -- it only flips `panel.hidden` directly,
+  no store write or re-render involved. Everything else got the by-now-established treatment: the
+  initial boot marker, `wait_for_selector(state="attached"/"visible")` for renders and the confirm
+  modal, `wait_for_function()` polling the store for the new-dimension and Tuckman-load writes.
+  Verified output byte-for-byte identical to the original, then stress-tested 10x clean at
+  ~2.0-2.2s per run (down from ~4.8-4.9s). Full 44-file Playwright suite + 74-test unit suite green,
+  zero regressions.
+- 2026-09-15 — Product owner adopted four working agreements into `docs/DefinitionOfDone.md`,
+  proposed off the back of this session's perf pass and the two Copilot-sync incidents above:
+  (1) Playwright waits use a real condition, never a fixed `wait_for_timeout()`, except where no
+  positive signal can exist, with any exception commented; (2) a change to a test's wait/timing
+  logic gets stress-tested 10x (15x relay-backed/multi-device) during its own dev cycle, not folded
+  into the standing regression run; (3) the full suite's serial wall-clock time gets logged here
+  when it moves meaningfully, as the signal to suggest a performance pass rather than a hunch;
+  (4) another agent's or tool's analysis of "current" repo state gets a freshness check (synced to
+  the branch tip?) before anyone acts on it. A fifth candidate -- an OS-level per-test timeout in
+  `tests/_run_one.sh` -- was deferred: the incident that prompted it (the relay stdout-pipe
+  deadlock, already fixed above) was a real code bug, not evidence a bug-free test can legitimately
+  run that long, so it needs its own analysis before becoming a standing rule.
+- 2026-09-15 — Copilot pass file 4/8: `test_starter_template_spotify.py` (18 waits). Same
+  established treatment throughout: `wait_for_selector(state="attached"/"visible")` for the
+  templates list, native `<details>` content (the Tribe legend, under Hebrew and after switching
+  back), and the confirm modal; `wait_for_function()` polling the store for the Five
+  Dysfunctions/Spotify template-load and session-creation writes -- using `dimensions/release` (a
+  key unique to Spotify, absent while Five Dysfunctions was active) as the real signal for
+  "Spotify's dimensions landed back", adapting the by-now-standard template-load idiom to a
+  load-then-reload-the-original sequence rather than a first-time load. Verified output identical
+  to the original (aside from timestamps), then stress-tested 10x clean at ~1.9-2.0s per run (down
+  from ~5.0-5.1s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+- 2026-09-15 — Copilot pass file 5/8: `test_retro_statement_language.py` (17 waits). Setup mirrors
+  the established Tuckman-load treatment from earlier in this pass. One condition needed more
+  thought than the usual synchronous-fake-store case: `joinSessionByCode()` (retro-join.js) renders
+  the "Connecting..." placeholder synchronously (`state.joinSession` starts null), and only shows
+  the real statement form once `listenJoinSession()`'s `onSnapshot` listener delivers its FIRST
+  snapshot -- a genuine async gap the fake store deliberately delays (unlike its later, synchronous
+  `notify()` calls) -- so this waits for `.stmt-row` to attach instead of guessing. The answer
+  loop's per-click waits were removed too, same `refreshSubmitEnabled()`-is-synchronous finding as
+  the statement-survey file's identical loop. Verified output byte-for-byte identical to the
+  original, then stress-tested 10x clean at ~2.9-3.2s per run (down from ~5.7-6.0s). Full 44-file
+  Playwright suite + 74-test unit suite green, zero regressions.
+- 2026-09-15 — Copilot pass file 6/8: `test_retro_join_exit_and_return.py` (17 waits).
+  `exitJoinScreen()`/`returnToJoinScreen()` (retro-join.js) are both fully synchronous DOM toggles
+  -- `returnToJoinScreen()` re-renders from already-cached `state.joinSession`/
+  `joinSubmittedResults`, no new fetch involved -- so neither needed any wait before the next click
+  or read. The direct-rating swatch-click loops needed none either (same synchronous
+  `refreshSubmitEnabled()` finding as the statement-survey/statement-language files); the two
+  submission points got `wait_for_selector('.personal-result', state="attached")` instead of a
+  guess; both fresh-page boots got the established real boot markers. Verified output byte-for-byte
+  identical to the original, then stress-tested 10x clean at ~2.2-2.4s per run (down from
+  ~5.1-5.2s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+  **Full-suite timing trend** (per the DoD's new tracking rule, `tests/run_all.sh`,
+  `TEST_JOBS=2`, wall-clock): the commit right before this whole wait-condition pass began
+  (`172594f`, 38 Playwright files) ran in **102.5s**; now, 44 files later (6 of them added by
+  unrelated concurrent feature work, not this pass) and 10 files converted, it runs in **81.1s** --
+  down ~21.4s (~21%) despite running more tests.
+- 2026-09-15 — Copilot pass file 7/8: `test_retro_experiment_note_and_finish.py` (17 waits). One
+  finding reverses a caution from earlier in this pass: this file's reveal-mode toggle needed NO
+  wait before the next click, unlike the identical-looking click in
+  `test_board_sync_finish_retro_convergence.py`. There, a REAL relay write genuinely round-trips
+  before that device's own listener reflects it. Here, using the local fake store, the ongoing
+  sessions listener (subscribed once at boot in `db.js`) fires SYNCHRONOUSLY on every `.update()`
+  call -- so `setRevealMode()`'s write and the resulting re-render (including the `.override-btn`
+  the next click needs) are both already done by the time `click()` returns. The lesson: "this
+  exact click needed a wait in file X" doesn't transfer to file Y without checking which backend
+  (real relay vs. local fake store) that specific test uses -- confirmed by reading the handlers
+  each time, not assumed from precedent. Same synchronous-write reasoning covered
+  `saveExperimentNote()`, `setSessionOverride()`, and `finishRetroAndApply()`. Verified output
+  identical to the original (aside from the randomized session code), then stress-tested 10x clean
+  at ~1.9-2.0s per run (down from ~4.6-4.8s). Full 44-file Playwright suite + 74-test unit suite
+  green, zero regressions. Full-suite `tests/run_all.sh` now **79.5s** (down from 81.1s two entries
+  ago, 102.5s at the start of this pass).
+- 2026-09-15 — Copilot pass file 8/8 (last local-fake-store file): `test_dimension_and_template_admin.py`
+  (16 waits). Builds its page via its own custom fake Firestore-like store (`FAKE_CLAUDE_JS`, not
+  the shared `fixtures/fake_store.html`) -- confirmed it has the same synchronous-`notify()`/
+  async-first-`onSnapshot`-delivery shape as the shared one before relying on that assumption, same
+  discipline as every other file in this pass (read the handler, don't assume from precedent). Same
+  established treatment throughout: `wait_for_function()` polling the store for dimension add/
+  reorder/delete/rate and template save/load, `wait_for_selector(state="attached"/"visible")` for
+  renders and modals, no wait for confirmed-synchronous field edits. The template-load step needed
+  a one-time marker rather than a generic "dimensions changed" check: `meta/config` is never
+  written by anything before the first `loadTemplate()` call in this fixture, so its mere existence
+  is a reliable signal. Verified output identical to the original (aside from timestamps -- this
+  included confirming a pre-existing, unrelated test quirk where an unqualified selector loads the
+  first starter template row instead of the just-saved custom one, present identically before and
+  after, left untouched as out of scope for a timing-only pass), then stress-tested 10x clean at
+  ~2.8-3.0s per run (down from ~5.8-5.9s). Full 44-file Playwright suite + 74-test unit suite green,
+  zero regressions. Full-suite `tests/run_all.sh` now **82.9s** (within normal run-to-run variance
+  of the 79.5s/81.1s figures above -- this pass's 8 local-fake-store files are now all done; only
+  the relay-backed `test_retro_join_link_carries_team_sync.py` remains from Copilot's second-pass
+  list).
+- 2026-09-15 — Copilot pass file 9/9 (the last one): `test_retro_join_link_carries_team_sync.py`
+  (13 waits, the only relay-backed file in this second pass). Analyzed in full before touching
+  anything, per explicit instruction, then applied at a 15x stress-test bar (not the usual 10x)
+  given the relay/multi-device stakes. Replaced 12 of 13 waits: the team-link boot wait collapsed
+  into the established `wait_for_function` on `#teamLinkInput`'s value; click chains and the
+  direct-rating swatch loop needed none (same synchronous-handler findings as every join-screen
+  file in this pass); `teamDisconnectBtn` needed none either, confirmed by reading
+  `setTeamSecret("")`/`stopTeamBoardSubscription()` -- both purely local, no relay ack required to
+  disconnect your own subscription. One removal needed real justification beyond a category match:
+  the squad-1 rename's 400ms margin on device A, before device B opens the join link. `renameSquad()`
+  updates local state synchronously before the relay write even starts, and the actual condition
+  that margin stood in for (the rename reaching the relay before B connects) is already re-checked,
+  far more patiently, by B's own `wait_for_function` two lines later -- and a single WebSocket
+  connection preserves message order regardless, so the rename/session-start writes can't arrive at
+  the relay out of order just because the local pause is gone. Verified this specifically holds
+  under the 15x repetition, not just once. Kept exactly 1 wait: device C's fresh join-link open,
+  the same "no documented device-adoption signal" precedent as `test_cofacilitator_join.py` and the
+  board-sync convergence file. Verified output structurally identical to the original (aside from
+  randomized codes/secrets), stress-tested 15x clean at ~3.5-3.6s per run (down from ~5.3-5.6s).
+  Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+  Full-suite `tests/run_all.sh` now **77.2s**.
+
+  **Coverage audit** (requested explicitly, covering all 19 files touched across this whole
+  wait-condition pass, from `test_hebrew_rtl_coverage.py` through this file): diffed the exact set
+  of `assert` statements -- not just their count -- between each file's state immediately before
+  and immediately after its own conversion commit. Zero assertions were added, removed, or
+  reworded anywhere; the only non-`wait_for_timeout` lines ever touched were a handful of
+  pre-existing comments absorbed into more detailed replacement comments alongside the wait
+  changes. Coverage is unchanged from before this pass began -- the only behavior change anywhere
+  was HOW each test waits, never WHAT it checks. (Two files, `test_dimension_and_template_admin.py`
+  and `test_template_switching_and_csv_import.py`, have zero `assert` statements of their own even
+  before this pass -- a pre-existing property relying on `page.on("pageerror")`/console-error
+  capture instead, unrelated to and unchanged by this work.)
+
+  This closes out Copilot's second-pass list in full (9 files: `test_facilitator_language.py`,
+  `test_view_navigation_and_squad_admin.py`, `test_bilingual_dimension_editor.py`,
+  `test_starter_template_spotify.py`, `test_retro_statement_language.py`,
+  `test_retro_join_exit_and_return.py`, `test_retro_experiment_note_and_finish.py`,
+  `test_dimension_and_template_admin.py`, `test_retro_join_link_carries_team_sync.py`) on top of
+  the first pass's 10 -- 19 files total, `tests/run_all.sh` down from 102.5s to 77.2s (~25% faster)
+  despite the suite growing by 6 files across that span from unrelated concurrent work.
+- 2026-09-15 — After Copilot's own re-sync confirmed a legitimate (non-stale) third top-10 list,
+  screened it before starting: `test_board_sync_finish_retro_convergence.py` is already done (2
+  waits left, both deliberate); `test_board_sync_template_switch_race.py` and
+  `test_relay_error_handling.py` deliberately left alone -- read both in full and confirmed at
+  least one wait in each exists specifically to let a race/retry window happen before checking the
+  outcome, not to work around a missing signal (the same category of thing this pass has
+  consistently protected throughout). File 1/6 of the remaining local candidates:
+  `test_main_screen_language.py` (15 waits). Traced `app.js`'s `setView()` directly rather than
+  assuming from precedent: it calls `applyViewVisibility()` AND `renderAll()` SYNCHRONOUSLY inside
+  the click handler, so every view switch freshly re-renders all views in whatever locale is
+  active, not lazily -- confirming every "click a view, read its translated content" pair in this
+  file (and, retroactively, every other language-screen file already fixed in this pass) needed no
+  wait at all. The rest got the standard treatment: the initial boot marker,
+  `wait_for_selector(state="attached"/"visible")` for native `<details>` content and the rating
+  modal, `wait_for_function()` for the rating write. Verified output byte-for-byte identical to the
+  original, then stress-tested 10x clean at ~1.8-1.9s per run (down from ~4.3-4.5s). Full 44-file
+  Playwright suite + 74-test unit suite green, zero regressions. Full-suite `tests/run_all.sh` now
+  **76.1s**.
+
+  A claim from Copilot's own investigation was checked and not corroborated: it reported
+  `test_retro_experiment_note_and_finish.py` failing at commit `f53d8d0` (the exact commit this
+  session was also on), attributing it to the wait-condition fix in `8de2811` assuming a
+  synchronous store write that supposedly wasn't. Re-verified at that same SHA: 20 isolated runs
+  clean, 6 more launched simultaneously to induce CPU contention (the most plausible way a
+  genuinely-synchronous write could appear to race) also clean -- 26/26, and a fresh re-read of the
+  full `saveExperimentNote()` call chain found no deferred step anywhere in it. No code change was
+  made pending the specific failure detail (exact assertion value, traceback, Copilot's own
+  Playwright/Chromium version) that would let this be reproduced rather than taken on report alone.
+- 2026-09-15 — File 2/6 of the remaining local candidates from Copilot's third top-10 list:
+  `test_retro_override_and_response_table.py` (15 waits). Same established Five Dysfunctions-load
+  setup treatment as earlier files, plus the session-override editor got the same finding as
+  `test_retro_statement_language.py`'s identical flow: `setSessionOverride()`/
+  `clearSessionOverride()` (retro-facilitator.js) both write to the store and re-render
+  synchronously in their click handlers. Verified output identical to the original (aside from the
+  randomized session code), then stress-tested 10x clean at ~1.9-2.1s per run (down from
+  ~4.4-4.6s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+  Full-suite `tests/run_all.sh` now **74.7s**.
+- 2026-09-15 — File 3/6 of the remaining local candidates from Copilot's third top-10 list:
+  `test_retro_direct_rating_flow.py` (14 waits). Same established treatment throughout: the initial
+  boot marker, `wait_for_function()` for session-creation/override/finish-retro writes, and the
+  join screen's genuine async gap (`listenJoinSession()`'s `onSnapshot` first delivery, matching
+  `test_retro_statement_language.py`'s identical case) covered by
+  `wait_for_selector('.direct-row', ...)` instead of a guess. The direct-rating swatch-click loop
+  needed no waits between clicks (`refreshSubmitEnabled()` runs synchronously, same finding as
+  every other join-screen file in this pass). Verified output identical to the original (aside from
+  the randomized session code), then stress-tested 10x clean at ~1.9-2.0s per run (down from
+  ~4.5-4.7s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+  Full-suite `tests/run_all.sh` now **74.0s**.
+- 2026-09-15 — File 4/6 of the remaining local candidates from Copilot's third top-10 list:
+  `test_retro_reveal_mode_and_consolidation.py` (14 waits). Standard treatment for the Five
+  Dysfunctions-load setup; the reveal-mode toggle got the same local-fake-store synchronicity
+  finding as `test_retro_experiment_note_and_finish.py`'s identical click (explicitly distinguished
+  in the test's own new comment from the REAL relay case in the board-sync convergence file, where
+  the write genuinely round-trips before the device's own listener reflects it). One spot needed
+  real thought: switching to squad-2 and back to squad-1 re-subscribes
+  `subscribeSessionResponses()` from scratch, and a fresh subscription's first `onSnapshot`
+  delivery is a genuine async gap this fixture deliberately delays -- unlike every other reveal-mode
+  read in this file. Kept a real `wait_for_function` on the reveal-btn's active class there rather
+  than assume it's already correct, since this is precisely the scenario the test exists to verify
+  ("re-subscribes correctly"). Verified output identical to the original (aside from the randomized
+  session code), then stress-tested 10x clean at ~1.9-2.0s per run (down from ~4.6-4.7s). Full
+  44-file Playwright suite + 74-test unit suite green, zero regressions.
+- 2026-09-15 — File 5/6 of the remaining local candidates from Copilot's third top-10 list:
+  `test_join_link_carries_language.py` (13 waits). The session-start and locale/view-switch clicks
+  got the by-now-established synchronicity treatment (`setView()`/`setLocale()`/`selectSquad()` all
+  render synchronously); the one write needing a real wait was `startSessionBtn`'s click, covered
+  with `wait_for_function()` polling the fake store for the new session doc, since `startSession()`'s
+  live branch writes through the fake store's `set()` -- which mutates `STORE` and calls `notify()`
+  synchronously, re-rendering `#sessionJoinLink`/`#coFacilitateLink` via the long-lived
+  `db.collection("sessions").onSnapshot()` listener `db.js` registers at boot, in that same
+  synchronous call. Both fresh-participant-device joins got the same genuine-async-gap treatment as
+  other join-screen files, this time as `wait_for_function("() => state.joinSession && ... === 'open'")`
+  rather than a DOM selector, since `listenJoinSession()`'s callback calls `renderJoinScreen()`
+  synchronously right after setting `state.joinSession`. One of the two participant devices' first
+  page load (only there to seed `localStorage` before the real navigation) needed no wait at all --
+  `page.goto()` already waits for the load event, and that throwaway page's own boot state doesn't
+  matter. Verified output byte-for-byte identical to the original (aside from the randomized
+  session/team codes), then stress-tested 10x clean at ~1.85-1.89s per run (down from
+  ~4.58-4.59s). Full 44-file Playwright suite + 74-test unit suite green, zero regressions.
+  Full-suite `tests/run_all.sh` now **71.9s**.
+- 2026-09-15 — File 6/6, the last of Copilot's third top-10 list: `test_uncaught_error_diagnostics.py`
+  (10 waits, 3300ms total). Unlike every other file in this pass, most of the win here came from
+  removing waits outright rather than swapping in a condition: the initial boot-completion wait
+  dropped entirely, since nothing in this file reads anything gated on the async store load --
+  `#diagLog`/`#diagPanel`/the copy buttons are all static `index.html` markup, already present the
+  instant `page.goto()` returns (its default `waitUntil="load"` guarantees `helpers.js`'s own
+  `error`/`unhandledrejection` listener registration has already run). The admin-view click and both
+  `<details>` toggles needed no wait either, same synchronous-setView()/synchronous-native-toggle
+  reasoning as every prior file. The two synthetic-error scenarios (a bare `setTimeout` throw, an
+  uncaught promise rejection) got `wait_for_function()` polling `#diagLog` for the specific message,
+  since `evaluate()` only awaits the scheduling call, not the callback the window listener catches.
+  Both copy-button clicks got the same treatment, polling for the "Copied!" label instead of
+  guessing how long `navigator.clipboard.writeText()` takes. One wait stayed a REAL wait, the first
+  of its kind flagged and deliberately left in this pass: `showCopied()`'s own `setTimeout(...,
+  1500)` reverting the button label is a genuine, intentional UI timer being tested (same category
+  as the 1500ms in `test_board_sync_template_switch_race.py`) -- converted to `wait_for_function()`
+  polling for the actual revert (shaving the original's ~200ms padding) rather than eliminated;
+  doing that would need clock-mocking (Playwright 1.62, installed here, has a Clock API for this),
+  which this pass deliberately did not introduce given it would virtualize `Date`/timers
+  page-wide and change what's actually being verified, a bigger step than this pass's scope.
+  Verified output byte-for-byte identical to the original (aside from timestamps), then
+  stress-tested 10x clean at ~2.8-2.9s per run (down from ~4.6-4.65s -- the smallest percentage cut
+  in this pass, since ~1.5s of what remains is that one legitimate timer). Full 44-file Playwright
+  suite + 74-test unit suite green, zero regressions. Full-suite `tests/run_all.sh` now **69.2s**.
+  This closes out Copilot's screened third top-10 list -- the two deliberately-skipped race/retry-
+  timing files remain untouched, and no further candidates are queued pending a future re-scan.
+- 2026-09-15 — Closed the open Copilot dispute over `test_retro_experiment_note_and_finish.py`
+  (first flagged, and not corroborated, earlier the same day). Copilot came back with an actual
+  reproduction this time: a hand-rolled diagnostic harness (not the real test file) run on a
+  different machine/Chromium build, reproducing 8/10 times, with a trace showing the "Saved" hint
+  going visible (proving the click handler ran) while the fake-store value stayed unchanged and a
+  condition wait on it timed out completely. Re-traced the full chain from source a third time
+  (`liveOr()` -> `saveExperimentNote()` -> the fake store's `docRef.update()`) and it's still
+  provably synchronous on every machine this session has access to -- 26/26 clean here (20 isolated
+  + 6 concurrent, on top of the original investigation's own 26/26) -- and found no code-level
+  mechanism that would make it race; the most likely explanation is the harness itself, which
+  Copilot's own trial-and-error log shows going through several self-admitted bugs while being
+  built, not the app's actual write path. Regardless of root cause, this exact click/read pair
+  turned out to be the ONE place in the whole wait-condition pass that read a "provably
+  synchronous" fake-store write with a bare `evaluate()` and no defensive `wait_for_function()`
+  poll -- every analogous site (session creation, override save, finish-retro) already polls
+  despite identical synchronicity reasoning, specifically as insurance against exactly this kind of
+  environment-dependent report. Added the poll, matching that established convention, which closes
+  the report either way (a genuine environment difference, or a harness artifact) at zero cost.
+  Verified output byte-for-byte identical to the original, full 44-file Playwright suite + 74-test
+  unit suite green.
+
+- **2026-09-15 — Introduction story 1, private PR branch.** Added a header
+  About & help control and an on-demand native dialog describing Squad Pulse,
+  Squad/Tribe/Admin views, and Dr. Agile authorship. English/Hebrew, scoped RTL,
+  full-screen mobile layout, Escape dismissal, focus containment/restoration;
+  no navigation, draft mutation, automatic display, or persistence. No migration
+  needed: no stored data shape changes. Product owner authorized implementation
+  on a private branch for review before integration; preview/main remain untouched.
+  Recorded the introduction backlog above, moved story 6 to priority 2, and added
+  terms-and-conditions story 7. Test-first: new test failed on missing control
+  before implementation, then passed; existing live participant test additionally
+  verifies help preserves an actual selected answer. Reviewed English desktop and
+  Hebrew mobile screenshots. Validation: 74/74 Node tests pass; 44/45 browser files
+  pass in two full runs. The experiment-note save test fails at line 88 on this
+  branch AND an untouched archive of baseline 786c3d5; this pre-existing failure
+  is left visible, so the full green Definition of Done is not yet satisfied.
+  Draft PR is for review, not a claim of release readiness.
+
+- 2026-09-15 — ROI review of `run_all.sh` for a proposed Playwright Clock API pass (see the
+  "clock-mocking" DoD question raised the same day) found the win too small to justify the
+  investment: only 3 `setTimeout()` calls exist anywhere in `public/js/`, one of them (the
+  save-experiment-note hint auto-hide) isn't waited on by any test at all, and the other two are
+  either isolated to one file (~1.5s) or entangled with real relay/WebSocket I/O and already
+  flagged do-not-touch. While doing that review, found a much bigger, zero-new-risk opportunity
+  instead: 22 files still carried old-style fixed `wait_for_timeout()` sleeps using the exact same
+  guessed-sleep pattern already converted in 19 files across this pass, totaling ~36 seconds of raw
+  sleep budget (2 of those 22 are the already-known deliberate exceptions). Started converting the
+  other 20. File 1/4 of this batch: `test_join_flow_language.py` (14 waits -> 0) -- standard boot
+  marker + synchronous setView()/setLocale()/joinCodeBtn-click treatment. One scenario needed real
+  thought: `joinSessionByCode()` (retro-join.js) is itself fully synchronous, and for a code that
+  never existed, its FIRST synchronous render already shows the final "not open" state (sess is
+  null both before AND after `listenJoinSession()`'s async first delivery, since the doc never
+  exists either way) -- so THAT one scenario needed no wait at all, unlike the two that pre-seed a
+  real doc (closed/open sessions), which do hit the genuine first-delivery gap and got
+  `wait_for_function()` on `state.joinSession.status`. File 2/4: `test_dim_manager_language.py`
+  (14 waits -> 0) -- `openDimManager()`/`closeDimManager()`/`openConfirm()`/`closeConfirm()` all
+  confirmed synchronous by reading `dimensions.js`/`modals.js` directly; reused established
+  templates-modal/Five-Dysfunctions-load treatment from prior files for the detour through it.
+  File 3/4: `test_templates_language.py` (13 waits -> 0) -- `openTemplates()`/`closeTemplates()`
+  confirmed synchronous; `saveCurrentAsTemplate()`'s live-branch write is picked up by the
+  long-lived "templates" `onSnapshot` listener (`db.js`), which re-renders synchronously via
+  `notify()` since the modal is open, but a `wait_for_function()` on the new row still stands in
+  for the guessed sleep rather than assuming that timing. File 4/4: `test_header_language.py`
+  (10 waits -> 0) -- `setSyncStatus()` (`db.js`) confirmed as a plain two-line synchronous DOM
+  update, so `evaluate()`'s own already-awaited script execution was sufficient. All 4 files
+  verified output byte-for-byte identical to their originals, each stress-tested 10x clean. Full
+  suite green: 74/74 unit tests, 45/45 Playwright tests (test count grew by one from the merged
+  About & help PR) via `tests/run_all.sh` (67.7s). 16 files remain in this batch.
+- **2026-09-15 — Introduction stories 2–4 and outside-click dismissal.**
+  Private branch `codex/about-guides` starts at freshly fetched preview 401fec7,
+  including merged PR #2 and current condition-wait strategy (8375a2f and the
+  recent wait-removal passes). Fetched again before delivery; preview unchanged.
+  Added expandable participant, facilitator, and results guides in English/Hebrew.
+  Participant action opens existing code entry or returns to the current survey
+  without dropping its draft. Outside clicks close the native dialog through the
+  same close path; inside clicks and drags originating inside do not dismiss it.
+  No new data shape, persistence, or migration. Automatic first-visit display,
+  attribution/license details, and terms remain separate stories.
+  Test-first dismissal regression failed before implementation; expanded guide
+  and language checks pass, as does the real participant draft-return test.
+  No new fixed sleeps: retrying DOM assertions/condition waits follow current
+  strategy. Visually checked English desktop and Hebrew mobile layouts.
+  74/74 Node tests pass; full `tests/run_all.sh` reports 44/45 passing files.
+  The experiment-note test still times out at its new wait_for_function at line
+  89 on this machine, reproduced against an untouched archive of 401fec7 too.
+  Thus the latest wait patch is incorporated but does not resolve the baseline
+  failure here. Draft PR for review; full-green Definition of Done outstanding.
+- 2026-09-15 — Batch 2/5 of the remaining wait-condition files: `test_admin_language_switch.py`
+  (10 waits -> 0, standard boot marker + synchronous setView()/setLocale()/openConfirm() treatment;
+  a real `page.reload()` correctly kept its own boot-marker wait, since a reload genuinely re-runs
+  the whole async boot sequence, unlike every other click in the file), `test_view_switch_refreshes_
+  stale_state.py` (6 waits -> 0, the simplest file in the batch -- this is the file guarding the
+  exact bug this whole methodology depends on staying fixed, setView() calling renderAll() on every
+  switch, so it got read carefully rather than assumed), and `test_csv_import_column_matching.py`
+  (9 waits -> 0, the one genuinely new async mechanism found so far in this batch: `csvFileInput`'s
+  change handler reads the file via `FileReader.readAsText()`, a real async I/O callback rather than
+  a promise/microtask, before rendering the preview and unhiding `#importBackdrop` -- both CSV-import
+  scenarios now wait on that backdrop instead of guessing). Verified output byte-for-byte identical
+  to each original, each stress-tested 10x clean. Full suite green: 74/74 unit tests, 45/45
+  Playwright tests via `tests/run_all.sh` (66.0s). 13 files remain in this batch.
+- 2026-09-15 — Batch 3/5: `test_local_store.py` (12 waits -> 0) and
+  `test_encryption_no_plaintext_on_wire.py` (8 waits -> 0). `local-store.js`'s `docRef.set()`/
+  `update()` confirmed synchronous within a tab (same shape as `fake_store.html`) -- same-tab
+  rating saves got `wait_for_function()` polls on the cell's DOM class directly, since no
+  `window.__FAKE_STORE__` global exists outside the fake-store fixture. The one genuinely async
+  gap in that file: a second tab only picks up the first tab's write via the browser's native
+  `storage` event, which never fires in the writing tab and only fires asynchronously in others --
+  that one kept a real wait, stress-tested 15x given the cross-tab timing sensitivity. The
+  encryption file is real-relay-backed: `ensureDefaultTeamSecret()`/`renderTeamSyncStatus()`
+  (`board-sync.js`) confirmed synchronous at script-load time, so device A's team link needed no
+  wait at all (the original comment's "no click needed" was right, but the wait after it wasn't
+  needed either). The two genuine relay round trips (squad rename, experiment-note save) can't use
+  a `page.wait_for_function()` -- what needs to settle is the Python-side WebSocket frame capture,
+  not browser state -- so a small `wait_for_new_frame()` poll on the capture replaced the guessed
+  sleep, which also makes the test strictly more rigorous: it now proves traffic for that specific
+  action actually happened rather than assuming enough time passed. Verified output byte-for-byte
+  identical to each original (one incidental, non-assertion frame-count print differs, expected
+  since the test no longer waits around collecting incidental traffic), both stress-tested 15x
+  clean given the real relay/cross-tab timing involved. Full suite green: 74/74 unit tests, 45/45
+  Playwright tests via `tests/run_all.sh` (63.9s). 11 files remain in this batch.
+- 2026-09-15 — Batch 4/5: three real-relay-backed board-sync files (`test_board_sync_default_on.py`,
+  `test_board_sync_hydrate_on_boot.py`, `test_board_sync_live_subscribe.py`, 9+7+7 = 23 waits -> 1
+  deliberate). The key finding was distinguishing which writes are genuinely async from which only
+  looked that way: `ensureDefaultTeamSecret()`/`renderTeamSyncStatus()`/`autoConnectFromLink()`/
+  `connectWithSecret()` (`board-sync.js`) are all synchronous at script-load/click time, so a
+  device's team link, connected status, and the disconnect handler's own immediate UI effects
+  needed no wait at all -- contrary to what several of these files' own original comments assumed
+  ("no click needed" was right, but the wait after it wasn't). By contrast, `relay-client.js`'s
+  `collRef.add()` (used by every `addSquadBtn` click) is genuinely async even for its OWN device's
+  optimistic local update -- unlike `putDoc()` elsewhere, `add()` gates entirely on `room.ready`
+  resolving first -- so those kept or gained a real `wait_for_function`, reusing the style
+  `test_board_sync_hydrate_on_boot.py` already had for its hydrate checks. The default-on file's
+  squad-rename push needed a different mechanism since what has to settle is the RELAY's own copy
+  of the board doc, not local browser state -- a small Python-side `poll_pushed_board()` helper
+  re-fetches it until the rename shows up. The live-subscribe file's disconnect-then-push scenario
+  is "proving a negative" (same category as `test_board_sync_finish_retro_convergence.py`'s
+  established device-C-never-syncs check) -- kept a real fixed wait there, but strengthened it: the
+  writing device's own optimistic update is now waited on for real first, before the fixed window
+  checks the disconnected device never got it. Verified output byte-for-byte identical to each
+  original, each stress-tested 15x clean given the real relay round trips. Full suite green:
+  74/74 unit tests, 45/45 Playwright tests via `tests/run_all.sh` (60.6s). Only
+  `test_board_sync_opt_in_push.py` plus the relay re-check task remain in this batch.
+- 2026-09-15 — Batch 5/5, closing out the run_all.sh ROI review's remaining candidates:
+  `test_board_sync_opt_in_push.py` (6 waits -> 0, same reasoning as batch 4 -- reused
+  `poll_relay_board()` for the squad-rename push, and the disconnect-then-push "proving a negative"
+  scenario got the same strengthened treatment as `test_board_sync_live_subscribe.py`'s). Also
+  caught and fixed a mistake from batch 4: `test_board_sync_hydrate_on_boot.py`'s `addSquadBtn`
+  waits carried a factually wrong comment blaming relay-client.js's `room.ready` gate --
+  `local-store.js`'s `routedCollRef()` only sends "sessions"/"boards" paths to the relay, so
+  "squads" is a purely local, synchronous write (same shape as `fake_store.html`) and never touches
+  `room.ready` at all. Removed both now-unnecessary waits and fixed the comments; re-verified
+  byte-identical output and 15/15 clean. Then did the promised re-check of the smaller relay files:
+  `test_cofacilitator_join.py`'s 2 remaining waits are the already-documented "no DOM signal for
+  team/link adoption via URL open" exception from earlier in this pass and were left alone, but
+  `test_relay_config_injection.py` (1 wait), `test_relay_board_path_sync.py` (4 waits, previously
+  commented as deliberate "ordinary page-bootstrap settling"), and `test_relay_cross_device_sync.py`
+  (8 waits) all turned out to have room left: the same synchronous-shim/synchronous-click reasoning
+  established throughout this pass applied cleanly to all of them, verified empirically with 15x
+  stress runs before trusting it over the older comments. This closes out every file identified in
+  the original run_all.sh ROI review with zero files skipped except the intentional exceptions.
+  Verified output byte-for-byte identical to every original. Full suite green: 74/74 unit tests,
+  45/45 Playwright tests via `tests/run_all.sh` (58.9s).
+
+- **2026-09-15 — Introduction stories 6, 5, and 7.** Private branch
+  `codex/welcome-credits-terms` builds on updated PR #3 (`cfea8df`), including
+  latest preview `ab2eaf5`. First ordinary visit shows the existing splash;
+  dismissal is remembered locally and invitation links bypass it even when team
+  sync strips the query parameter. Blocked storage never prevents dismissal.
+  Added English/Hebrew credits with source links and bundled Apache/MIT/font
+  license notices, plus informational draft terms (owner explicitly chose no
+  acceptance tracking). Terms wording remains for owner review before publication.
+  Source checks found unresolved assessment reuse permissions and Tuckman scale
+  provenance; see `docs/credits-and-terms-review.md` for evidence and open decisions.
+  New local preference only; no board-data migration. Existing users see the new
+  welcome once, then their browser remembers dismissal. Shared test builder marks
+  existing feature tests as returning visitors; the new first-visit test opts out.
+  Test-first new regression failed on missing automatic display before changes.
+  PR #3 merged during implementation; branch fast-forwarded to preview 01fd256
+  before delivery. Validation: 74/74 unit tests pass; two full run_all.sh runs
+  report 45/46 browser files passing, with the same existing experiment-note
+  store-write timeout. Focused first-visit checks pass, including Escape and
+  outside-click preference persistence; English/Hebrew terms visually inspected.
+  Draft PR only; full-green Definition of Done and content approval outstanding.
+- **2026-09-15 — Story 13 (CSV import/export chrome), first slice: JSON board export
+  (beta), additive.** `csv.js`'s `buildBoardExport()`/`toJSON()` export the FULL board
+  (config, every dimension's full definition including scored-template
+  statements/scoreBands/strategies and its Hebrew `i18n.he.*` override verbatim, custom
+  templates with their own `i18n`, and every squad's ratings) as one JSON file, behind a
+  new "Export JSON (beta)" button in Admin — alongside `toCSV()`'s existing flat
+  ratings-only export, not replacing it (that's items 3a/3b/4 below). Deliberately
+  excludes `sessions` (ephemeral) and any team-sync secret (a durable credential has no
+  business in a downloadable file); squad `id` is left out too, same reasoning as
+  `toCSV()`'s squad matching — it's a storage artifact, not a portable identity, so
+  import (not built yet) will match by name, same as CSV today.
+  Reconciles the open item from the 2026-09-14 translation-export-script entry: this
+  export intentionally does NOT reuse `scripts/export-template-translations.js`'s
+  flattened `{en,he}`-per-field shape — that shape serves human review of AI-translated
+  starter-template copy; this one serves board backup/restore fidelity, so it passes
+  `state.js`'s real `i18n.he.{...}` structure straight through unchanged. Both agree on
+  the same underlying field (`i18n.he.*`), just shaped for different readers.
+  New data shape, migration decision stated per DoD §3: `formatVersion:1`, no migration
+  needed — first version of the format, nothing existing depends on an older shape.
+  Mockup-before-implementation (DoD §3) judged not to apply here: the new button is a
+  visual/behavioral clone of the already-approved "Export CSV" button (same icon style,
+  same click → real download via `window.claude.use("downloads")` → same
+  `window.open`+`<pre>` fallback), not a new UX shape — the genuine UX decisions in this
+  story (the import-preview panel, the merge/replace toggle) are items 3a/3b, still
+  ahead, and will get a real mockup before implementation.
+  i18n per DoD §2: new button goes through `t()`/`data-i18n` (`admin.boardSetup.exportJson`),
+  both `en.js`/`he.js` updated in the same change, Playwright-verified in both languages.
+  Test-first per the `tdd` skill: `tests/unit/test_json_export.js` (7 tests, pure-function
+  coverage of `buildBoardExport()`/`toJSON()` — config passthrough, dimension/template
+  `i18n` passthrough, squads-by-name with no `id` leak, `sessions`/secret exclusion,
+  pretty-printed round-trip) written and confirmed failing before `csv.js` had the
+  functions; `tests/test_json_export.py` (English label, real click → real parseable
+  JSON with the right shape, Hebrew label) written and confirmed failing (missing
+  button) before the HTML/locale change. Full suite verified green after: 81/81 unit
+  tests, all 46 Playwright files (including relay-backed ones, after `relay/`'s own
+  `npm install`), relay's own protocol suite. Story 13 table status moved to
+  **In progress** — squads/dimensions/templates JSON import (items 3a/3b) and deleting
+  the CSV runtime code (item 4) remain, tracked in the backlog conversation this session
+  continues from. Implemented on branch `story13-json-board-export`, pushed as a PR per
+  explicit instruction rather than merged into `claude/optimistic-keller-holuql` directly
+  — not yet in the shared preview branch.
+- 2026-09-15 — A second, more rigorous investigation into `test_retro_experiment_note_and_finish.py`'s
+  cross-machine failure report (see the `codex/about-guides` entry above: reproduced there against
+  commit 401fec7, `wait_for_function()` timing out on that machine). This session's environment:
+  HEAD `f970639`, Python 3.11.15, Playwright 1.62.0, Chromium 151.0.7922.34. Rather than re-run the
+  test as a black box, wrapped the actual runtime call chain
+  (`state.db.collection("sessions").doc(sid).update(patch)`) to trace every step: whether
+  `collection()`/`doc()`/`update()` were even called, the store's content immediately before and
+  after the synchronous part of `update()`, and whether its returned promise resolved or rejected.
+  Ran this instrumented version 20 times sequentially plus 6 concurrently (26 total) in this
+  environment: every single run showed the identical, correct sequence (`collection_called` ->
+  `doc_called` -> `update_called` with the store still empty -> `update_returned_sync` with the
+  store already holding the new note text, synchronously, before the promise even settled ->
+  `update_resolved`) and the test's own poll landed on its very first check every time. No call
+  skipped, no rejection, no case of the promise resolving without the mutation. This is stronger
+  evidence than the earlier 26/26 (which only checked the outcome, not the mechanism), and it still
+  could not reproduce the reported failure.
+  This does NOT establish the other machine's report as wrong -- there is no way to test its exact
+  Chromium build from here, and the claim is not being overturned on that basis. What the
+  investigation did surface: this repo pinned no Playwright/Chromium version anywhere (`pip install
+  playwright` with no version in `tests/README.md`, no requirements file at all), so two machines
+  running "the same test" had no guarantee of running the same browser engine, and no way to tell
+  from the repo alone. Fixed that gap directly: added `tests/requirements.txt` pinning
+  `playwright==1.62.0` (which also pins the Chromium build), updated `tests/README.md`'s setup
+  instructions to install from it, and added a `docs/DefinitionOfDone.md` working agreement to
+  check both sides' Playwright/Chromium versions before concluding a cross-machine test-timing
+  report is a real bug, a flake, or a harness artifact. No production code or test wait logic was
+  changed -- the instrumented trace gave no reason to believe either needs it.
+- 2026-09-15 — Product-owner retrospective on the whole wait-condition saga: the standing
+  "log a rising `run_all.sh` time in STATUS.md" agreement (added earlier the same day) stayed
+  passive too long in practice -- the suite grew from ~102.5s to over 5 minutes, one
+  individually-defensible `wait_for_timeout()` at a time, added to one new test after another,
+  before anyone treated the trend itself as worth stopping for. Nobody could see that trend
+  without manually timing every run and remembering to compare, which is exactly what wasn't
+  happening. Closed that gap with an actual mechanism rather than another paragraph: `tests/run_all.sh`
+  now times itself and compares the result against a new tracked file, `tests/.timing_baseline`
+  (currently 60, matching this session's own measured ~59-62s range), printing a loud warning if
+  the full suite runs more than 15% over that number -- pointing at the new `wait_for_timeout()`
+  audit and baseline-update steps in `docs/DefinitionOfDone.md`'s new "growth budget" entry.
+  This is explicitly scoped to every contributor now working in this repo -- Copilot (VS Code),
+  Codex, Claude Code, and a human writing a test by hand -- since none of them can be expected to
+  notice a compounding trend from their own one new test in isolation; the check now lives where
+  the suite itself runs, not in any one tool's habits. `tests/README.md` cross-references it.
+  Verified: `run_all.sh` reports its own elapsed time and does not false-trigger on a clean run
+  (60s, under the 69s threshold); the trigger arithmetic was separately verified against a
+  temporarily-lowered baseline. 81/81 unit tests and the full 46-file Playwright suite still pass
+  unchanged -- this only added self-reporting, no test behavior changed.
+- 2026-09-15 — Local Mac reproduction and repair of the experiment-note timing
+  failure plus runner setup diagnostics. A fresh worktree initially turned relay
+  failures into misleading `Cannot find module 'ws'` errors because ignored
+  `relay/node_modules` was absent; `tests/run_all.sh` now fails fast with the
+  exact `python3`/`relay && npm ci` setup commands instead. Instrumenting the
+  real `state.db.collection().doc().update()` chain found the test's patch was
+  `{experimentNote: ""}`: the delayed initial fake-store session snapshot
+  re-rendered the textarea after the test filled it and before Save was clicked.
+  The test now waits for that session listener state, yields for the documented
+  otherwise-unobservable callback, and still polls/asserts the stored note.
+  Verified with 10 focused runs, the full 46-file Playwright suite through
+  `run_all.sh` (TEST_JOBS=2, 3 shards, 32s), and the Node unit suite; all green.
+- 2026-09-15 — **Fixed finding #3 of a full app-wide untranslated-text scan**: five screen-reader-
+  only `aria-label`s were never wired to `t()`/`data-i18n` at all, so a Hebrew-locale screen-reader
+  user always heard them in English regardless of locale (invisible to a plain visible-text scan --
+  caught by a separate static-attribute grep). Four are static markup: the header's Tribe/Squad/
+  Admin view switcher ("View"), the Tribe stats section ("Snapshot at a glance"), the Admin
+  language switcher ("Language"), and the team-link input ("Team link" -- reused the existing
+  `admin.teamSync.linkLabel` key rather than duplicating it, since the visible label right next to
+  it already says the same thing). `i18n.js`'s `applyStaticTranslations()` gained a
+  `[data-i18n-aria-label]` handler, mirroring its existing `-placeholder`/`-title` ones. The fifth
+  (`retro-facilitator.js`'s reveal-mode toggle, "Reveal mode") is JS-rendered, so it calls `t()`
+  directly instead, matching this file's own established pattern for JS-built aria-labels. New
+  locale keys: `header.viewSwitchAriaLabel`, `tribe.stats.sectionAriaLabel`,
+  `admin.language.ariaLabel`, `retro.reveal.ariaLabel`. Test-first: new
+  `tests/test_aria_label_language.py` covers all five, confirmed failing before the fix (the fifth
+  via a real retro session's reveal-toggle), passing after. Full 81-test unit suite + 48-file
+  Playwright suite green.
+- **2026-09-15 — Story 13, item 3a: JSON import for squads & ratings**, additive alongside `toCSV()`'s
+  existing CSV import. Design reviewed first as a real, interactive Artifact mockup ("Squad Import
+  Preview" -- see the conversation this continues from) before any code, per DoD §3; the product
+  owner's decisions from that review, implemented as specified:
+  - **Merge/Replace is a real choice, offered every time, at BOTH the squad level and the per-squad
+    rating level.** Merge (default) adds/updates squads and ratings from the file; a board squad
+    absent from the file is left alone, and a matched squad's own rating for a dimension the file
+    doesn't mention is left alone too. Replace removes a squad absent from the file (named in a
+    warning before applying) AND clears a matched squad's own ratings the file doesn't mention (also
+    named). `buildSquadImportPlan()`/`mergeSquadDimensions()` (`csv.js`) are the pure planning/merge
+    functions; squads still match by NAME (`buildImportPlan()`'s existing rule, unchanged) and each
+    rating's dimension still matches by KEY against the board's current set, reporting (not guessing)
+    a key not found today -- same mechanism CSV import already proved.
+  - **No second confirm dialog for Replace.** Instead, the warning offers a one-click "download a
+    backup of this board first" (reuses item 1's `toJSON()`), plus a text tip pointing at an external
+    open-source diff/merge tool (Meld) for anyone who'd rather reconcile two files by hand than trust
+    either mode.
+  - A real bug, caught before it ever shipped: the first draft of Replace's write path sent the
+    already-clipped `dimensions` object through `.update()`, same as Merge. `local-store.js`'s
+    `deepMerge()`/`relay-client.js`'s matching `update()` are additive-only -- they never drop a key
+    absent from the patch -- so that would have silently left "removed" ratings sitting in the
+    PERSISTED doc, merged right back in, even though the in-memory `state.squads` copy looked correct.
+    Fixed by having Replace's write use `.set()` with the whole doc instead, which genuinely replaces
+    the stored value. `tests/test_json_import.py` asserts on `window.__FAKE_STORE__` directly (not
+    `state`, not the DOM) specifically to catch a regression of this exact mistake.
+  - New data shape: none (reuses item 1's existing board-export shape); no migration question, per
+    DoD §3.
+  - i18n per DoD §2: the new button and the whole preview modal (mode switch, chips, warnings, skip
+    list, error states) go through `t()`/`data-i18n`, `en.js`+`he.js` updated together, count-sensitive
+    strings via a `countKey()` helper (One/Many key pairs, same convention as `templates.js`'s
+    `templates.meta.dimensionsOne/Many` -- `t()` has no built-in pluralization).
+  - Test-first per the `tdd` skill: `tests/unit/test_json_import.js` (14 tests -- `parseBoardImportFile()`'s
+    version/shape checks, `buildSquadImportPlan()`'s merge/replace/skip logic, `mergeSquadDimensions()`'s
+    pure merge math) written and confirmed failing before `csv.js` had the functions.
+    `tests/test_json_import.py` (button/label, both error states, a full Merge apply, a full Replace
+    apply including the backup offer, Hebrew label) written and confirmed failing (missing button)
+    before the HTML/locale change; every wait is a real condition (`wait_for_function` polling
+    `window.__FAKE_STORE__` directly, since `state.live` is true under this harness and new-squad
+    creation takes the async branch) per DoD §1, stress-tested 10x clean.
+  - Full suite green: 95/95 unit tests, all 47 Playwright files, relay's own protocol suite.
+    `tests/.timing_baseline` updated 60 -> 78s -- legitimate growth (two new, real Playwright files
+    this story added, `test_json_export.py` and `test_json_import.py`, neither with a `wait_for_timeout()`
+    call), not slop, per DoD §1's growth-budget rule.
+  - Story 13 table status: item 3a now **DONE**. Remaining: item 3b (JSON import for
+    dimensions/templates/config, its own mockup first) and item 4 (delete the CSV runtime code).
+    Implemented on branch `story13-json-import-squads`, pushed as a PR rather than merged into
+    `claude/optimistic-keller-holuql` directly, matching item 1's delivery pattern.
+- **2026-09-15 — Story 13, item 3a: four review findings on PR #7, all real, all fixed.** Verified
+  each against the actual code before touching anything, then fixed test-first:
+  1. **Backup "success" shown even when the backup never happened.** The backup-first button's
+     `catch` swallowed a rejected `downloads.save()`, and the fallback `window.open()` returning
+     `null` (a blocked popup) both still reached the unconditional "Backup downloaded" line --
+     exactly the wrong failure mode for the one safety net Replace mode offers instead of a confirm
+     dialog. Now tracks success explicitly and shows a new `importJson.backupFailed` message
+     ("try again, or use Export JSON instead") when it isn't real. Playwright-tested by actually
+     forcing the failure (monkeypatching `window.open` to return `null`, the real code path this
+     harness's `downloads` capability always takes since it's always `null`), not just inspecting.
+  2. **A REPLACE plan that only clears existing ratings couldn't be applied.** The Apply button's
+     disabled condition checked `ratingCount`/`newSquadNames`/`squadsToRemove` but not
+     `clearedRatings` -- a file naming every board squad but with fewer ratings than before (a
+     legitimate "restore to unscored" case) left Apply permanently disabled. Extracted the check
+     into its own pure `planHasChanges()` (now unit-tested directly, 2 new tests) rather than an
+     inline HTML-string condition.
+  3. **A malformed squad entry crashed instead of showing the error UI.** `buildSquadImportPlan()`
+     ran directly inside `FileReader.onload` with no try/catch; a `null` entry in `squads`, or a
+     non-string `name`, threw an uncaught exception instead of the intended "can't read this file"
+     message. Fixed by validating each entry's shape in `parseBoardImportFile()` itself (the one
+     function that already decides ok:true/false) -- a non-object entry, a non-string `name`, or a
+     non-plain-object `dimensions` now all fail cleanly as `invalid-squad`, before
+     `buildSquadImportPlan()` ever sees them. 4 new unit tests, 1 new Playwright scenario.
+  4. **The import modal wasn't in `RTL_SCOPED_CONTAINERS`.** Its strings were translated, but
+     `#importJsonBackdrop` was never in `i18n.js`'s list of containers `applyScopedDirLang()`
+     flips -- confirmed with Hebrew selected: `dir`/`lang` were empty and computed direction was
+     `ltr` despite Hebrew text on screen. Added it to the list (matching how `#aboutDialog` was
+     added for the About & Help story); the existing Playwright test only checked the *button*
+     label in Hebrew, so extended it to also open the modal and assert `dir="rtl"`,
+     `lang="he"`, and a real `getComputedStyle().direction` check, not just the button.
+  All four confirmed fixed end-to-end via `tests/test_json_import.py` (now 4 new scenarios: a
+  malformed-entry error, a forced backup failure, a ratings-only-clear Apply + real persisted
+  result, and the RTL/lang check), stress-tested 10x clean; `tests/unit/test_json_import.js` grew
+  from 14 to 20 tests (`invalid-squad` validation, `planHasChanges()`). Full suite green: 101/101
+  unit tests, all 48 Playwright files, relay's own protocol suite. Pushed to the same
+  `story13-json-import-squads` branch/PR rather than opening a new one.
+- **2026-09-15 — Story 13, item 3a: a fifth review finding on PR #7, on re-review of the fix
+  above, real and more severe than it first reads.** `parseBoardImportFile()`'s new validation
+  checked the squad/dimensions CONTAINERS but not a rating's own field types -- a file with
+  `{color:"good", note:123}` passed validation, got persisted, then crashed rendering
+  (`render.js`'s/`squads.js`'s `cell.note && cell.note.trim()` assumes a string). Verified the
+  repro directly before fixing. **Found something broader while fixing it**: `color`/`trend` are
+  interpolated UNESCAPED into a CSS class attribute in both of those same files
+  (`'cell-btn '+color+'"'`) -- always safe before because every existing writer (the rating-modal
+  UI, CSV's `colorFromWord()`) only ever produces one of a fixed enum, but this JSON import path
+  copied whatever string a file contained, which is real attribute-injection room for a
+  color/trend value containing a `"`. Fixed both with the same check: `isValidRating()`
+  restricts `color` to the app's actual 4-value enum and `trend` to its actual 3-value enum (not
+  just "must be a string"), `note` to a string, applied per-rating inside
+  `parseBoardImportFile()`'s existing squad-shape loop. 6 new unit tests (bad container, bad
+  note/color/trend, and two "still accepts a well-formed/empty rating" negatives so the check
+  isn't just permissive-by-accident). New Playwright regression, per the review's explicit ask:
+  imports the exact `note:123` repro, confirms the friendly error shows, zero uncaught page
+  errors, AND (the part that actually proves the fix, not just the symptom) an EXACT equality
+  snapshot of the target squad's persisted `dimensions` before vs. after the rejected import --
+  catching a partial/silent write, not just "the literal bad value isn't there." Stress-tested
+  10x clean. Full suite green: 107/107 unit tests, all 48 Playwright files, relay's own protocol
+  suite. Same branch/PR again.
+- **2026-09-15 — Story 13, item 3a: a sixth review finding on PR #7, a third round on the same
+  validation fix, all three parts real.** The rating-enum check added for finding #5 used bracket
+  lookup (`VALID_RATING_COLORS[r.color]`) directly on an untyped value -- unsafe three distinct
+  ways, each independently verified with a throwaway `node -e` repro before touching anything:
+  (1) a non-string COERCES to a matching key string (`["good"]` stringifies to exactly `"good"`,
+  so an array passed the check); (2) a string naming an INHERITED `Object.prototype` property
+  (e.g. `"constructor"`) read truthy even though it was never one of the four real colors; (3) an
+  object with a non-callable `toString` THROWS converting itself into a property key
+  (`TypeError: Cannot convert object to primitive value`) -- uncaught, the same
+  "bypasses the friendly error UI" failure as finding #3, just reached through the rating check
+  this time instead of the squad-shape check. Fixed with `isValidEnumWord()`: requiring
+  `typeof value === "string"` FIRST means a throw can never happen (only strings ever reach the
+  lookup) and forecloses the coercion case; `Object.prototype.hasOwnProperty.call()` (not bracket
+  lookup) means an inherited property name never counts as a match. 5 new unit tests (array
+  coercion and inherited-property cases for both `color` and `trend`, plus the throwing case
+  wrapped in `assert.doesNotThrow`), plus one new Playwright scenario for the throwing case
+  specifically (the one genuinely crash-capable of the three -- the other two are pure
+  validation-logic mistakes with no throw risk, so left at unit-level coverage, proportionate to
+  what each actually risks) -- confirms the friendly error shows, zero uncaught page errors, and
+  the persisted store is untouched, same before/after-equality-snapshot rigor as finding #5's
+  regression. Stress-tested 10x clean. Full suite green: 112/112 unit tests, all 48 Playwright
+  files, relay's own protocol suite. Same branch/PR a third time.
+- 2026-09-15 — **Fixed two gaps from a full app-wide untranslated-text scan** (findings #1/#2 of
+  4; #3, five untranslated `aria-label`s, deferred; #4/#5, CSV import/export chrome and file
+  content, explicitly out of scope -- product owner call): the generic confirm modal
+  (`modals.js`'s `openConfirm()`, shared by every "remove/close/delete/finish" confirmation in the
+  app) had two real gaps under Hebrew. (1) Its Cancel button (`#confirmCancel`) was never touched
+  by `openConfirm()` -- title/message/OK button are all set per-call via `t()`, but Cancel stayed
+  at its static English HTML default in every locale, on every confirm dialog in the app. Fixed
+  with a new shared `common.cancel` key (`locales/en.js`/`he.js`, alongside the existing
+  `common.ok`) and a `data-i18n="common.cancel"` on the static button -- no `modals.js` change
+  needed, since `i18n.js`'s `applyStaticTranslations()`/`setLocale()` already handle a static
+  `data-i18n` element for free. (2) `#confirmBackdrop` was missing from `i18n.js`'s
+  `RTL_SCOPED_CONTAINERS` list, so even with correctly-translated Hebrew text, the dialog box
+  itself never got `dir="rtl"` -- added it. Test-first: extended
+  `test_dim_manager_language.py`'s existing remove-confirm-dialog scenario with both assertions,
+  confirmed failing before either fix, passing after. Full 81-test unit suite + 47-file Playwright
+  suite green.
+- 2026-09-15 — Follow-up (PR #6 review), first attempt was wrong, caught by a second
+  review before merge. First pass replaced that fix's `page.wait_for_timeout(25)` with
+  `page.evaluate("() => new Promise(r => setTimeout(r, 0))")`, reasoning the stray
+  re-render came from `local-store.js`'s `onSnapshot()` (a `setTimeout(fn, 0)`). Wrong on
+  both counts: Playwright tests never load `local-store.js` at all -- `build_page()`
+  splices in `tests/fixtures/fake_store.html` instead, whose every `onSnapshot()`
+  delivers via `setTimeout(fn, 10)`, not 0. A second review (Codex) reproduced the gap
+  directly: the zero-delay flush can resolve before that real 10ms delivery fires, so
+  the original race stays possible; the first attempt's own 10/10 clean local runs never
+  caught it because enough real time had already elapsed from preceding CDP round-trips
+  to mask it, which is exactly the kind of false confidence a wall-clock-shaped wait
+  produces. Traced the actual mechanism instead of guessing again:
+  `retro-facilitator.js`'s `subscribeSessionResponses()` creates a fresh
+  `sessions/<id>/responses` collection listener the FIRST time a new session's card
+  renders (guarded so it never re-subscribes for the same id); that listener's callback
+  re-renders the whole squad view, and the fake store's `setTimeout(..., 10)` for its
+  first delivery is the actual pending timer that can land between `fill()` and `click()`.
+  Fixed for real this time with a named, path-specific signal instead of any timer at
+  all: `fake_store.html` now exposes `window.__FAKE_STORE_DELIVERY_COUNTS__`, a per-path
+  delivery counter incremented at every `onSnapshot` callback invocation (both the
+  delayed initial one and every `notify()`-triggered one), purely additive so every other
+  test's behavior is unchanged. The test waits for
+  `__FAKE_STORE_DELIVERY_COUNTS__['sessions/'+sid+'/responses'] >= 1` before typing --
+  verified this is a real, non-vacuous condition (transitions 0 -> 1, not already-true
+  from some unrelated delivery) via a standalone repro before trusting it. Verified with
+  10 focused runs of `test_retro_experiment_note_and_finish.py` (all clean), the full
+  47-file Playwright suite via `run_all.sh` (TEST_JOBS=4, 3 shards, 48s), and the 82/82
+  Node unit suite -- zero regressions from the shared fixture's added instrumentation.
+- **2026-09-15 — Story 13, item 3b: JSON import for dimensions, templates & board settings**,
+  extending the same file/preview/Merge-Replace modal item 3a shipped rather than adding a second
+  one. Design reviewed first as an updated Artifact mockup (the same "Full Board Import Preview"
+  the item 3a mockup evolved into -- see the conversation this continues from) before any code,
+  per DoD §3; the product owner's decisions from that review, implemented as specified:
+  - **Dimensions and saved templates both match by LABEL/NAME, not key/id** -- initially proposed
+    as key-matching for dimensions (consistent with 3a's rating-to-dimension matching) and
+    name-matching for templates, the product owner asked why the two would differ. Investigating
+    turned up a real fact neither of us had checked yet: a custom dimension's key
+    (`"local-dim-"+Date.now()`, `dimensions.js`'s `addDimension()`) is exactly as device-local and
+    random as a template's id (`"local-tpl-"+Date.now()`) -- only the three built-in starter
+    templates' dimensions have meaningful, hand-picked keys. Key-matching a custom dimension would
+    have imported it as "new" on every single re-import, including re-importing your OWN board's
+    own file, defeating the whole point of this item (importing a template set between tribes).
+    Settled on label/name matching for both, confirmed by the product owner. 3a's own
+    rating-to-dimension matching (by KEY, against the board's CURRENT set) is a different question
+    entirely and is untouched either way.
+  - **A Squads-vs-Templates import SCOPE choice**, both checked by default, independently
+    uncheckable -- the product owner's own stated reason: wanting to import a template set from
+    one tribe into another board without dragging that tribe's squads/ratings along for the ride.
+    "Templates" scope bundles dimensions + saved templates + board settings as one unit (matching
+    how the backlog item itself was already grouped, confirmed over a 3-way-split alternative).
+  - Merge/Replace still one single toggle governing everything in whichever scope(s) are checked,
+    same mental model already approved for 3a, not a second control to learn. Replace's danger
+    warning grew two new named groups (dimensions / saved templates) alongside 3a's existing
+    squad/rating ones, same backup-first safety net, still no second confirm dialog. Board settings
+    (config: unit/unitPlural/activeTemplateName/attribution) have no Replace/remove concept at all
+    -- four named fields, not a collection, so whatever the file has just overwrites the matching
+    field in either mode, shown as a plain before/after diff instead of chips.
+  - **A real, serious bug caught before it ever ran against real data, not a review finding this
+    time:** formatVersion:1 makes `dimensions`/`templates`/`config` genuinely OPTIONAL top-level
+    keys (unlike `squads`, required since item 1) -- exactly the shape every existing item
+    3a-only fixture already uses (`{"formatVersion":1,"squads":[...]}`, no other keys at all). The
+    first draft of `buildDimensionImportPlan()`/`buildTemplateImportPlan()` treated "key absent"
+    the same as "key present with an empty array," so opening an ordinary squads-only file in
+    REPLACE mode would have silently wiped every dimension and every saved template off the board
+    -- found by running `test_json_import.py`'s own pre-existing item 3a "replace" scenario after
+    wiring the new code in, and seeing its warning box unexpectedly list every board dimension for
+    removal. Fixed by having both planning functions return an untouched, empty plan when their
+    input is `undefined` -- `undefined` (key absent, file has no opinion) and `[]` (key present,
+    file explicitly claims zero) are different claims, and only the second one means anything. Two
+    new unit tests lock this in (`buildDimensionImportPlan(undefined, "replace")`/
+    `buildTemplateImportPlan(undefined, "replace")` must return empty plans), and the Playwright
+    dimension/template-removal scenario deliberately unchecks the squads scope and asserts no
+    squad-removal warning appears, proving the (separate, correctly-required) `"squads": []` in
+    that same test file's own fixture doesn't leak into scopes it wasn't checked for.
+  - New data shape: none (reuses item 1's existing board-export shape); no migration question, per
+    DoD §3.
+  - i18n per DoD §2: the scope checkboxes, new section headings (Dimensions/Saved templates/Board
+    settings), new chip rows, the config diff, and the two new removal-warning groups all go
+    through `t()`/`data-i18n`, `en.js`+`he.js` updated together, same `countKey()` One/Many
+    convention as the rest of this modal. The now-inert old "also in this file, not imported here"
+    stub note/keys (`importJson.scopeDimensions`/`scopeTemplates`/`scopeConfig`/`scopeNote`) were
+    removed rather than left dead, since this item is exactly what replaces them.
+  - Test-first per the `tdd` skill: `tests/unit/test_json_import.js` grew from 31 to 62 tests --
+    `parseBoardImportFile()`'s new dimension/template/config shape validation (mirroring the
+    squad/rating validation's parse-boundary rule), `buildDimensionImportPlan()`/
+    `buildTemplateImportPlan()`'s label/name matching and merge/replace removal logic (including
+    the undefined-vs-empty-array regression above), `buildConfigImportPlan()`'s known-fields-only
+    diffing, and `entityImportPlanHasChanges()`'s Apply-button gate -- all written and confirmed
+    failing before `csv.js` had the functions. `tests/test_json_import.py` gained 5 new scenarios
+    (Apply disabled with no scope checked; a combined merge that adds+updates a dimension, adds a
+    saved template, and changes a config field, all asserted against `window.__FAKE_STORE__`
+    directly; a replace that removes a dimension and a saved template with the squads scope
+    deliberately off; unchecking the templates scope leaves it out of both the DOM and the actual
+    apply) -- every wait is a real condition per DoD §1, stress-tested 5x clean.
+  - Full suite green: 143/143 unit tests, all 48 Playwright files (78s, at the existing baseline --
+    no new file added this time, so no baseline update needed), relay's own protocol suite.
+  - Story 13 table status: item 3b now **DONE**. Remaining: item 4 (delete the CSV runtime code).
+    Implemented directly on `story13-json-import-squads`, continuing to push to the same branch --
+    PR #7 (item 3a) turned out to have already been merged into `claude/optimistic-keller-holuql`
+    partway through this session, so this item's own commit needed a fresh PR (#12) rather than
+    riding PR #7; noted, not treated as a problem, since the branch itself was untouched either way.
+- **2026-09-15 — Story 13, item 3b: a real review finding on PR #12 (P1), the product owner acting
+  as reviewer, "fix before approval."** A combined squads+dimensions import silently dropped
+  ratings whenever a rating's dimension key didn't literally exist on THIS board -- true for
+  every genuine cross-board import, not an edge case, since item 3b's own design (see above)
+  deliberately matches dimensions by LABEL rather than key, so two boards/devices never share a
+  dimension's random `"local-dim-"+Date.now()` key even for "the same" labeled dimension.
+  Reproduced independently before touching anything (`node -e` against the real functions,
+  matching the reviewer's own real-browser repro exactly): a file with a brand-new custom
+  dimension and a squad rating for it imported the dimension, but persisted the squad with
+  `dimensions: {}` -- the preview even claimed "0 ratings to import" despite showing that exact
+  dimension ready to add, since `buildSquadImportPlan()` only ever matched a rating's file-key
+  against the board's CURRENT dimension set, built before either a new dimension exists or an
+  existing one's real (different) key is known.
+  Fixed two ways, both in `csv.js`:
+  1. `buildSquadImportPlan()` now also tries a file-key -> label -> CURRENT-board-dimension-by-label
+     fallback (using the file's own `dimensions` section to look up what label a rating's key
+     refers to) before giving up -- covers an EXISTING same-labeled dimension whose key just
+     differs from the file's, unconditionally (doesn't depend on the Templates scope being
+     checked, since no dimension needs to be created for this case).
+  2. A new optional third argument, `extraDimensionLabels` (`buildDimensionImportPlan()`'s own
+     `added` list, passed in only when the Templates scope is actually checked -- otherwise
+     nothing will create that dimension this round, and the rating correctly still reports "not
+     found"), lets a rating for a dimension that doesn't exist YET but WILL by the time Apply
+     finishes resolve to a `pendingDimensionKey()` marker instead of being skipped.
+     `resolvePendingDimensionKeys()` turns that marker into the dimension's real key once it
+     actually exists -- called from the Apply-button handler, which now sequences the two applies
+     instead of firing them in parallel: `applyDimensionTemplateConfigImportPlan()` gained an
+     optional `onDone` callback, fired only once every dimension/template write (including a
+     brand-new dimension's real generated key) has actually landed in `state.dimensions`, and the
+     squads/ratings apply now runs from that callback instead of immediately. Verified safe for
+     both the fake-store test harness and real deployments before relying on it: both
+     `tests/fixtures/fake_store.html` and the real `public/local-store.js` call their `add()`'s
+     `notify()` SYNCHRONOUSLY, before the returned Promise even resolves, so `state.dimensions`
+     is already current by the time the sequenced callback runs, in both.
+  Found and fixed a second, self-inflicted bug while writing this fix: the first draft used an
+  actual embedded NUL byte (`"\u0000pending-dimension:"`) as the marker prefix, meant as a
+  belt-and-suspenders "can never collide with a real key" guard -- caught immediately because it
+  turned `csv.js` into a binary file (`file` reported "data", `grep` refused to match it as
+  text). Replaced with a plain, printable prefix (`"pending-dimension:"`); a collision was never
+  actually reachable either way, since `fileDims`'s keys are always either a real destination
+  dimension's own key or this constructed marker, never a file-supplied key used as-is.
+  6 new unit tests (`tests/unit/test_json_import.js`, 62 -> 68: the label-fallback match, the
+  "still not found" negative, the pending-marker path with and without `extraDimensionLabels`,
+  and `resolvePendingDimensionKeys()`'s resolve/drop cases) plus one new Playwright scenario
+  (`tests/test_json_import.py`) reproducing the reviewer's exact repro end to end -- a new custom
+  dimension AND an existing dimension referenced under a different source key, both with real
+  ratings, both scopes checked -- asserting the persisted squad doc under `window.__FAKE_STORE__`
+  carries the ratings under real destination keys, with zero leftover pending markers. Stress-tested
+  5x clean. Full suite green: 149/149 unit tests, all 48 Playwright files (75s, under the 78s
+  baseline), relay's own protocol suite. Same branch/PR (#12).
+- **2026-09-16 — Story 13, item 4: deleted the CSV runtime code and renamed `csv.js` →
+  `board-export-import.js`.** JSON is now the board's only export/import format. Two decisions
+  confirmed with the product owner before touching anything: (1) full removal (export AND import),
+  not just the export button, since JSON already fully replaces both directions; (2) the rename
+  target, `board-export-import.js` — matches this repo's existing `board-sync.js` naming pattern
+  (names the domain, not the format), confirmed over `board-io.js` (too terse) and
+  `json-export-import.js` (names the format instead).
+  - Removed from `csv.js`/now `board-export-import.js`: `toCSV()` + the `exportBtn` handler, and
+    the entire CSV import section (`parseCSV`, `colorFromWord`, `trendFromWord`,
+    `mapImportColumns`, `buildImportPlan`, CSV's own `renderImportPreview`/`applyImportPlan`/
+    `applyImportRatingsToSquad`). Everything left is JSON board export/import.
+  - `index.html`: removed the `Export CSV`/`Import CSV` buttons, the `#csvFileInput`, and the
+    entire CSV import preview modal (`#importBackdrop`). Removed the now-dead
+    `admin.boardSetup.importCsv`/`exportCsv` i18n keys (`en.js`/`he.js`). No CSS changes needed --
+    every class the CSV modal used (`.import-stats`/`.import-warning`/`.import-skips`/etc.) is
+    shared with, and still actively used by, the JSON import modal.
+  - **A real regression, caught by the full suite, not by writing a new test first:**
+    `app.js`'s cross-cutting Escape-key handler had its own reference to CSV's `importBackdrop`/
+    `closeImport()`, missed by every grep pass because it was scoped to `public/js/*.js` and
+    `tests/`, never `public/app.js` itself. Pressing Escape anywhere threw an uncaught
+    `ReferenceError` there and aborted the rest of that handler -- silently breaking Escape-to-close
+    for the join-code modal too (the next line, never reached). Found by `test_retro_join_flow.py`
+    failing (reproducibly, 3/3) after this change, confirmed as a genuine regression rather than a
+    pre-existing flake by running the same test against the pre-refactor code via `git stash`
+    (passed cleanly there). Fixed by pointing that line at the JSON import modal's own
+    `importJsonBackdrop`/`closeSquadImport()` instead of deleting it outright -- which also fixes a
+    separate, latent gap: the JSON import modal apparently never had Escape-to-close wired in at
+    all, even after items 1/3a/3b. No new test needed for the fix itself: `test_retro_join_flow.py`
+    already covers Escape-closing a modal and is what caught the break; re-run 3x clean after the
+    fix, then folded into the full-suite pass below.
+  - Test suite: deleted `tests/unit/test_csv.js` and `tests/test_csv_import_column_matching.py`
+    outright (purely CSV). Trimmed and renamed two files that mixed CSV coverage with unrelated
+    coverage rather than deleting them wholesale: `test_template_switching_and_csv_import.py` →
+    `test_template_switching.py` (kept the template-switching scenarios, dropped the CSV-import
+    half); `test_tooltip_busy_overlay_and_csv_key.py` → `test_tooltip_and_busy_overlay.py` (kept
+    the tooltip coverage and the template-switch busy-overlay scenario; replaced the
+    CSV-import-triggers-the-busy-overlay scenario with a JSON-import equivalent rather than
+    dropping that coverage; dropped the CSV "Dimension Key column" round-trip scenario outright --
+    that column only ever existed to work around CSV's flat-table format having no natural way to
+    reference a dimension except by label, a problem JSON's `dimensions[key]` shape never had).
+    Same trim for `test_hebrew_rtl_coverage.py`'s CSV Hebrew round-trip section (Section 9) and
+    `test_json_import.py`'s existing Hebrew-label assertion (unrelated to this, left alone). Ported
+    forward the one property actually worth keeping from the deleted "Dimension Key" coverage --
+    re-importing an export still matches a rating to the right dimension after its label has been
+    renamed/translated -- as a new, JSON-native unit test (`buildSquadImportPlan()` matches by KEY
+    unconditionally, unrelated to label at all, so the property holds by construction; the test
+    proves it directly rather than via CSV's column workaround). `test_local_store.py` and
+    `test_view_navigation_and_squad_admin.py` each had one CSV-triggered scenario (a real-download
+    check, an Admin-view smoke check) swapped for the JSON equivalent rather than deleted, since
+    both were really testing something else (the `downloads` capability firing a real browser
+    download; that Admin's buttons still open their modals) that just happened to use CSV as the
+    trigger. `helpers.js`'s `fake_dom.js`, both READMEs (`tests/README.md`,
+    `tests/unit/README.md`), and `.claude/skills/tdd/SKILL.md` updated to stop citing deleted
+    files/functions as current examples -- `docs/refactoring-report.md`'s own `csv.js` references
+    left untouched, since it's an explicitly dated 2026-09-12 snapshot report, not living
+    documentation (same convention as this file's own "historical mentions... left as-is" rule for
+    old test names).
+  - Also fixed in passing: a self-inflicted NUL byte in this file's own previous session-log entry
+    (quoting the buggy `" pending-dimension:"` marker literally embedded `csv.js`'s bug
+    into STATUS.md's own bytes, the same mistake, caught by the same `file`/`grep` symptom) --
+    escaped as readable text instead.
+  - **Flagged, not fixed (out of scope for this rename/cleanup):** `local-store.js`'s
+    `triggerBrowserDownload()` hardcodes `Blob` type `text/csv;charset=utf-8` for every download
+    regardless of what's actually being saved -- pre-existing (already wrong for the JSON export
+    button since item 1, unrelated to CSV's removal), low-impact (browsers generally trust the
+    `download` attribute + filename extension over blob MIME type for a local save, which is why
+    nothing user-visible broke), but worth a follow-up to derive the type from the filename.
+  - Full suite green: 137/137 unit tests (down from the prior tier's count, minus `test_csv.js`'s
+    own tests, deleted along with the file), all 47 Playwright
+    files (one fewer than 48: `test_csv_import_column_matching.py` deleted outright), 71s --
+    under the 78s baseline, no update needed. Relay's own protocol suite passing.
+  - Story 13 status: **DONE** -- all four items complete. The CSV→JSON board export/import
+    redesign this story tracked from its very first backlog conversation is finished.
+- 2026-09-16 — PR #12, second review round (P1): `buildSquadImportPlan()` (`board-export-import.js`)
+  still misattributed a rating whenever its file-key happened to COINCIDE with a destination-board
+  key that meant something else -- the code tried a key match before a label match, so once the
+  file's own `dimensions` section said a key now means a different label, that label was never
+  even consulted. A built-in dimension's key is fixed and identical on every board, and renaming a
+  dimension keeps its key too, so this wasn't a rare edge case: reviewer's real-browser repro was a
+  source board's "release"-keyed dimension relabeled to "Custom imported dimension" (i.e. someone
+  renamed their local copy of a starter dimension), landing its rating on the DESTINATION board's
+  own differently-labeled "release" dimension instead, in both Merge (silently wrong target) and
+  Replace (worse: the destination's real "release" dimension, correctly absent from the file's own
+  label list, gets removed as unmentioned, orphaning the rating that was wrongly written under its
+  key). Fixed by flipping the priority: whenever the file's `dimensions` section names a label for
+  that key, matching goes by LABEL only (existing-by-label, or pending creation via the same
+  `pendingDimensionKey()` mechanism as the first review round) -- key matching survives only as the
+  fallback for a squads-only file with no `dimensions` section at all (the only case with no label
+  to weigh instead, unaffected by this bug). Test-first: added 3 failing unit tests reproducing the
+  exact repro (label-wins-over-coincidental-key, its pending-creation resolution, and the Replace
+  variant with the correctly-orphaned board rating) before touching `board-export-import.js`
+  itself; rewrote one prior test (`buildSquadImportPlan() still matches a rating by key after the
+  board's dimension label has been renamed`) that had been asserting the OLD, now-disproven
+  priority -- that test's real premise (own-board re-import after a label rename) turns out to
+  already collide with item 3b's own established "dimensions match by label, not key" design even
+  before this fix (re-importing your own renamed dimension creates a same-key duplicate under the
+  old label either way, an already-accepted limitation, not something this fix changes); replaced
+  it with a test for the genuine surviving case, a squads-only file with no `dimensions` section.
+  No new Playwright scenario: this fix is entirely inside the pure planning function, and the
+  wiring path it runs through (pending-marker creation + resolution + sequencing) is already
+  proven end-to-end by the existing combined-import Playwright scenario from the first review
+  round -- per this repo's own TDD skill, a scenario that would only re-verify matching logic
+  already covered by a unit test doesn't earn its cost.
+  - Also: this environment's pre-baked Playwright Chromium cache was pinned to an older browser
+    revision (1194) than this repo's pinned `playwright==1.62.0` package expects (1234) --
+    `BrowserType.launch` failed outright with "Executable doesn't exist." Worked around locally by
+    symlinking the 1234-named paths the package looks up to the already-present 1194 binaries (no
+    network fetch, nothing added/changed in the repo itself) so the full suite could actually run
+    in this container; not a code change and not committed.
+  - Full suite green: 141/141 unit tests, all 47 Playwright files (67s, under the 78s baseline),
+    relay's protocol + storage suites passing.

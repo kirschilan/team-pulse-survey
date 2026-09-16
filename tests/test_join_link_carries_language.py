@@ -35,19 +35,29 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
+    # setView() (app.js) calls renderAll() SYNCHRONOUSLY on every switch, and
+    # setLocale() (i18n.js) is equally synchronous -- selectSquad() (squads.js)
+    # also renders synchronously -- so click()'s own auto-wait for each next
+    # target is all that's needed between these.
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="he"]')
-    page.wait_for_timeout(150)
 
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
     page.click('#startSessionBtn')
-    page.wait_for_timeout(250)
+    # evaluate() below doesn't auto-wait -- startSession() (retro-facilitator.js)
+    # writes to the fake store synchronously (its set() mutates STORE and calls
+    # notify() synchronously, which re-renders the session card -- including
+    # #sessionJoinLink/#coFacilitateLink -- via the long-lived sessions
+    # listener registered at boot in db.js), but poll for the real write
+    # landing rather than assume that timing.
+    page.wait_for_function("() => Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/')).length === 1")
 
     session_info = page.evaluate("""
       (function(){
@@ -66,14 +76,15 @@ with sync_playwright() as p:
     assert "lang=he" in cofac_link
 
     print("=== switching the facilitator back to English drops &lang= from both links ===")
+    # Same synchronous setView()/setLocale()/selectSquad() reasoning as above
+    # -- no wait needed for any of these four clicks; selectSquad()'s own
+    # renderSquadView() rebuilds the (already-started) session card in the
+    # new locale synchronously, so the join link is current the instant the
+    # last click's handler returns.
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="en"]')
-    page.wait_for_timeout(150)
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
     join_link_en = page.eval_on_selector('#sessionJoinLink', 'el=>el.value')
     print("join link (English facilitator):", join_link_en)
     assert "lang=" not in join_link_en
@@ -87,7 +98,14 @@ with sync_playwright() as p:
     errorsA = []
     pageA.on("pageerror", lambda e: errorsA.append(str(e)))
     pageA.goto("file://" + str(fresh_out.resolve()) + "?session=" + sid + "&lang=he")
-    pageA.wait_for_timeout(500)
+    # eval_on_selector()/evaluate() below don't auto-wait -- a fresh device's
+    # listenJoinSession() (retro-join.js) has a genuine async gap on its
+    # FIRST onSnapshot delivery (the fake store deliberately delays it,
+    # unlike its later synchronous notify() calls). Once state.joinSession
+    # lands, listenJoinSession()'s own callback calls renderJoinScreen()
+    # synchronously in the same tick, so this is the real "join screen
+    # rendered the loaded session" signal, not a guessed sleep.
+    pageA.wait_for_function("() => state.joinSession && state.joinSession.status === 'open'")
 
     print("=== a fresh device opening a Hebrew-tagged join link boots straight into Hebrew ===")
     locale = pageA.evaluate("state.ui.locale")
@@ -110,10 +128,14 @@ with sync_playwright() as p:
     errorsB = []
     pageB.on("pageerror", lambda e: errorsB.append(str(e)))
     pageB.goto("file://" + str(fresh_out2.resolve()))
-    pageB.wait_for_timeout(200)
+    # This first load is only a vehicle to seed localStorage before the real
+    # navigation below -- page.goto() already waits for the load event, so
+    # the JS context (and localStorage) is ready the instant it returns; the
+    # page's own boot state doesn't matter since it's about to be reloaded.
     pageB.evaluate("localStorage.setItem('squadpulse:lang', 'en')")
     pageB.goto("file://" + str(fresh_out2.resolve()) + "?session=" + sid + "&lang=he")
-    pageB.wait_for_timeout(500)
+    # Same genuine-async-gap reasoning as pageA above.
+    pageB.wait_for_function("() => state.joinSession && state.joinSession.status === 'open'")
 
     print("=== a device with its OWN existing 'en' preference is NOT overridden by the join link's &lang=he ===")
     locale_b = pageB.evaluate("state.ui.locale")

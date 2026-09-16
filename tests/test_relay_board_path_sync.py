@@ -71,8 +71,10 @@ try:
         a_errors = []
         a.on("pageerror", lambda e: a_errors.append(str(e)))
         a.goto(INDEX_URL, wait_until="domcontentloaded")
-        a.wait_for_timeout(300)
-
+        # No wait needed -- local-store.js's window.claude shim installs
+        # synchronously at script-load time, and page.goto()'s default
+        # waitUntil="load" already guarantees that's done by the time it
+        # returns; nothing here touches the DOM at all, only the db shim.
         print("=== isBoardPath/isSessionPath recognize their own namespaces and not each other's ===")
         checks = a.evaluate("""() => ({
           boardIsBoard: SquadPulseRelay.isBoardPath("boards/TEAM01"),
@@ -108,8 +110,6 @@ try:
         b_errors = []
         b.on("pageerror", lambda e: b_errors.append(str(e)))
         b.goto(INDEX_URL, wait_until="domcontentloaded")
-        b.wait_for_timeout(300)
-
         print("=== device B reads the same board doc, decrypted, over the relay ===")
         result = b.evaluate("""async () => {
           const db = await window.claude.use("db");
@@ -142,10 +142,8 @@ try:
         # parallel load (see tests/test_relay_write_acknowledgment.py): the
         # `await` below now only returns once the relay has acked the
         # write, so by the time this call returns the write is already
-        # durably applied server-side -- right_page/wrong_page's own
-        # wait_for_timeout(200) further down is ordinary page-bootstrap
-        # settling for THEIR OWN load, not a "give the write time to land"
-        # guess, and stays regardless of when it's opened.
+        # durably applied server-side -- right_page/wrong_page below need
+        # no bootstrap wait either, same synchronous-shim reasoning as A/B above.
         a.evaluate("""async () => {
           const db = await window.claude.use("db");
           await db.doc("boards/ROUTINGONLY", "the-real-secret").set({ hello: "with a secret" });
@@ -162,7 +160,6 @@ try:
         right_ctx.add_init_script(point_at_test_relay)
         right_page = right_ctx.new_page()
         right_page.goto(INDEX_URL, wait_until="domcontentloaded")
-        right_page.wait_for_timeout(200)
         read_with_right_secret = right_page.evaluate("""async () => {
           const db = await window.claude.use("db");
           const snap = await db.doc("boards/ROUTINGONLY", "the-real-secret").get();
@@ -176,7 +173,6 @@ try:
         wrong_ctx.add_init_script(point_at_test_relay)
         wrong_page = wrong_ctx.new_page()
         wrong_page.goto(INDEX_URL, wait_until="domcontentloaded")
-        wrong_page.wait_for_timeout(200)
         read_with_wrong_secret = wrong_page.evaluate("""async () => {
           const db = await window.claude.use("db");
           const snap = await db.doc("boards/ROUTINGONLY", "a-different-guess").get();

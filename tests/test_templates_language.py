@@ -22,16 +22,23 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
+    # setView()/setLocale() are both synchronous (established across this
+    # pass) -- no wait needed for either of these two clicks.
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="he"]')
-    page.wait_for_timeout(150)
 
     print("=== Templates modal chrome is Hebrew, template NAMES and dimension content stay as-is ===")
     page.click('#templatesBtn')
-    page.wait_for_timeout(150)
+    # eval_on_selector()/click() below don't auto-wait for a not-yet-
+    # attached element -- wait for the real "templates list rendered"
+    # signal instead of guessing.
+    page.wait_for_selector('#tplList .tpl-row', state="attached")
     assert page.eval_on_selector('#templatesBackdrop', 'el=>el.getAttribute("dir")') == "rtl"
 
     title_he = page.eval_on_selector('#templatesBackdrop h3', 'el=>el.textContent')
@@ -67,7 +74,7 @@ with sync_playwright() as p:
 
     print("=== Load confirm dialog is Hebrew, template name embedded as-is ===")
     page.click('#tplList .tpl-row[data-id="starter-5dysfunctions"] [data-action="load"]')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     confirm_title_he = page.eval_on_selector('#confirmTitle', 'el=>el.textContent')
     confirm_msg_he = page.eval_on_selector('#confirmMessage', 'el=>el.textContent')
     confirm_btn_he = page.eval_on_selector('#confirmOk', 'el=>el.textContent')
@@ -77,19 +84,28 @@ with sync_playwright() as p:
     assert confirm_msg_he.strip() and "Ratings tied to" not in confirm_msg_he
     assert confirm_btn_he != "Load template" and confirm_btn_he.strip()
     page.click('#confirmOk')
-    page.wait_for_timeout(300)
+    # evaluate() below doesn't auto-wait -- wait for the real "Five
+    # Dysfunctions' dimensions landed" signal (loadTemplate()'s own Promise
+    # chain) instead of guessing how long it takes.
+    page.wait_for_function("() => window.__FAKE_STORE__['dimensions/trust'] !== undefined")
     print("errors after confirming load:", errors)
 
     print("=== Delete confirm dialog is Hebrew too (own saved template) ===")
     page.click('#templatesBtn')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#tplList .tpl-row', state="attached")
     page.fill('#tplNameInput', 'My Own Template')
     page.click('#tplSaveBtn')
-    page.wait_for_timeout(200)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # saveCurrentAsTemplate()'s live branch writes via the fake store's
+    # add(), which mutates STORE and calls notify() synchronously -- the
+    # long-lived "templates" listener (db.js) re-renders the list in that
+    # same synchronous call since the modal is open -- but poll for the
+    # real new row landing rather than assume that timing.
+    page.wait_for_function("() => Array.from(document.querySelectorAll('#tplList .tname')).some(el => el.textContent === 'My Own Template')")
     own_row = page.query_selector('#tplList .tpl-row[data-id]:has(.tname:text("My Own Template"))') \
         or next(r for r in page.query_selector_all('#tplList .tpl-row') if r.eval_on_selector('.tname', 'el=>el.textContent') == 'My Own Template')
     own_row.query_selector('[data-action="delete"]').click()
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     del_title_he = page.eval_on_selector('#confirmTitle', 'el=>el.textContent')
     del_msg_he = page.eval_on_selector('#confirmMessage', 'el=>el.textContent')
     del_btn_he = page.eval_on_selector('#confirmOk', 'el=>el.textContent')
@@ -98,15 +114,14 @@ with sync_playwright() as p:
     assert del_msg_he.strip() and "won't affect" not in del_msg_he
     assert del_btn_he != "Delete" and del_btn_he.strip()
     page.click('#confirmCancel')  # don't actually delete
-    page.wait_for_timeout(100)
 
     print("=== switching back to English restores every string above ===")
+    # closeTemplates()/closeConfirm()/setLocale() are all synchronous
+    # (established across this pass) -- no wait needed for either click.
     page.click('#tplCloseBtn')
-    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="en"]')
-    page.wait_for_timeout(150)
     page.click('#templatesBtn')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#tplList .tpl-row', state="attached")
     assert page.eval_on_selector('#templatesBackdrop h3', 'el=>el.textContent') == "Survey templates"
     assert page.eval_on_selector('#tplSaveBtn', 'el=>el.textContent') == "Save current as template"
     assert page.eval_on_selector('#templatesBackdrop', 'el=>el.getAttribute("dir")') != "rtl"

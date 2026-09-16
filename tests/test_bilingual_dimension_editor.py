@@ -22,23 +22,32 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
 
     print("=== a genuinely custom dimension (no built-in template shares its content) has NO Hebrew yet: 'add translation' toggle, collapsed ===")
     page.click('#dimManageBtn')
-    page.wait_for_timeout(150)
+    # query_selector() below doesn't auto-wait -- poll for the new
+    # dimension actually landing in the store/rendering instead of guessing
+    # (addDimension()'s own comment explains the DOM update comes from the
+    # dimensions listener firing, not a direct call here -- but the fake
+    # store's notify() invokes it synchronously either way).
     page.click('#addDimBtn')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('.dim-row:has(input.dim-label[value="New dimension"])', state="attached")
     custom_row = page.query_selector('.dim-row:has(input.dim-label[value="New dimension"])')
     custom_toggle = custom_row.query_selector('.i18n-toggle')
     print("toggle text (no translation, no built-in match):", custom_toggle.text_content())
     assert "Add a Hebrew translation" in custom_toggle.text_content()
     assert custom_row.query_selector('.i18n-panel').is_hidden()
+    # The toggle's click handler just synchronously flips panel.hidden --
+    # no store write, no re-render -- so custom_row's handle stays valid and
+    # no wait is needed before reading it.
     custom_toggle.click()
-    page.wait_for_timeout(100)
     assert custom_row.query_selector('.i18n-panel').query_selector('.dim-label').input_value() == ""
 
     # "process" is a real regression case: it's an unmodified Spotify Squad
@@ -69,35 +78,41 @@ with sync_playwright() as p:
 
     print("=== filling in a Hebrew translation persists to dim.i18n.he (an explicit edit always wins over the fallback) and localizes live ===")
     # renderDimList() fully rebuilds #dimList's innerHTML on every change --
-    # earlier element handles go stale, so re-query after each edit.
+    # earlier element handles go stale, so re-query after each edit. No
+    # wait is needed between the edit and the re-query, or before the
+    # evaluate() below: updateDimensionI18nField() (dimensions.js) mutates
+    # the dimension, calls renderAll()/renderDimList(), AND writes to the
+    # store all SYNCHRONOUSLY inside the 'change' handler, before
+    # dispatch_event() even returns.
     he_label_input.fill("קלות שחרור")
     he_label_input.dispatch_event("change")
-    page.wait_for_timeout(150)
     he_green = page.query_selector('.dim-row[data-key="process"] .i18n-panel textarea[data-field="green"]')
     he_green.fill("שחרור קל וירוק")
     he_green.dispatch_event("change")
-    page.wait_for_timeout(150)
 
     stored = page.evaluate("dimByKey('process').i18n")
     print("stored i18n.he after edit:", stored)
     assert stored["he"]["label"] == "קלות שחרור"
     assert stored["he"]["green"] == "שחרור קל וירוק"
 
+    # setLocale() (i18n.js) is fully synchronous, and closeDimManager() is
+    # just a hidden-attribute toggle -- no wait needed for either click.
     page.click('#dimDoneBtn')
-    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="he"]')
-    page.wait_for_timeout(150)
     page.click('.view-btn[data-view="tribe"]')
-    page.wait_for_timeout(150)
+    # eval_on_selector_all() below doesn't auto-wait -- wait for the real
+    # "grid rendered" signal instead of guessing.
+    page.wait_for_selector('.dim-th-label', state="attached")
     grid_labels = page.eval_on_selector_all('.dim-th-label', 'els=>els.map(e=>e.textContent)')
     print("Tribe grid dimension labels (Hebrew, should include our new translation):", grid_labels)
     assert "קלות שחרור" in grid_labels
 
     print("=== switching back to English + Hebrew UI, reopening Edit Dimensions ===")
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('#dimManageBtn')
-    page.wait_for_timeout(150)
+    # query_selector() below doesn't auto-wait -- wait for the real "dim
+    # list rendered" signal instead of guessing.
+    page.wait_for_selector('.dim-row[data-key="process"] .i18n-toggle', state="attached")
     process_row2 = page.query_selector('.dim-row[data-key="process"]')
     toggle2 = process_row2.query_selector('.i18n-toggle')
     print("toggle text now that a translation exists (Hebrew UI):", toggle2.text_content())
@@ -105,15 +120,18 @@ with sync_playwright() as p:
 
     print("=== a Tuckman dimension's Hebrew panel starts pre-filled from the built-in default ===")
     page.click('#dimDoneBtn')
-    page.wait_for_timeout(100)
     page.click('#templatesBtn')
-    page.wait_for_timeout(150)
     page.click('#tplList .tpl-row[data-id="starter-tuckman"] [data-action="load"]')
-    page.wait_for_timeout(100)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     page.click('#confirmOk')
-    page.wait_for_timeout(300)
+    # evaluate() below doesn't auto-wait -- wait for the real "Tuckman's
+    # dimensions landed" signal (loadTemplate()'s own Promise chain) instead
+    # of guessing how long it takes.
+    page.wait_for_function("() => window.__FAKE_STORE__['dimensions/forming'] !== undefined")
     page.click('#dimManageBtn')
-    page.wait_for_timeout(150)
+    # query_selector() below doesn't auto-wait -- wait for the real "dim
+    # list rendered" signal instead of guessing.
+    page.wait_for_selector('.dim-row[data-key="forming"] .i18n-toggle', state="attached")
     forming_row = page.query_selector('.dim-row[data-key="forming"]')
     forming_toggle = forming_row.query_selector('.i18n-toggle')
     print("Tuckman 'forming' toggle (should say translation added):", forming_toggle.text_content())
@@ -136,9 +154,11 @@ with sync_playwright() as p:
     first_en_stmt = en_stmt_inputs[0]
     print("first EN statement value (should be the real Tuckman text):", first_en_stmt.input_value())
     assert "still learning" in first_en_stmt.input_value()
+    # No wait needed here -- updateDimensionArrayItem() (dimensions.js)
+    # mutates and writes to the store synchronously, same as the i18n
+    # field edits above.
     first_en_stmt.fill("Custom English statement text")
     first_en_stmt.dispatch_event("change")
-    page.wait_for_timeout(150)
     stored_stmts = page.evaluate("dimByKey('forming').statements")
     original_stmts = page.evaluate("TUCKMAN_TEMPLATE.dimensions.find(d=>d.key==='forming').statements")
     print("stored EN statements after edit:", stored_stmts)
@@ -153,9 +173,9 @@ with sync_playwright() as p:
     assert len(he_stmt_inputs) == 4
     print("pre-filled first HE statement:", he_stmt_inputs[0].input_value())
     assert he_stmt_inputs[0].input_value().strip() != ""
+    # Same synchronous-write reasoning as the English statement edit above.
     he_stmt_inputs[1].fill("היגד עברי מותאם אישית")
     he_stmt_inputs[1].dispatch_event("change")
-    page.wait_for_timeout(150)
     stored_he_stmts = page.evaluate("dimByKey('forming').i18n.he.statements")
     print("stored HE statements after edit:", stored_he_stmts)
     assert stored_he_stmts[1] == "היגד עברי מותאם אישית"

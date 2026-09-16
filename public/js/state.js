@@ -614,6 +614,8 @@ var state = {
 function getQueryParam(name){
   try{ return new URLSearchParams(window.location.search).get(name); }catch(e){ return null; }
 }
+// Capture invitation intent before board-sync removes the team secret from the URL.
+var openedFromInvitation = ["session", "cofacilitate", "team"].some(function(key){ return getQueryParam(key) !== null; });
 state.joinSessionId = getQueryParam("session");
 // Story 10: a co-facilitator link (?cofacilitate=<code>) is a completely
 // different join shape from a participant's (?session=<id>) -- it boots

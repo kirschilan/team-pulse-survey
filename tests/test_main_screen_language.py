@@ -30,27 +30,34 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
-    # rate a cell so score/fraction lines have real (non-zero) numbers to check
+    # rate a cell so score/fraction lines have real (non-zero) numbers to
+    # check -- every step here is click(), which auto-waits, so no wait is
+    # needed between them.
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(150)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
     page.click('#squadDetail .cell-btn[data-squad="squad-1"][data-dim="release"]')
-    page.wait_for_timeout(150)
     page.click('.swatch.crit')
     page.click('#modalSave')
-    page.wait_for_timeout(250)
+    # evaluate() below doesn't auto-wait -- poll for the real write landing
+    # instead of guessing.
+    page.wait_for_function("() => { var s = window.__FAKE_STORE__['squads/squad-1']; return s && s.dimensions && s.dimensions.release && s.dimensions.release.color === 'crit'; }")
 
+    # setView() (app.js) calls renderAll() SYNCHRONOUSLY on every switch --
+    # every view's content is freshly rendered (in whatever locale is
+    # currently active) the instant the click handler runs, not lazily --
+    # and setLocale() (i18n.js) is equally synchronous, so none of the
+    # clicks below need a wait before the reads that follow them.
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="he"]')
-    page.wait_for_timeout(200)
 
     # ================= Tribe view =================
     page.click('.view-btn[data-view="tribe"]')
-    page.wait_for_timeout(200)
 
     print("=== Tribe view: dir/lang scoping ===")
     print("viewTribe dir:", direction(page, '#viewTribe'))
@@ -71,7 +78,11 @@ with sync_playwright() as p:
     assert assessed_dir == "ltr"
 
     page.click('#squadBreakdown summary')
-    page.wait_for_timeout(150)
+    # eval_on_selector() below doesn't auto-wait, and expanding a native
+    # <details> is a synchronous browser toggle -- the grid content was
+    # already rendered into the collapsed-but-attached markup, not built
+    # lazily on open.
+    page.wait_for_selector('.score-chip', state="attached")
     score_chip = page.eval_on_selector('.score-chip', 'el=>el.textContent')
     print("score-chip (squad-1, rated crit):", repr(score_chip))
     assert score_chip == f"{LRI}2{PDI} נק' · {LRI}1/3{PDI} דורגו"
@@ -90,7 +101,6 @@ with sync_playwright() as p:
 
     # ================= Squad view =================
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(200)
 
     print("=== Squad view: dir scoping, including the now-translated session card (Story 11) ===")
     assert direction(page, '#viewSquad') == "rtl"
@@ -123,7 +133,7 @@ with sync_playwright() as p:
 
     # ================= Rating modal =================
     page.click('#squadDetail .cell-btn[data-squad="squad-1"][data-dim="process"]')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#backdrop', state="visible")  # real modal-open signal, not a guess
     print("=== Rating modal: dir scoping + static chrome ===")
     assert direction(page, '#backdrop') == "rtl"
     assert page.eval_on_selector('#modal .field-label', 'el=>el.textContent') == "בריאות"  # בריאות (Health)
@@ -138,16 +148,17 @@ with sync_playwright() as p:
     green_label = page.eval_on_selector('.anchor-pair b', 'el=>el.textContent')
     print("green label:", green_label)
     assert green_label == "ירוק נראה כך:"  # ירוק נראה כך:
+    # click() below auto-waits for its own target -- the admin-view button
+    # only becomes actionable once the modal backdrop has actually closed
+    # and stops covering it, so no separate wait is needed here.
     page.click('#modalCancel')
-    page.wait_for_timeout(100)
 
     # ================= switch back to English: full restore =================
+    # Same synchronous setView()/setLocale() reasoning as above -- no wait
+    # needed for any of these three clicks.
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('.lang-btn[data-lang="en"]')
-    page.wait_for_timeout(200)
     page.click('.view-btn[data-view="tribe"]')
-    page.wait_for_timeout(150)
     print("=== switched back to English ===")
     print("hotspots heading:", page.eval_on_selector('[data-i18n="tribe.hotspots.heading"]', 'el=>el.textContent'))
     assert page.eval_on_selector('[data-i18n="tribe.hotspots.heading"]', 'el=>el.textContent') == "Cross-squad hotspots"

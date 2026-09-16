@@ -35,6 +35,27 @@ def wait_for_port(port, timeout=5.0):
     return False
 
 
+def poll_relay_board(page, secret, predicate, timeout=5.0):
+    """Repeatedly re-fetches the board doc straight from the relay until
+    predicate(data) is true, instead of guessing how long a real relay
+    round trip (roomIdFor() + a WebSocket push) takes to land. Each call is
+    a fresh read, so this genuinely waits for the push to arrive rather
+    than trusting a cached/local view."""
+    deadline = time.time() + timeout
+    result = None
+    while time.time() < deadline:
+        result = page.evaluate("""async (secret) => {
+          const roomId = await SquadPulseCrypto.roomIdFor(secret);
+          const db = await window.claude.use("db");
+          const snap = await db.doc("boards/" + roomId, secret).get();
+          return snap.exists ? snap.data() : null;
+        }""", secret)
+        if predicate(result):
+            return result
+        time.sleep(0.05)
+    return result
+
+
 relay_env = dict(os.environ)
 relay_env["PORT"] = str(RELAY_PORT)
 relay_proc = subprocess.Popen(
@@ -70,9 +91,14 @@ try:
         a_errors = []
         a.on("pageerror", lambda e: a_errors.append(str(e)))
         a.goto(INDEX_URL, wait_until="domcontentloaded")
-        a.wait_for_timeout(300)
+        # eval_on_selector()/query_selector() below don't auto-wait --
+        # renderAdminSquadList() only populates this once the async store load +
+        # first render() pass lands, so this is the real boot-complete marker
+        # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+        a.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
+        # ensureDefaultTeamSecret()/renderTeamSyncStatus() (board-sync.js) both
+        # run synchronously at script-load time -- no wait needed after this click.
         a.click('.view-btn[data-view="admin"]')
-        a.wait_for_timeout(100)
 
         print("=== device A already has a default team link (step 7: default-on) ===")
         assert a.eval_on_selector("#teamSyncConnected", "el=>el.hidden") is False
@@ -81,7 +107,7 @@ try:
         b_ctx.add_init_script(point_at_test_relay)
         b = b_ctx.new_page()
         b.goto(INDEX_URL, wait_until="domcontentloaded")
-        b.wait_for_timeout(300)
+        b.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
         print("=== adding a squad pushes a real board snapshot to device A's own default team ===")
         status_after = a.eval_on_selector("#teamSyncStatus", "el=>el.textContent")
@@ -93,7 +119,6 @@ try:
         assert a.eval_on_selector("#teamQr svg", "el=>!!el") is True, "a QR code should render for the link"
 
         a.click("#addSquadBtn")
-        a.wait_for_timeout(300)
 
         # device B never touched the UI at all here -- it reads the relay's
         # copy of the board directly, using the secret parsed out of the
@@ -101,18 +126,19 @@ try:
         # real would end up doing (opening the link, or pasting it).
         from urllib.parse import urlparse, parse_qs
         secret = parse_qs(urlparse(team_link).query)["team"][0]
-        remote = b.evaluate("""async (secret) => {
-          const roomId = await SquadPulseCrypto.roomIdFor(secret);
-          const db = await window.claude.use("db");
-          const snap = await db.doc("boards/" + roomId, secret).get();
-          return { exists: snap.exists, data: snap.data() };
-        }""", secret)
-        print("remote board doc:", remote)
-        assert remote["exists"] is True
-        names = [s["name"] for s in remote["data"]["squads"]]
+        # renameSquad()/addSquad() (squads.js) writing to "squads" is a
+        # purely local write (local-store.js), but the SEPARATE board-sync
+        # push (pushBoardSnapshotIfConnected() -> roomIdFor() -> a real
+        # WebSocket write) that lands this data on the relay is genuinely
+        # async -- poll the relay's own doc directly instead of guessing
+        # how long that takes.
+        remote_data = poll_relay_board(b, secret, lambda data: data is not None and "New squad" in [s["name"] for s in data["squads"]])
+        print("remote board doc:", remote_data)
+        assert remote_data is not None
+        names = [s["name"] for s in remote_data["squads"]]
         print("squad names on the relay's copy of the board:", names)
         assert "New squad" in names, "the squad just added locally should already be in the pushed snapshot"
-        assert len(remote["data"]["dimensions"]) > 0
+        assert len(remote_data["dimensions"]) > 0
 
         print("=== a wrong/guessed secret can't read this team's board ===")
         wrong = b.evaluate("""async () => {
@@ -124,12 +150,22 @@ try:
         assert wrong is False, "a different secret must land on a completely different room id"
 
         print("=== disconnecting stops further pushes ===")
+        # stopTeamBoardSubscription()/setTeamSecret("")/renderTeamSyncStatus()
+        # (board-sync.js) are all synchronous -- no wait needed after this click.
         a.click("#teamDisconnectBtn")
-        a.wait_for_timeout(150)
         assert a.eval_on_selector("#teamSyncNotConnected", "el=>el.hidden") is False
 
         a.click("#addSquadBtn")
-        a.wait_for_timeout(300)
+        # "squads" is a local write (see above) -- wait for A's own real
+        # confirmation that this second add landed locally...
+        a.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).filter(i => i.value === 'New squad').length === 2")
+        # ...then, since there's no real signal for "this push never
+        # reaches the relay" (proving a negative -- the secret was cleared,
+        # so pushBoardSnapshotIfConnected() bails out immediately, but
+        # nothing observable confirms that from here), give it a fixed
+        # window it would have arrived in if disconnecting hadn't stopped
+        # it, a rainy-day check rather than a guess about the happy-path timing above.
+        b.wait_for_timeout(300)
         remote_after_disconnect = b.evaluate("""async (secret) => {
           const roomId = await SquadPulseCrypto.roomIdFor(secret);
           const db = await window.claude.use("db");

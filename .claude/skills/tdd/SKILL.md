@@ -35,9 +35,10 @@ this decision right first, since it decides where the test even goes.
 ~0.1s) — for a PURE function: given these inputs, what does it return?
 No DOM, no `localStorage`, no network, no `crypto.subtle`. Examples
 already in this repo: `helpers.js`'s consolidation/scoring math
-(`consolidateBand`, `bandForScore`, `effectiveDimResult`), `csv.js`'s
-column-matching and import-plan logic (`mapImportColumns`,
-`buildImportPlan`), `board-sync.js`'s `parseTeamSecretInput`/`teamLinkFor`.
+(`consolidateBand`, `bandForScore`, `effectiveDimResult`),
+`board-export-import.js`'s JSON import plan-building and validation
+(`buildSquadImportPlan`, `buildDimensionImportPlan`,
+`parseBoardImportFile`), `board-sync.js`'s `parseTeamSecretInput`/`teamLinkFor`.
 If what you're building is "a function that transforms data," it almost
 certainly belongs here, even if the function is *called from* UI code —
 see `tests/unit/README.md` for the `require()`-the-real-file +
@@ -65,18 +66,17 @@ unit test is for.
 
 If the ONLY thing a planned Playwright scenario would check is already
 provable via a unit test on the same underlying function — e.g. a
-scenario that uploads a CSV, looks at the resulting preview text, and
-clicks Cancel, never applying or rendering anything further — it doesn't
-earn its slower, real-browser cost. This isn't hypothetical: a scenario
-exactly like that was found and removed from
-`test_csv_import_column_matching.py` once `tests/unit/test_csv.js` was
-confirmed to cover the same matching logic directly, and the file's
-other scenario already proved the preview-rendering pipeline itself
-works. See `tests/README.md`'s "Performance" section for the fuller
-writeup and the reasoning for when a Playwright test IS still worth it
-even with unit coverage underneath (e.g. it also applies the result and
-verifies real state, or it exercises a rendering branch nothing else
-does).
+scenario that uploads an import file, looks at the resulting preview text,
+and clicks Cancel, never applying or rendering anything further — it
+doesn't earn its slower, real-browser cost. This isn't hypothetical: a
+scenario exactly like that was found and removed from a Playwright import
+test once a unit test was confirmed to cover the same matching logic
+directly, and the file's other scenario already proved the
+preview-rendering pipeline itself works. See `tests/README.md`'s
+"Performance" section for the fuller writeup and the reasoning for when a
+Playwright test IS still worth it even with unit coverage underneath (e.g.
+it also applies the result and verifies real state, or it exercises a
+rendering branch nothing else does).
 
 ## Step 2: write the test, watch it fail for the right reason
 
