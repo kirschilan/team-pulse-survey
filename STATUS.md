@@ -583,6 +583,36 @@ Full suite green: 154/154 unit tests, all 51 Playwright files (54s, under the 78
 files than the PR's own last entry, both new tests from this fix), relay's protocol + storage suites
 passing.
 
+**Follow-up P2 (2026-09-16, same PR, next round of review) — a same-document navigation gap, found by
+the SAME test workaround that avoided it**: the P1 fix above moved session/co-facilitate/team
+secrets into the URL fragment, but `state.js` only ever read the fragment ONCE, at initial script
+load. Opening a DIFFERENT invitation link in the SAME already-open tab is a same-document "fragment
+navigation" per the HTML spec — true in every real browser, not a Playwright quirk (confirmed with a
+tiny probe: navigating from `url#a` to `url#b` fires no `load` event and leaves `state.*` untouched;
+navigating to a bare `url` with no fragment at all DOES force a real reload — the two cases behave
+differently). The regression tests written for the P1 fix's own test-fragility fallout
+(`test_cofacilitator_join.py`, `test_board_sync_finish_retro_convergence.py`) used an intermediate
+`about:blank` navigation to force a clean reload between two session-scoped links — a legitimate
+technique for THOSE tests' own actual subject, but it also happened to dodge the real gap rather than
+covering it, which the next review round correctly called out. Fixed with a `hashchange` listener in
+`state.js`: on any fragment-only URL change, re-derive `session`/`cofacilitate`/`team` via
+`getLinkParam()` and, only if what they NAME actually differs from what's currently active, reload
+the page — letting the file's own existing boot-time parsing (a few lines above) do the real work,
+rather than hand-rolling partial re-initialization of listeners/subscriptions. Narrow on purpose: an
+unrelated hash change never forces a reload. Test-first: `tests/test_invitation_hashchange.py` (new)
+— a real relay, one facilitator starting two distinct sessions, then a participant device and a
+co-facilitator device each navigating DIRECTLY between two different invitations (no `about:blank`
+detour) and confirming the app switches to the new one — covering a plain link-to-link case and a
+bad-link-then-corrected-link case, exactly the two the review named. (Also fixed a real port
+collision found while adding this: `tests/test_relay_legacy_known_codes.py` and
+`tests/test_relay_board_path_sync.py` had both landed on `RELAY_PORT = 8793`; moved the former to
+8799.) Full suite green: 154/154 unit tests, all 52 Playwright files, relay's protocol + storage
+suites — reliable at this repo's documented default concurrency (`tests/run_all.sh`, unset
+`TEST_JOBS`, defaults to 2); two of the relay-heavy files in this batch showed CPU-contention
+flakiness at `TEST_JOBS=4` specifically (consistent timeouts, not logic failures — both pass
+reliably standalone and at the documented default), matching `run_all.sh`'s own documented caution
+about parallelism exceeding a runner's headroom, not a functional regression.
+
 ## Multi-language rollout backlog
 
 The product owner is driving Hebrew/RTL support in one story at a time on this branch (see the
@@ -3118,3 +3148,16 @@ not just in this repo's own tests.
   behavior, not a Playwright quirk) in the "Codex review fixes on PR #14" section under "Board sync"
   above. Full suite green: 154/154 unit tests, all 51 Playwright files (54s, under the 78s baseline),
   relay's protocol + storage suites passing.
+- 2026-09-16 — Fixed a follow-up finding from the next round of review on PR #14: a fragment-only
+  URL change (opening a DIFFERENT session/co-facilitate invitation link in the SAME already-open
+  tab) is a same-document navigation in every real browser, so `state.js`'s boot-time fragment
+  parsing never reran and the OLD session stayed active despite the address bar showing a new
+  invitation -- a real gap the previous fix's own regression tests happened to dodge (via an
+  `about:blank` detour) rather than cover. Fixed with a `hashchange` listener in `state.js` that
+  reloads the page whenever the session/co-facilitate/team an incoming fragment actually names
+  differs from what's currently active. Also fixed a real `RELAY_PORT` collision between two test
+  files found while adding the new regression coverage. Full writeup in the "Follow-up P2" section
+  under "Board sync" above. Full suite green: 154/154 unit tests, all 52 Playwright files, relay's
+  protocol + storage suites passing (reliable at this repo's documented default `TEST_JOBS`; noted
+  but did not chase pure-timeout flakiness in two relay-heavy files specifically at `TEST_JOBS=4`,
+  consistent with `run_all.sh`'s own documented caution about parallelism above a runner's headroom).

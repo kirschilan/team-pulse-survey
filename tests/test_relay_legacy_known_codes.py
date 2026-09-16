@@ -28,7 +28,7 @@ PUBLIC_DIR = REPO_ROOT / "public"
 CRYPTO_JS = (PUBLIC_DIR / "js" / "crypto.js").read_text(encoding="utf-8")
 RELAY_CLIENT_JS = (PUBLIC_DIR / "js" / "relay-client.js").read_text(encoding="utf-8")
 RELAY_DIR = REPO_ROOT / "relay"
-RELAY_PORT = 8793
+RELAY_PORT = 8799  # distinct from every other RELAY_PORT in tests/*.py -- see tests/run_all.sh's own comment on why each must be unique
 RELAY_URL = "ws://localhost:%d" % RELAY_PORT
 
 

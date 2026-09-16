@@ -658,6 +658,26 @@ state.joinSessionId = getLinkParam("session");
 // view for that session's squad -- see retro-facilitator.js's
 // coFacilitateSessionByCode(), called once from db.js's initDb().
 state.coFacilitateSessionId = getLinkParam("cofacilitate");
+// Codex review on PR #14 (P2 follow-up): the boot-time invitation parsing
+// just above runs once, at initial script load. A fragment-only URL change
+// -- opening a DIFFERENT session/co-facilitate/team link in the SAME
+// already-open tab -- is a same-document "fragment navigation" per the
+// HTML spec, true in every real browser: the address bar updates, but
+// nothing here reruns, so the OLD session/team would otherwise stay active
+// while the URL shows a new invitation. Reloading is the simplest, most
+// robust fix -- this file's own boot-time parsing above already does
+// exactly the right thing on a real load -- done only when the invitation
+// an incoming fragment actually names is DIFFERENT from what's already
+// active, so an unrelated hash change doesn't force a pointless reload.
+window.addEventListener("hashchange", function(){
+  var newSession = getLinkParam("session");
+  var newCofac = getLinkParam("cofacilitate");
+  var newTeam = getLinkParam("team");
+  var teamChanged = newTeam !== null && typeof getTeamSecret === "function" && newTeam !== getTeamSecret();
+  if(newSession !== state.joinSessionId || newCofac !== state.coFacilitateSessionId || teamChanged){
+    window.location.reload();
+  }
+});
 (function loadUiPrefs(){
   try{
     var v = localStorage.getItem("squadpulse:view");
