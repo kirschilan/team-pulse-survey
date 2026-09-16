@@ -212,17 +212,27 @@ function parseBoardImportFile(text){
 
 // Pure planning step -- matches file squads to board squads by NAME
 // (squad.id is a storage artifact, never a portable identity -- see
-// buildBoardExport()'s own comment above), and each rating's dimension by
-// KEY against the board's CURRENT dimension set. A rating for a key not
+// buildBoardExport()'s own comment above), and each rating's dimension
+// against the board's CURRENT dimension set. A rating for a dimension not
 // found today is reported, not guessed at.
-// PR #12 review finding: two boards/devices never share a dimension's key
-// (item 3b's own design -- see buildDimensionImportPlan()'s comment), so
-// once a file also carries its own `dimensions` section, a rating's KEY is
-// only ever meaningful to the SOURCE board. A destination board's real
-// match is by LABEL -- either an already-existing dimension (resolved
-// immediately here) or one about to be created in the same operation
-// (resolved once it exists, via the pendingDimensionKey()/
-// resolvePendingDimensionKeys() pair below).
+// PR #12 review, two rounds: two boards/devices never share a dimension's
+// key (item 3b's own design -- see buildDimensionImportPlan()'s comment),
+// so once a file also carries its own `dimensions` section describing a
+// rating's key, that key is only ever meaningful to the SOURCE board -- a
+// built-in dimension's key is fixed and identical on every board, and
+// renaming a dimension keeps its key too, so a key match on the
+// destination can easily be a DIFFERENT dimension that just happens to
+// share it. The destination board's real match is by LABEL -- either an
+// already-existing dimension (resolved immediately here) or one about to
+// be created in the same operation (resolved once it exists, via the
+// pendingDimensionKey()/resolvePendingDimensionKeys() pair below) --
+// and label matching wins UNCONDITIONALLY whenever the file's dimensions
+// section describes that key, never falling back to a key match even if
+// one exists. Key matching survives only as the fallback for a squads-only
+// file (no `dimensions` section at all, or no entry for that specific
+// key) -- there the file carries no label to weigh instead, so the key is
+// literally the only information available, exactly like the pre-3b, item
+// 3a-only behavior this app always had.
 var PENDING_DIMENSION_PREFIX = "pending-dimension:";
 function pendingDimensionKey(label){ return PENDING_DIMENSION_PREFIX + label; }
 function resolvePendingDimensionKeys(fileDims){
@@ -276,13 +286,17 @@ function buildSquadImportPlan(data, mode, extraDimensionLabels){
     var existing = existingByName[name.toLowerCase()] || null;
     var fileDims = {};
     Object.keys(fs.dimensions || {}).forEach(function(key){
-      var dim = dimByKeyMap[key];
       var label = fileDimKeyToLabel[key];
-      if(!dim && label) dim = dimByLabelMap[label.trim().toLowerCase()];
-      if(!dim && label && extraLabelSet[label.trim().toLowerCase()]){
-        fileDims[pendingDimensionKey(label)] = fs.dimensions[key];
-        ratingCount++;
-        return;
+      var dim;
+      if(label){
+        dim = dimByLabelMap[label.trim().toLowerCase()];
+        if(!dim && extraLabelSet[label.trim().toLowerCase()]){
+          fileDims[pendingDimensionKey(label)] = fs.dimensions[key];
+          ratingCount++;
+          return;
+        }
+      } else {
+        dim = dimByKeyMap[key];
       }
       if(!dim){ skipped.push({ squad:name, dimension:key, reason:"dimension not found" }); return; }
       fileDims[dim.key] = fs.dimensions[key];

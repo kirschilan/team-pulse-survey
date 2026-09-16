@@ -2803,3 +2803,41 @@ not just in this repo's own tests.
     under the 78s baseline, no update needed. Relay's own protocol suite passing.
   - Story 13 status: **DONE** -- all four items complete. The CSV→JSON board export/import
     redesign this story tracked from its very first backlog conversation is finished.
+- 2026-09-16 — PR #12, second review round (P1): `buildSquadImportPlan()` (`board-export-import.js`)
+  still misattributed a rating whenever its file-key happened to COINCIDE with a destination-board
+  key that meant something else -- the code tried a key match before a label match, so once the
+  file's own `dimensions` section said a key now means a different label, that label was never
+  even consulted. A built-in dimension's key is fixed and identical on every board, and renaming a
+  dimension keeps its key too, so this wasn't a rare edge case: reviewer's real-browser repro was a
+  source board's "release"-keyed dimension relabeled to "Custom imported dimension" (i.e. someone
+  renamed their local copy of a starter dimension), landing its rating on the DESTINATION board's
+  own differently-labeled "release" dimension instead, in both Merge (silently wrong target) and
+  Replace (worse: the destination's real "release" dimension, correctly absent from the file's own
+  label list, gets removed as unmentioned, orphaning the rating that was wrongly written under its
+  key). Fixed by flipping the priority: whenever the file's `dimensions` section names a label for
+  that key, matching goes by LABEL only (existing-by-label, or pending creation via the same
+  `pendingDimensionKey()` mechanism as the first review round) -- key matching survives only as the
+  fallback for a squads-only file with no `dimensions` section at all (the only case with no label
+  to weigh instead, unaffected by this bug). Test-first: added 3 failing unit tests reproducing the
+  exact repro (label-wins-over-coincidental-key, its pending-creation resolution, and the Replace
+  variant with the correctly-orphaned board rating) before touching `board-export-import.js`
+  itself; rewrote one prior test (`buildSquadImportPlan() still matches a rating by key after the
+  board's dimension label has been renamed`) that had been asserting the OLD, now-disproven
+  priority -- that test's real premise (own-board re-import after a label rename) turns out to
+  already collide with item 3b's own established "dimensions match by label, not key" design even
+  before this fix (re-importing your own renamed dimension creates a same-key duplicate under the
+  old label either way, an already-accepted limitation, not something this fix changes); replaced
+  it with a test for the genuine surviving case, a squads-only file with no `dimensions` section.
+  No new Playwright scenario: this fix is entirely inside the pure planning function, and the
+  wiring path it runs through (pending-marker creation + resolution + sequencing) is already
+  proven end-to-end by the existing combined-import Playwright scenario from the first review
+  round -- per this repo's own TDD skill, a scenario that would only re-verify matching logic
+  already covered by a unit test doesn't earn its cost.
+  - Also: this environment's pre-baked Playwright Chromium cache was pinned to an older browser
+    revision (1194) than this repo's pinned `playwright==1.62.0` package expects (1234) --
+    `BrowserType.launch` failed outright with "Executable doesn't exist." Worked around locally by
+    symlinking the 1234-named paths the package looks up to the already-present 1194 binaries (no
+    network fetch, nothing added/changed in the repo itself) so the full suite could actually run
+    in this container; not a code change and not committed.
+  - Full suite green: 141/141 unit tests, all 47 Playwright files (67s, under the 78s baseline),
+    relay's protocol + storage suites passing.

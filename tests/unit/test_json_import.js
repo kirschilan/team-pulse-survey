@@ -197,32 +197,99 @@ test("buildSquadImportPlan() matches an existing squad by name and reports its f
   });
 });
 
-// Ports forward the assurance CSV's own "Dimension Key column" existed for
-// (removed along with CSV itself, Story 13 item 4): re-importing an export
-// still matches a rating to the right dimension even after that dimension's
-// LABEL has since been renamed or translated on the board. CSV needed a
-// whole extra column as a workaround for this, since its flat-table format
-// has no natural way to reference a dimension except by label; JSON never
-// had that problem -- a rating's file-key is matched directly against the
-// board's CURRENT dimension KEY (dimByKeyMap, the primary path in
-// buildSquadImportPlan(), unconditional and unrelated to label at all), so
-// nothing about a label rename can ever affect it.
-test("buildSquadImportPlan() still matches a rating by key after the board's dimension label has been renamed", () => {
+// A squads-only file (no `dimensions` section at all -- every item
+// 3a-only fixture is exactly this shape) carries no label for a rating's
+// key to be weighed against, so the key is literally the only information
+// available: matching falls back to it, unconditionally, exactly like the
+// pre-3b, item-3a-only behavior this app always had.
+test("buildSquadImportPlan() falls back to matching a rating by key for a squads-only file with no dimensions section", () => {
   withBoard({
-    dimensions: [{ key: "release", label: "Renamed / Translated Label", order: 1 }],
+    dimensions: [{ key: "release", label: "Easy to release", order: 1 }],
     squads: [{ id: "sq-1", name: "Squad 1", dimensions: {} }]
   }, () => {
-    // the file itself still carries the dimension's OLD label (as it was at
-    // export time) -- irrelevant, since matching never looks at fd.label
-    // when the file-key already matches a board dimension directly.
-    const plan = boardIO.buildSquadImportPlan({
-      formatVersion: 1,
-      squads: [{ name: "Squad 1", dimensions: { release: { color: "good" } } }],
-      dimensions: [{ key: "release", label: "Easy to release" }]
-    }, "merge");
+    const plan = boardIO.buildSquadImportPlan(fileWith([
+      { name: "Squad 1", dimensions: { release: { color: "good" } } }
+    ]), "merge");
     assert.equal(plan.ratingCount, 1);
     assert.equal(plan.skipped.length, 0);
     assert.deepEqual(plan.patches[0].fileDims, { release: { color: "good" } });
+  });
+});
+
+// ---------- PR #12 review, second round (P1): once the file's dimensions
+// section describes a rating's key, that key must never win over a label
+// match -- a built-in dimension's key is fixed and identical on every
+// board, and renaming a dimension keeps its key too, so a key match on the
+// destination can easily be a DIFFERENT dimension that just happens to
+// share it. Confirmed via the reviewer's own real-browser repro: a source
+// file's "release"-keyed dimension relabeled to "Custom imported
+// dimension" was landing on the destination board's OWN "release"
+// dimension ("Easy to release") purely because the key coincided, in both
+// Merge and Replace. Fixed by resolving via buildDimensionImportPlan()'s
+// own label matching (existing or pending) whenever the file's dimensions
+// section names that key, falling back to a key match only when it
+// doesn't (see the squads-only test above). ----
+
+test("buildSquadImportPlan() matches a rating by LABEL, not by a coincidentally-shared key, when the file supplies a dimension definition", () => {
+  withBoard({
+    dimensions: [{ key: "release", label: "Easy to release", order: 1 }],
+    squads: [{ id: "sq-1", name: "Squad 1", dimensions: {} }]
+  }, () => {
+    const plan = boardIO.buildSquadImportPlan({
+      formatVersion: 1,
+      squads: [{ name: "Squad 1", dimensions: { release: { color: "good" } } }],
+      dimensions: [{ key: "release", label: "Custom imported dimension" }]
+    }, "merge");
+    // "release" the KEY coincidentally matches the board's dimension, but
+    // the file says "release" now means "Custom imported dimension" on the
+    // source board -- a different label, so a different dimension. No
+    // board dimension is labeled that yet, and no extraDimensionLabels
+    // were supplied (Templates scope unchecked), so this must be reported
+    // as not-found rather than silently landing on "Easy to release".
+    assert.equal(plan.ratingCount, 0);
+    assert.equal(plan.skipped.length, 1);
+    assert.equal(plan.skipped[0].dimension, "release");
+  });
+});
+
+test("buildSquadImportPlan() resolves that same rating once its label-matching dimension is pending creation", () => {
+  withBoard({
+    dimensions: [{ key: "release", label: "Easy to release", order: 1 }],
+    squads: [{ id: "sq-1", name: "Squad 1", dimensions: {} }]
+  }, () => {
+    const plan = boardIO.buildSquadImportPlan({
+      formatVersion: 1,
+      squads: [{ name: "Squad 1", dimensions: { release: { color: "good" } } }],
+      dimensions: [{ key: "release", label: "Custom imported dimension" }]
+    }, "merge", ["Custom imported dimension"]);
+    assert.equal(plan.ratingCount, 1);
+    assert.equal(plan.skipped.length, 0);
+    const pendingKey = boardIO.pendingDimensionKey("Custom imported dimension");
+    assert.deepEqual(plan.patches[0].fileDims, { [pendingKey]: { color: "good" } });
+    // crucially, NOT attributed to the board's own "release"-keyed
+    // dimension ("Easy to release") just because the key coincided.
+    assert.equal(Object.prototype.hasOwnProperty.call(plan.patches[0].fileDims, "release"), false);
+  });
+});
+
+test("buildSquadImportPlan() in REPLACE mode also matches by label, not by a coincidentally-shared key", () => {
+  withBoard({
+    dimensions: [{ key: "release", label: "Easy to release", order: 1 }],
+    squads: [{ id: "sq-1", name: "Squad 1", dimensions: { release: { color: "warn" } } }]
+  }, () => {
+    const plan = boardIO.buildSquadImportPlan({
+      formatVersion: 1,
+      squads: [{ name: "Squad 1", dimensions: { release: { color: "good" } } }],
+      dimensions: [{ key: "release", label: "Custom imported dimension" }]
+    }, "replace");
+    assert.equal(plan.ratingCount, 0);
+    assert.equal(plan.skipped.length, 1);
+    // The board's own pre-existing "release" rating ("Easy to release") is
+    // correctly reported as one Replace would clear, since the file
+    // doesn't actually mention that dimension once the key is no longer
+    // trusted as a match on its own.
+    assert.equal(plan.clearedRatings.length, 1);
+    assert.equal(plan.clearedRatings[0].dimension, "Easy to release");
   });
 });
 
