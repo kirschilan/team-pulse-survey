@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import build_page, test_output_path
 
-out_path = build_page(out_name="_test_tpl_switch_csv.html")
+out_path = build_page(out_name="_test_tpl_switch.html")
 
 with sync_playwright() as p:
     browser = p.chromium.launch()
@@ -99,30 +99,11 @@ with sync_playwright() as p:
     # file, test_hebrew_rtl_coverage.py, which checks it across every
     # dir="auto" surface in the app, not just these 3.
 
-    # ---- CSV import test ----
-    print("=== CSV import ===")
-    csv_text = (
-        "Squad,Dimension,Health,Trend,Note\r\n"
-        "Squad 1,Easy to release,Green,Improving,imported note\r\n"
-        "Squad 3,Suitable process,Yellow,Steady,new squad row\r\n"
-        "Squad 2,Nonexistent Dim,Red,,should be skipped\r\n"
-    )
-    csv_path = test_output_path("test_import.csv")
-    csv_path.write_text(csv_text)
-    page.set_input_files('#csvFileInput', str(csv_path))
-    # csv.js reads the file via FileReader (genuinely async) -- poll for the
-    # parsed plan rather than guess how long the read takes.
-    page.wait_for_function("() => pendingImportPlan !== null")
-    print("import modal visible:", page.eval_on_selector('#importBackdrop', 'el=>!el.hidden'))
-    print("import summary html:", page.eval_on_selector('#importSummary', 'el=>el.innerText'))
-    page.click('#importApplyBtn')
-    # evaluate() doesn't auto-wait -- poll for the imported note landing
-    # (from the CSV's "imported note" cell) instead of guessing.
-    page.wait_for_function("() => window.__FAKE_STORE__['squads/squad-1'] && window.__FAKE_STORE__['squads/squad-1'].dimensions.release && window.__FAKE_STORE__['squads/squad-1'].dimensions.release.note === 'imported note'")
-    print("squad-1 after import:", page.evaluate("window.__FAKE_STORE__['squads/squad-1']"))
-    all_squad_names = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k=>k.startsWith('squads/')).map(k=>window.__FAKE_STORE__[k].name)")
-    print("all squad names after import (should include 'Squad 3'):", all_squad_names)
+    # CSV import coverage (this file's original second half) removed along
+    # with the feature itself -- Story 13 item 4. JSON import's own
+    # coverage lives in tests/test_json_import.py.
+    assert errors == []
     print("errors:", errors)
 
-    page.screenshot(path=str(test_output_path("shot_tpl_switch_csv_import.png")), full_page=True)
+    page.screenshot(path=str(test_output_path("shot_template_switching.png")), full_page=True)
     browser.close()

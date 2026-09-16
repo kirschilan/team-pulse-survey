@@ -109,7 +109,7 @@ OUTPUT_DIR = REPO_ROOT / "tests" / "output"
 
 def test_output_path(name):
     """Path under tests/output/ (gitignored) for any test-run artifact --
-    a verification screenshot, a scratch CSV fixture for an import test, etc."""
+    a verification screenshot, a scratch JSON fixture for an import test, etc."""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     return OUTPUT_DIR / name
 

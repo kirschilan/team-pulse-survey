@@ -1,10 +1,10 @@
 from playwright.sync_api import sync_playwright
-import pathlib
+import pathlib, json
 import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import build_page, test_output_path
 
-out_path = build_page(out_name="_test_tooltip_busy_csvkey.html")
+out_path = build_page(out_name="_test_tooltip_busy.html")
 
 with sync_playwright() as p:
     browser = p.chromium.launch()
@@ -192,73 +192,31 @@ with sync_playwright() as p:
     assert False in history and history[-1] == True, "expected the overlay to show, then hide, during the template switch"
     print("errors:", errors)
 
-    # ---- busy overlay also covers CSV import when it has to create new squads ----
-    print("=== busy overlay: CSV import creating a new squad ===")
+    # ---- busy overlay also covers JSON import when it has to create new squads ----
+    print("=== busy overlay: JSON import creating a new squad ===")
     page.evaluate("window.__busyHistory.length = 0;")
-    csv_new_squad = "Squad,Dimension,Health,Trend,Note\r\nBrand New Squad,Other dim,Green,,\r\n"
-    new_squad_path = test_output_path("test_tooltip_busy_csvkey_newsquad.csv")
-    new_squad_path.write_text(csv_new_squad)
-    page.set_input_files('#csvFileInput', str(new_squad_path))
-    # csv.js reads the file via FileReader (genuinely async) -- poll for the
-    # parsed plan before clicking Apply rather than guess how long it takes.
-    page.wait_for_function("() => pendingImportPlan !== null")
-    page.click('#importApplyBtn')
+    new_squad_json = {"formatVersion": 1, "squads": [{"name": "Brand New Squad", "dimensions": {}}]}
+    new_squad_path = test_output_path("test_tooltip_busy_newsquad.json")
+    new_squad_path.write_text(json.dumps(new_squad_json))
+    page.set_input_files('#jsonFileInput', str(new_squad_path))
+    # board-export-import.js reads the file via FileReader (genuinely async)
+    # -- wait for the real modal-open signal before clicking Apply, rather
+    # than guess how long the read takes.
+    page.wait_for_selector('#importJsonBackdrop:not([hidden])')
+    page.click('#importJsonApplyBtn')
     page.wait_for_function("() => document.getElementById('busyOverlay').hidden === true")
     history_import = page.evaluate("window.__busyHistory")
-    print("busy overlay hidden-attr history during CSV import w/ new squad (expect shown then hidden):", history_import)
+    print("busy overlay hidden-attr history during JSON import w/ new squad (expect shown then hidden):", history_import)
     assert False in history_import and history_import[-1] == True
     print("errors:", errors)
 
-    # ============ Bug 3: CSV Dimension Key column round-trip ============
-    print("=== CSV Dimension Key export/import ===")
-    with page.expect_popup() as popup_info:
-        page.click('#exportBtn')
-    popup = popup_info.value
-    popup.wait_for_load_state()
-    csv_text = popup.eval_on_selector('pre', 'el => el.textContent')
-    popup.close()
-    header = csv_text.strip().splitlines()[0].split(",")
-    print("export header:", header)
-    assert "Dimension Key" in header, "Dimension Key column missing from export!"
-    key_col = header.index("Dimension Key")
-    lines = csv_text.strip().splitlines()
-
-    # rename the "Other dim" dimension's label (simulating a post-export
-    # translation/rename) then re-import the ORIGINAL export -- it should
-    # still match via the Dimension Key column instead of failing on label text
-    page.evaluate("""
-      window.__FAKE_STORE__['dimensions/other1'].label = 'Renamed / Translated Label';
-      window.__NOTIFY__('dimensions');
-    """)
-    # No wait needed -- this evaluate() directly mutates the store object
-    # and reads it straight back in the very next line, with no re-render
-    # or async step in between either way.
-    print("dimension label now:", page.evaluate("window.__FAKE_STORE__['dimensions/other1'].label"))
-
-    reimport_path = test_output_path("test_tooltip_busy_csvkey_reimport.csv")
-    reimport_path.write_text(csv_text)
-    page.set_input_files('#csvFileInput', str(reimport_path))
-    page.wait_for_function("() => pendingImportPlan !== null")
-    summary_html = page.eval_on_selector('#importSummary', 'el=>el.innerText')
-    print("import summary after label rename (should show ratings matched, not skipped):", summary_html)
-    page.click('#importCancel')
-
-    # legacy file WITHOUT the Dimension Key column should still fall back to
-    # label matching against the CURRENT (renamed) label
-    legacy_rows = ["Squad,Dimension,Health,Trend,Note,Template"]
-    for line in lines[1:]:
-        parts = line.split(",")
-        if parts[1] == "Other dim":
-            parts[1] = "Renamed / Translated Label"  # legacy file must use the label as it exists NOW to match
-        legacy_rows.append(",".join(parts[0:6]))
-    legacy_csv = "\r\n".join(legacy_rows)
-    legacy_path = test_output_path("test_tooltip_busy_csvkey_legacy.csv")
-    legacy_path.write_text(legacy_csv)
-    page.set_input_files('#csvFileInput', str(legacy_path))
-    page.wait_for_function("() => pendingImportPlan !== null")
-    print("import summary for legacy (no-key) file matched by current label:", page.eval_on_selector('#importSummary', 'el=>el.innerText'))
-    page.click('#importCancel')
-
-    print("errors:", errors)
-    page.screenshot(path=str(test_output_path("shot_tooltip_busy_csvkey.png")), full_page=True)
+    # Bug 3 (CSV's "Dimension Key" column round-trip) removed along with CSV
+    # itself -- Story 13 item 4. That column only ever existed to work
+    # around CSV's flat-table format having no natural way to reference a
+    # dimension by anything but its label; JSON's `dimensions[key]` shape
+    # doesn't have that weakness, and the equivalent "renaming a dimension's
+    # label doesn't break a JSON import matching by key" property is proven
+    # directly in tests/unit/test_json_import.js instead.
+    assert errors == []
+    page.screenshot(path=str(test_output_path("shot_tooltip_busy.png")), full_page=True)
     browser.close()

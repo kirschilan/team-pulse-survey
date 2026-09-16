@@ -12,8 +12,9 @@
 // any method call or property read/write and hands back another fake.
 //
 // This is intentionally dumb and permissive rather than a real DOM model --
-// unit tests here exist to test computation (CSV parsing, consolidation
-// math), not rendering, so "don't crash on load" is the whole job. Real DOM
+// unit tests here exist to test computation (import-plan matching,
+// consolidation math), not rendering, so "don't crash on load" is the whole
+// job. Real DOM
 // behavior is exactly what the Playwright suite (tests/test_*.py) already
 // covers with a real browser.
 function fakeElement(){

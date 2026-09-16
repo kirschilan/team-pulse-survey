@@ -68,7 +68,7 @@ along the seams the original file already had (`// ---------- section ----------
 | `retro-join.js` | The PARTICIPANT half: the join screen, the blind interleaved statement survey, direct-rating swatches, submission, and the personal-result view. Shares almost no code with `retro-facilitator.js` (different device, different role) — that's what made the split clean. |
 | `dimensions.js` | The dimension manager (add/rename/reorder/remove). Split out of a combined `dimensions-templates.js` on 2026-09-12. |
 | `templates.js` | Template save/load/delete. Split out of the same combined file, same day. |
-| `csv.js` | CSV export and import (parsing, column matching, preview, apply). |
+| `board-export-import.js` | JSON board export and import (squads/ratings, dimensions, templates, board settings) — the only board export/import format; CSV's own runtime code was deleted, and this file was renamed from `csv.js` to match, in Story 13 item 4. |
 | `db.js` | `initDb()` — the Firestore-shaped snapshot listeners that wire `db` writes into `state` and back into a render. |
 | `crypto.js` | AES-256-GCM encrypt/decrypt. For a retro session, the key derives from the session code itself; for a team board, `generateSecret()`/`roomIdFor()` split a high-entropy secret (the key) from a separate one-way-derived room id (routing only) — see "Board sync" below. |
 | `relay-client.js` | The other half of `local-store.js`'s router: a `collection()`/`doc()` implementation for `sessions`- and `boards`-rooted paths, backed by a real WebSocket to `relay/server.js` instead of `localStorage`. `doc(path, secret)`/`collection(path, secret)` take an optional second argument so a caller (board-sync.js) can supply the encryption key separately from the path's own routing id; omitted, behavior is unchanged (the path's own code IS the key, as sessions have always used). |
@@ -107,7 +107,7 @@ whole board too, genuinely sync across different devices/browsers** through the 
 bullet above, `relay/README.md`, and "Board sync" below. `localStorage` is still each device's own
 source of truth (nothing here changes that), but by default it now also stays in sync, live, with
 every other device on the same team link.
-(There's one other `window.claude.use(...)` call, for `"downloads"` in `public/js/csv.js`, and a
+(There's one other `window.claude.use(...)` call, for `"downloads"` in `public/js/board-export-import.js`, and a
 `window.claude.hot` hot-reload guard at the bottom of `app.js` that already degrades safely with no
 `window.claude` present — neither of those blocks anything.)
 
@@ -456,7 +456,7 @@ recall exercise instead of something anyone could just read.
 | 10 | Retro join flow (participant-facing screens) | **DONE** (2026-09-14) |
 | 11 | Retro facilitation flow (facilitator-facing screens, session cards, overrides) | **DONE** (2026-09-14) |
 | 12 | Dimension detail and Edit Dimensions modal (Admin) | **DONE** (2026-09-14) |
-| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass. Redesigned as a full JSON board export/import replacing CSV (see session log): (1) JSON board export (beta), additive — **DONE** (2026-09-15); (2) JSON import — squads/ratings — **DONE** (2026-09-15); (3) JSON import — dimensions/templates/config; (4) delete the CSV runtime code | **In progress** |
+| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass. Redesigned as a full JSON board export/import replacing CSV (see session log): (1) JSON board export (beta), additive — **DONE** (2026-09-15); (2) JSON import — squads/ratings — **DONE** (2026-09-15); (3) JSON import — dimensions/templates/board settings — **DONE** (2026-09-15); (4) delete the CSV runtime code, rename `csv.js` → `board-export-import.js` — **DONE** (2026-09-16) | **DONE** |
 
 ## Deliberately not built yet (and why)
 
@@ -2607,3 +2607,237 @@ not just in this repo's own tests.
   10 focused runs of `test_retro_experiment_note_and_finish.py` (all clean), the full
   47-file Playwright suite via `run_all.sh` (TEST_JOBS=4, 3 shards, 48s), and the 82/82
   Node unit suite -- zero regressions from the shared fixture's added instrumentation.
+- **2026-09-15 — Story 13, item 3b: JSON import for dimensions, templates & board settings**,
+  extending the same file/preview/Merge-Replace modal item 3a shipped rather than adding a second
+  one. Design reviewed first as an updated Artifact mockup (the same "Full Board Import Preview"
+  the item 3a mockup evolved into -- see the conversation this continues from) before any code,
+  per DoD §3; the product owner's decisions from that review, implemented as specified:
+  - **Dimensions and saved templates both match by LABEL/NAME, not key/id** -- initially proposed
+    as key-matching for dimensions (consistent with 3a's rating-to-dimension matching) and
+    name-matching for templates, the product owner asked why the two would differ. Investigating
+    turned up a real fact neither of us had checked yet: a custom dimension's key
+    (`"local-dim-"+Date.now()`, `dimensions.js`'s `addDimension()`) is exactly as device-local and
+    random as a template's id (`"local-tpl-"+Date.now()`) -- only the three built-in starter
+    templates' dimensions have meaningful, hand-picked keys. Key-matching a custom dimension would
+    have imported it as "new" on every single re-import, including re-importing your OWN board's
+    own file, defeating the whole point of this item (importing a template set between tribes).
+    Settled on label/name matching for both, confirmed by the product owner. 3a's own
+    rating-to-dimension matching (by KEY, against the board's CURRENT set) is a different question
+    entirely and is untouched either way.
+  - **A Squads-vs-Templates import SCOPE choice**, both checked by default, independently
+    uncheckable -- the product owner's own stated reason: wanting to import a template set from
+    one tribe into another board without dragging that tribe's squads/ratings along for the ride.
+    "Templates" scope bundles dimensions + saved templates + board settings as one unit (matching
+    how the backlog item itself was already grouped, confirmed over a 3-way-split alternative).
+  - Merge/Replace still one single toggle governing everything in whichever scope(s) are checked,
+    same mental model already approved for 3a, not a second control to learn. Replace's danger
+    warning grew two new named groups (dimensions / saved templates) alongside 3a's existing
+    squad/rating ones, same backup-first safety net, still no second confirm dialog. Board settings
+    (config: unit/unitPlural/activeTemplateName/attribution) have no Replace/remove concept at all
+    -- four named fields, not a collection, so whatever the file has just overwrites the matching
+    field in either mode, shown as a plain before/after diff instead of chips.
+  - **A real, serious bug caught before it ever ran against real data, not a review finding this
+    time:** formatVersion:1 makes `dimensions`/`templates`/`config` genuinely OPTIONAL top-level
+    keys (unlike `squads`, required since item 1) -- exactly the shape every existing item
+    3a-only fixture already uses (`{"formatVersion":1,"squads":[...]}`, no other keys at all). The
+    first draft of `buildDimensionImportPlan()`/`buildTemplateImportPlan()` treated "key absent"
+    the same as "key present with an empty array," so opening an ordinary squads-only file in
+    REPLACE mode would have silently wiped every dimension and every saved template off the board
+    -- found by running `test_json_import.py`'s own pre-existing item 3a "replace" scenario after
+    wiring the new code in, and seeing its warning box unexpectedly list every board dimension for
+    removal. Fixed by having both planning functions return an untouched, empty plan when their
+    input is `undefined` -- `undefined` (key absent, file has no opinion) and `[]` (key present,
+    file explicitly claims zero) are different claims, and only the second one means anything. Two
+    new unit tests lock this in (`buildDimensionImportPlan(undefined, "replace")`/
+    `buildTemplateImportPlan(undefined, "replace")` must return empty plans), and the Playwright
+    dimension/template-removal scenario deliberately unchecks the squads scope and asserts no
+    squad-removal warning appears, proving the (separate, correctly-required) `"squads": []` in
+    that same test file's own fixture doesn't leak into scopes it wasn't checked for.
+  - New data shape: none (reuses item 1's existing board-export shape); no migration question, per
+    DoD §3.
+  - i18n per DoD §2: the scope checkboxes, new section headings (Dimensions/Saved templates/Board
+    settings), new chip rows, the config diff, and the two new removal-warning groups all go
+    through `t()`/`data-i18n`, `en.js`+`he.js` updated together, same `countKey()` One/Many
+    convention as the rest of this modal. The now-inert old "also in this file, not imported here"
+    stub note/keys (`importJson.scopeDimensions`/`scopeTemplates`/`scopeConfig`/`scopeNote`) were
+    removed rather than left dead, since this item is exactly what replaces them.
+  - Test-first per the `tdd` skill: `tests/unit/test_json_import.js` grew from 31 to 62 tests --
+    `parseBoardImportFile()`'s new dimension/template/config shape validation (mirroring the
+    squad/rating validation's parse-boundary rule), `buildDimensionImportPlan()`/
+    `buildTemplateImportPlan()`'s label/name matching and merge/replace removal logic (including
+    the undefined-vs-empty-array regression above), `buildConfigImportPlan()`'s known-fields-only
+    diffing, and `entityImportPlanHasChanges()`'s Apply-button gate -- all written and confirmed
+    failing before `csv.js` had the functions. `tests/test_json_import.py` gained 5 new scenarios
+    (Apply disabled with no scope checked; a combined merge that adds+updates a dimension, adds a
+    saved template, and changes a config field, all asserted against `window.__FAKE_STORE__`
+    directly; a replace that removes a dimension and a saved template with the squads scope
+    deliberately off; unchecking the templates scope leaves it out of both the DOM and the actual
+    apply) -- every wait is a real condition per DoD §1, stress-tested 5x clean.
+  - Full suite green: 143/143 unit tests, all 48 Playwright files (78s, at the existing baseline --
+    no new file added this time, so no baseline update needed), relay's own protocol suite.
+  - Story 13 table status: item 3b now **DONE**. Remaining: item 4 (delete the CSV runtime code).
+    Implemented directly on `story13-json-import-squads`, continuing to push to the same branch --
+    PR #7 (item 3a) turned out to have already been merged into `claude/optimistic-keller-holuql`
+    partway through this session, so this item's own commit needed a fresh PR (#12) rather than
+    riding PR #7; noted, not treated as a problem, since the branch itself was untouched either way.
+- **2026-09-15 — Story 13, item 3b: a real review finding on PR #12 (P1), the product owner acting
+  as reviewer, "fix before approval."** A combined squads+dimensions import silently dropped
+  ratings whenever a rating's dimension key didn't literally exist on THIS board -- true for
+  every genuine cross-board import, not an edge case, since item 3b's own design (see above)
+  deliberately matches dimensions by LABEL rather than key, so two boards/devices never share a
+  dimension's random `"local-dim-"+Date.now()` key even for "the same" labeled dimension.
+  Reproduced independently before touching anything (`node -e` against the real functions,
+  matching the reviewer's own real-browser repro exactly): a file with a brand-new custom
+  dimension and a squad rating for it imported the dimension, but persisted the squad with
+  `dimensions: {}` -- the preview even claimed "0 ratings to import" despite showing that exact
+  dimension ready to add, since `buildSquadImportPlan()` only ever matched a rating's file-key
+  against the board's CURRENT dimension set, built before either a new dimension exists or an
+  existing one's real (different) key is known.
+  Fixed two ways, both in `csv.js`:
+  1. `buildSquadImportPlan()` now also tries a file-key -> label -> CURRENT-board-dimension-by-label
+     fallback (using the file's own `dimensions` section to look up what label a rating's key
+     refers to) before giving up -- covers an EXISTING same-labeled dimension whose key just
+     differs from the file's, unconditionally (doesn't depend on the Templates scope being
+     checked, since no dimension needs to be created for this case).
+  2. A new optional third argument, `extraDimensionLabels` (`buildDimensionImportPlan()`'s own
+     `added` list, passed in only when the Templates scope is actually checked -- otherwise
+     nothing will create that dimension this round, and the rating correctly still reports "not
+     found"), lets a rating for a dimension that doesn't exist YET but WILL by the time Apply
+     finishes resolve to a `pendingDimensionKey()` marker instead of being skipped.
+     `resolvePendingDimensionKeys()` turns that marker into the dimension's real key once it
+     actually exists -- called from the Apply-button handler, which now sequences the two applies
+     instead of firing them in parallel: `applyDimensionTemplateConfigImportPlan()` gained an
+     optional `onDone` callback, fired only once every dimension/template write (including a
+     brand-new dimension's real generated key) has actually landed in `state.dimensions`, and the
+     squads/ratings apply now runs from that callback instead of immediately. Verified safe for
+     both the fake-store test harness and real deployments before relying on it: both
+     `tests/fixtures/fake_store.html` and the real `public/local-store.js` call their `add()`'s
+     `notify()` SYNCHRONOUSLY, before the returned Promise even resolves, so `state.dimensions`
+     is already current by the time the sequenced callback runs, in both.
+  Found and fixed a second, self-inflicted bug while writing this fix: the first draft used an
+  actual embedded NUL byte (`"\u0000pending-dimension:"`) as the marker prefix, meant as a
+  belt-and-suspenders "can never collide with a real key" guard -- caught immediately because it
+  turned `csv.js` into a binary file (`file` reported "data", `grep` refused to match it as
+  text). Replaced with a plain, printable prefix (`"pending-dimension:"`); a collision was never
+  actually reachable either way, since `fileDims`'s keys are always either a real destination
+  dimension's own key or this constructed marker, never a file-supplied key used as-is.
+  6 new unit tests (`tests/unit/test_json_import.js`, 62 -> 68: the label-fallback match, the
+  "still not found" negative, the pending-marker path with and without `extraDimensionLabels`,
+  and `resolvePendingDimensionKeys()`'s resolve/drop cases) plus one new Playwright scenario
+  (`tests/test_json_import.py`) reproducing the reviewer's exact repro end to end -- a new custom
+  dimension AND an existing dimension referenced under a different source key, both with real
+  ratings, both scopes checked -- asserting the persisted squad doc under `window.__FAKE_STORE__`
+  carries the ratings under real destination keys, with zero leftover pending markers. Stress-tested
+  5x clean. Full suite green: 149/149 unit tests, all 48 Playwright files (75s, under the 78s
+  baseline), relay's own protocol suite. Same branch/PR (#12).
+- **2026-09-16 — Story 13, item 4: deleted the CSV runtime code and renamed `csv.js` →
+  `board-export-import.js`.** JSON is now the board's only export/import format. Two decisions
+  confirmed with the product owner before touching anything: (1) full removal (export AND import),
+  not just the export button, since JSON already fully replaces both directions; (2) the rename
+  target, `board-export-import.js` — matches this repo's existing `board-sync.js` naming pattern
+  (names the domain, not the format), confirmed over `board-io.js` (too terse) and
+  `json-export-import.js` (names the format instead).
+  - Removed from `csv.js`/now `board-export-import.js`: `toCSV()` + the `exportBtn` handler, and
+    the entire CSV import section (`parseCSV`, `colorFromWord`, `trendFromWord`,
+    `mapImportColumns`, `buildImportPlan`, CSV's own `renderImportPreview`/`applyImportPlan`/
+    `applyImportRatingsToSquad`). Everything left is JSON board export/import.
+  - `index.html`: removed the `Export CSV`/`Import CSV` buttons, the `#csvFileInput`, and the
+    entire CSV import preview modal (`#importBackdrop`). Removed the now-dead
+    `admin.boardSetup.importCsv`/`exportCsv` i18n keys (`en.js`/`he.js`). No CSS changes needed --
+    every class the CSV modal used (`.import-stats`/`.import-warning`/`.import-skips`/etc.) is
+    shared with, and still actively used by, the JSON import modal.
+  - **A real regression, caught by the full suite, not by writing a new test first:**
+    `app.js`'s cross-cutting Escape-key handler had its own reference to CSV's `importBackdrop`/
+    `closeImport()`, missed by every grep pass because it was scoped to `public/js/*.js` and
+    `tests/`, never `public/app.js` itself. Pressing Escape anywhere threw an uncaught
+    `ReferenceError` there and aborted the rest of that handler -- silently breaking Escape-to-close
+    for the join-code modal too (the next line, never reached). Found by `test_retro_join_flow.py`
+    failing (reproducibly, 3/3) after this change, confirmed as a genuine regression rather than a
+    pre-existing flake by running the same test against the pre-refactor code via `git stash`
+    (passed cleanly there). Fixed by pointing that line at the JSON import modal's own
+    `importJsonBackdrop`/`closeSquadImport()` instead of deleting it outright -- which also fixes a
+    separate, latent gap: the JSON import modal apparently never had Escape-to-close wired in at
+    all, even after items 1/3a/3b. No new test needed for the fix itself: `test_retro_join_flow.py`
+    already covers Escape-closing a modal and is what caught the break; re-run 3x clean after the
+    fix, then folded into the full-suite pass below.
+  - Test suite: deleted `tests/unit/test_csv.js` and `tests/test_csv_import_column_matching.py`
+    outright (purely CSV). Trimmed and renamed two files that mixed CSV coverage with unrelated
+    coverage rather than deleting them wholesale: `test_template_switching_and_csv_import.py` →
+    `test_template_switching.py` (kept the template-switching scenarios, dropped the CSV-import
+    half); `test_tooltip_busy_overlay_and_csv_key.py` → `test_tooltip_and_busy_overlay.py` (kept
+    the tooltip coverage and the template-switch busy-overlay scenario; replaced the
+    CSV-import-triggers-the-busy-overlay scenario with a JSON-import equivalent rather than
+    dropping that coverage; dropped the CSV "Dimension Key column" round-trip scenario outright --
+    that column only ever existed to work around CSV's flat-table format having no natural way to
+    reference a dimension except by label, a problem JSON's `dimensions[key]` shape never had).
+    Same trim for `test_hebrew_rtl_coverage.py`'s CSV Hebrew round-trip section (Section 9) and
+    `test_json_import.py`'s existing Hebrew-label assertion (unrelated to this, left alone). Ported
+    forward the one property actually worth keeping from the deleted "Dimension Key" coverage --
+    re-importing an export still matches a rating to the right dimension after its label has been
+    renamed/translated -- as a new, JSON-native unit test (`buildSquadImportPlan()` matches by KEY
+    unconditionally, unrelated to label at all, so the property holds by construction; the test
+    proves it directly rather than via CSV's column workaround). `test_local_store.py` and
+    `test_view_navigation_and_squad_admin.py` each had one CSV-triggered scenario (a real-download
+    check, an Admin-view smoke check) swapped for the JSON equivalent rather than deleted, since
+    both were really testing something else (the `downloads` capability firing a real browser
+    download; that Admin's buttons still open their modals) that just happened to use CSV as the
+    trigger. `helpers.js`'s `fake_dom.js`, both READMEs (`tests/README.md`,
+    `tests/unit/README.md`), and `.claude/skills/tdd/SKILL.md` updated to stop citing deleted
+    files/functions as current examples -- `docs/refactoring-report.md`'s own `csv.js` references
+    left untouched, since it's an explicitly dated 2026-09-12 snapshot report, not living
+    documentation (same convention as this file's own "historical mentions... left as-is" rule for
+    old test names).
+  - Also fixed in passing: a self-inflicted NUL byte in this file's own previous session-log entry
+    (quoting the buggy `" pending-dimension:"` marker literally embedded `csv.js`'s bug
+    into STATUS.md's own bytes, the same mistake, caught by the same `file`/`grep` symptom) --
+    escaped as readable text instead.
+  - **Flagged, not fixed (out of scope for this rename/cleanup):** `local-store.js`'s
+    `triggerBrowserDownload()` hardcodes `Blob` type `text/csv;charset=utf-8` for every download
+    regardless of what's actually being saved -- pre-existing (already wrong for the JSON export
+    button since item 1, unrelated to CSV's removal), low-impact (browsers generally trust the
+    `download` attribute + filename extension over blob MIME type for a local save, which is why
+    nothing user-visible broke), but worth a follow-up to derive the type from the filename.
+  - Full suite green: 137/137 unit tests (down from the prior tier's count, minus `test_csv.js`'s
+    own tests, deleted along with the file), all 47 Playwright
+    files (one fewer than 48: `test_csv_import_column_matching.py` deleted outright), 71s --
+    under the 78s baseline, no update needed. Relay's own protocol suite passing.
+  - Story 13 status: **DONE** -- all four items complete. The CSV→JSON board export/import
+    redesign this story tracked from its very first backlog conversation is finished.
+- 2026-09-16 — PR #12, second review round (P1): `buildSquadImportPlan()` (`board-export-import.js`)
+  still misattributed a rating whenever its file-key happened to COINCIDE with a destination-board
+  key that meant something else -- the code tried a key match before a label match, so once the
+  file's own `dimensions` section said a key now means a different label, that label was never
+  even consulted. A built-in dimension's key is fixed and identical on every board, and renaming a
+  dimension keeps its key too, so this wasn't a rare edge case: reviewer's real-browser repro was a
+  source board's "release"-keyed dimension relabeled to "Custom imported dimension" (i.e. someone
+  renamed their local copy of a starter dimension), landing its rating on the DESTINATION board's
+  own differently-labeled "release" dimension instead, in both Merge (silently wrong target) and
+  Replace (worse: the destination's real "release" dimension, correctly absent from the file's own
+  label list, gets removed as unmentioned, orphaning the rating that was wrongly written under its
+  key). Fixed by flipping the priority: whenever the file's `dimensions` section names a label for
+  that key, matching goes by LABEL only (existing-by-label, or pending creation via the same
+  `pendingDimensionKey()` mechanism as the first review round) -- key matching survives only as the
+  fallback for a squads-only file with no `dimensions` section at all (the only case with no label
+  to weigh instead, unaffected by this bug). Test-first: added 3 failing unit tests reproducing the
+  exact repro (label-wins-over-coincidental-key, its pending-creation resolution, and the Replace
+  variant with the correctly-orphaned board rating) before touching `board-export-import.js`
+  itself; rewrote one prior test (`buildSquadImportPlan() still matches a rating by key after the
+  board's dimension label has been renamed`) that had been asserting the OLD, now-disproven
+  priority -- that test's real premise (own-board re-import after a label rename) turns out to
+  already collide with item 3b's own established "dimensions match by label, not key" design even
+  before this fix (re-importing your own renamed dimension creates a same-key duplicate under the
+  old label either way, an already-accepted limitation, not something this fix changes); replaced
+  it with a test for the genuine surviving case, a squads-only file with no `dimensions` section.
+  No new Playwright scenario: this fix is entirely inside the pure planning function, and the
+  wiring path it runs through (pending-marker creation + resolution + sequencing) is already
+  proven end-to-end by the existing combined-import Playwright scenario from the first review
+  round -- per this repo's own TDD skill, a scenario that would only re-verify matching logic
+  already covered by a unit test doesn't earn its cost.
+  - Also: this environment's pre-baked Playwright Chromium cache was pinned to an older browser
+    revision (1194) than this repo's pinned `playwright==1.62.0` package expects (1234) --
+    `BrowserType.launch` failed outright with "Executable doesn't exist." Worked around locally by
+    symlinking the 1234-named paths the package looks up to the already-present 1194 binaries (no
+    network fetch, nothing added/changed in the repo itself) so the full suite could actually run
+    in this container; not a code change and not committed.
+  - Full suite green: 141/141 unit tests, all 47 Playwright files (67s, under the 78s baseline),
+    relay's protocol + storage suites passing.
