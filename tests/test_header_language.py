@@ -5,11 +5,13 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import build_page, test_output_path
 
 # Multi-language rollout Story 6 (see STATUS.md's backlog table): the app
-# header/nav chrome -- h1, tagline, model badge, sync status, "Join a
-# retro"/"Back to my retro", and the Tribe/Squad/Admin view switcher -- had
-# no story of its own and stayed untranslated even after Stories 1-5, since
-# it sits outside every <section> view container Stories 1/4 scoped their
-# dir/lang flip to. Flagged from a real screenshot review, not invented here.
+# header/nav chrome -- h1, tagline, model badge, sync status, "Back to my
+# retro", and the Tribe/Squad/Admin view switcher -- had no story of its own
+# and stayed untranslated even after Stories 1-5, since it sits outside
+# every <section> view container Stories 1/4 scoped their dir/lang flip to.
+# Flagged from a real screenshot review, not invented here. SEC-2 later
+# removed the "Join a retro" header button entirely (typed-code join is
+# gone -- link/QR only), so it's no longer part of this header chrome.
 #
 # The product/app NAME itself ("Squad Pulse") is a deliberate brand-name
 # pass-through: same literal value in en.js and he.js, still routed through
@@ -37,7 +39,6 @@ with sync_playwright() as p:
 
     print("=== defaults to English on first load ===")
     assert page.eval_on_selector("h1", "el=>el.textContent") == "Squad Pulse"
-    assert page.eval_on_selector("#joinCodeBtn", "el=>el.textContent") == "Join a retro"
     assert page.eval_on_selector("#backToRetroBtn", "el=>el.textContent") == "← Back to my retro"
     assert page.eval_on_selector('.view-btn[data-view="tribe"]', "el=>el.textContent") == "Tribe view"
     assert page.eval_on_selector('.view-btn[data-view="squad"]', "el=>el.textContent") == "Squad view"
@@ -63,13 +64,11 @@ with sync_playwright() as p:
     assert page.eval_on_selector("h1", "el=>el.textContent") == "Squad Pulse"
 
     print("=== the rest of the header chrome is now Hebrew ===")
-    join_he = page.eval_on_selector("#joinCodeBtn", "el=>el.textContent")
     back_he = page.eval_on_selector("#backToRetroBtn", "el=>el.textContent")
     tribe_btn_he = page.eval_on_selector('.view-btn[data-view="tribe"]', "el=>el.textContent")
     squad_btn_he = page.eval_on_selector('.view-btn[data-view="squad"]', "el=>el.textContent")
     admin_btn_he = page.eval_on_selector('.view-btn[data-view="admin"]', "el=>el.textContent")
-    print("join/back/view-switch (Hebrew):", join_he, "|", back_he, "|", tribe_btn_he, squad_btn_he, admin_btn_he)
-    assert join_he != "Join a retro" and join_he.strip()
+    print("back/view-switch (Hebrew):", back_he, "|", tribe_btn_he, squad_btn_he, admin_btn_he)
     assert back_he != "← Back to my retro" and back_he.strip()
     assert tribe_btn_he != "Tribe view" and tribe_btn_he.strip()
     assert squad_btn_he != "Squad view" and squad_btn_he.strip()
@@ -107,7 +106,6 @@ with sync_playwright() as p:
     page.click('.view-btn[data-view="tribe"]')
     page.evaluate("setSyncStatus(true)")
     assert page.eval_on_selector("#appHeader", 'el=>el.getAttribute("dir")') != "rtl"
-    assert page.eval_on_selector("#joinCodeBtn", "el=>el.textContent") == "Join a retro"
     assert page.eval_on_selector('.view-btn[data-view="admin"]', "el=>el.textContent") == "Admin"
     assert page.eval_on_selector("#tagline", "el=>el.textContent") == tagline_en
     assert page.eval_on_selector("#syncText", "el=>el.textContent") == "Live — synced across viewers"

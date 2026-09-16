@@ -37,18 +37,21 @@ with sync_playwright() as p:
     }""")
     sid = session_doc["id"]
     seed_js = "STORE['sessions/" + sid + "'] = " + json.dumps(session_doc["doc"]) + ";"
+    # SEC-2: `sid` is the session's relay ROOM id, not a typeable code any
+    # more -- a participant now only ever joins via the SM's real secret
+    # (carried by the join link/QR). relay-client.js's secretForRoom() is
+    # the same lookup renderSessionCardHtml() itself uses to build that
+    # link, so it's the real value, not a test-only stand-in.
+    secret = page.evaluate("SquadPulseRelay.secretForRoom(%r)" % sid)
 
-    # ============ participant device: join via the header button + typed code ============
+    # ============ participant device: join via the SM's real session secret
+    # (as if it had opened the join link/QR) ============
     join_out = build_page(seed_js, out_name="_test_retro_join_exit_return_participant.html")
     part = browser.new_page(viewport={"width": 420, "height": 900})
     errors = []
     part.on("pageerror", lambda e: errors.append(str(e)))
     part.goto("file://" + str(join_out.resolve()))
-    # click()/fill() below auto-wait for their own targets to become
-    # actionable -- no separate wait needed for either step.
-    part.click("#joinCodeBtn")
-    part.fill("#joinCodeInput", sid)
-    part.click("#joinCodeGo")
+    part.evaluate("joinSessionByCode(%r)" % secret)
     part.wait_for_selector(".direct-row")  # wait for the real signal, not a guessed delay
     assert part.eval_on_selector("#viewJoin", "el => el.hidden") is False
 
@@ -143,12 +146,10 @@ with sync_playwright() as p:
     fresh.goto("file://" + str(fresh_out.resolve()))
     # query_selector() below doesn't auto-wait -- wait for the real "app
     # booted" signal instead of guessing.
-    fresh.wait_for_selector('#joinCodeBtn', state="attached")
+    fresh.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
     back_btn_fresh = fresh.query_selector("#backToRetroBtn")
     print("back-to-retro button on a device that never joined (should be None or hidden):", back_btn_fresh)
     assert back_btn_fresh is None or fresh.eval_on_selector("#backToRetroBtn", "el => el.hidden") is True
-    print("Join a retro button still works normally:", fresh.query_selector("#joinCodeBtn") is not None)
-    assert fresh.eval_on_selector("#joinCodeBtn", "el => el.hidden") is False
     print("errors:", fresh_errors)
 
     print("=== ALL ERRORS: participant=", errors, "fresh=", fresh_errors)

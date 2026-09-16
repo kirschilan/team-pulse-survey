@@ -593,9 +593,13 @@ var state = {
   // selectedSquadId above.
   ui: { view:"tribe", selectedSquadId:null, locale:"en" },
   // set when this page was opened via a retro session's join link
-  // (?session=<id>) -- a device in this mode shows only the join screen,
-  // never the Tribe/Squad/Admin switcher, regardless of ui.view above
+  // (?session=<secret>) -- a device in this mode shows only the join screen,
+  // never the Tribe/Squad/Admin switcher, regardless of ui.view above. SEC-2:
+  // this is the session's SECRET, not its relay room id -- the room id is a
+  // one-way hash of it (see crypto.js's roomIdFor()), resolved asynchronously
+  // by listenJoinSession() (retro-join.js) into joinRoomId below.
   joinSessionId: null,
+  joinRoomId: null,
   joinSession: null,
   // set by listenJoinSession() when the relay itself couldn't be reached at
   // all (vs. reachable-but-no-such-doc) -- lets the join screen tell "can't
@@ -617,11 +621,11 @@ function getQueryParam(name){
 // Capture invitation intent before board-sync removes the team secret from the URL.
 var openedFromInvitation = ["session", "cofacilitate", "team"].some(function(key){ return getQueryParam(key) !== null; });
 state.joinSessionId = getQueryParam("session");
-// Story 10: a co-facilitator link (?cofacilitate=<code>) is a completely
-// different join shape from a participant's (?session=<id>) -- it boots
+// Story 10: a co-facilitator link (?cofacilitate=<secret>) is a completely
+// different join shape from a participant's (?session=<secret>) -- it boots
 // the NORMAL Tribe/Squad/Admin app (never join mode) and just attaches
-// this device to an already-open session by code, landing on Squad view
-// for that session's squad -- see retro-facilitator.js's
+// this device to an already-open session by its secret, landing on Squad
+// view for that session's squad -- see retro-facilitator.js's
 // coFacilitateSessionByCode(), called once from db.js's initDb().
 state.coFacilitateSessionId = getQueryParam("cofacilitate");
 (function loadUiPrefs(){

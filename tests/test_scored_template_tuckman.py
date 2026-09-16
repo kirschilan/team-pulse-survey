@@ -61,6 +61,9 @@ with sync_playwright() as p:
       })();
     """)
     sid = session_info["id"]
+    # SEC-2: joining uses the session's SECRET (?session=<secret>), not its
+    # relay room id.
+    secret = page.evaluate("SquadPulseRelay.secretForRoom(%r)" % sid)
     dims = sorted(session_info["doc"]["dimensions"], key=lambda d: d.get("order", 0))
     dim_keys = [d["key"] for d in dims]
     print("session dims (should be the 5 Tuckman stages in order):", dim_keys)
@@ -76,7 +79,7 @@ with sync_playwright() as p:
     pageA = browser.new_page(viewport={"width":420,"height":2600})
     errorsA = []
     pageA.on("pageerror", lambda e: errorsA.append(str(e)))
-    pageA.goto("file://" + str(good_out.resolve()) + "?session=" + sid)
+    pageA.goto("file://" + str(good_out.resolve()) + "?session=" + secret)
     # query_selector_all() below doesn't auto-wait -- wait for the real
     # "join screen rendered the statement form" signal instead of guessing
     # how long boot + the session-doc fetch take.

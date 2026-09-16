@@ -105,7 +105,11 @@ with sync_playwright() as p:
     # delivers its FIRST snapshot -- a genuine async gap the fake store
     # deliberately delays (unlike its later, synchronous notify() calls) --
     # so wait for the real "form rendered" signal instead of guessing.
-    page.evaluate("joinSessionByCode('%s')" % sid)
+    # SEC-2: joinSessionByCode() takes the session's SECRET, not its relay
+    # room id -- relay-client.js's secretForRoom() is the same lookup
+    # renderSessionCardHtml() itself uses to build the join link/QR.
+    secret = page.evaluate("SquadPulseRelay.secretForRoom(%r)" % sid)
+    page.evaluate("joinSessionByCode(%r)" % secret)
     page.wait_for_selector('.stmt-row', state="attached")
 
     print("=== participant: interleaved statement text is Hebrew, in the right order ===")

@@ -1,5 +1,6 @@
 from playwright.sync_api import sync_playwright
 import pathlib, json
+from urllib.parse import urlparse, parse_qs
 import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import build_page, test_output_path
@@ -74,6 +75,10 @@ with sync_playwright() as p:
     print("co-facilitate link:", cofac_link)
     assert "lang=he" in join_link
     assert "lang=he" in cofac_link
+    # SEC-2: a join URL's ?session= is the session's SECRET, not its relay
+    # room id -- extract it from the real, rendered link rather than the
+    # room id the fake store's own doc keys are (incidentally) named after.
+    secret = parse_qs(urlparse(join_link).query)["session"][0]
 
     print("=== switching the facilitator back to English drops &lang= from both links ===")
     # Same synchronous setView()/setLocale()/selectSquad() reasoning as above
@@ -97,7 +102,7 @@ with sync_playwright() as p:
     pageA = browser.new_page(viewport={"width": 420, "height": 1400})
     errorsA = []
     pageA.on("pageerror", lambda e: errorsA.append(str(e)))
-    pageA.goto("file://" + str(fresh_out.resolve()) + "?session=" + sid + "&lang=he")
+    pageA.goto("file://" + str(fresh_out.resolve()) + "?session=" + secret + "&lang=he")
     # eval_on_selector()/evaluate() below don't auto-wait -- a fresh device's
     # listenJoinSession() (retro-join.js) has a genuine async gap on its
     # FIRST onSnapshot delivery (the fake store deliberately delays it,
@@ -133,7 +138,7 @@ with sync_playwright() as p:
     # the JS context (and localStorage) is ready the instant it returns; the
     # page's own boot state doesn't matter since it's about to be reloaded.
     pageB.evaluate("localStorage.setItem('squadpulse:lang', 'en')")
-    pageB.goto("file://" + str(fresh_out2.resolve()) + "?session=" + sid + "&lang=he")
+    pageB.goto("file://" + str(fresh_out2.resolve()) + "?session=" + secret + "&lang=he")
     # Same genuine-async-gap reasoning as pageA above.
     pageB.wait_for_function("() => state.joinSession && state.joinSession.status === 'open'")
 

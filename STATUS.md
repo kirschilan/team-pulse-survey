@@ -126,20 +126,16 @@ every other device on the same team link.
   ephemeral, in-memory, per-session-code relay (dimensions snapshot + responses + status/
   revealMode/overrides/experimentNote), forgotten once the room empties. No database.
 - **Self-hosted relay + client-side encryption**, chosen deliberately over Firebase/Supabase.
-  Built 2026-09-11 — see `relay/` and `public/js/crypto.js`/`relay-client.js`. One deviation from
-  the original sketch, made deliberately: the encryption key is **derived from the session code
-  itself** (`SHA-256(code)`), not an independent random secret in a URL fragment. The reason is the
-  app's *primary* join path is typing the 6-character code by hand (the fix for a real iPhone
-  QR-handoff bug already in this codebase) — a path with no fragment to carry a separate key.
-  Deriving the key from the code keeps both join paths working. Be honest about what this does and
-  doesn't buy: real protection against passive network eavesdropping and against answers sitting in
-  plaintext in relay logs/memory/backups — but NOT protection against a relay operator who
-  deliberately computes the same public hash, since the code and the room id are the same value.
-  Full rationale and the researched Excalidraw/Vercel architecture this is based on:
-  `docs/standalone-plan.md`. **This code-is-the-key tradeoff is scoped to retro sessions
-  specifically** (app-generated random code, forgotten within minutes) — a team board's link-based
-  secret is deliberately NOT this model; see "Board sync"'s "Security fix" for why a persistent,
-  user-chosen team code would have been the wrong tradeoff there.
+  Built 2026-09-11 — see `relay/` and `public/js/crypto.js`/`relay-client.js`. Originally (until
+  SEC-2, below) the encryption key was **derived from the session code itself**
+  (`SHA-256(code)`), not an independent random secret in a URL fragment — because the app's
+  *primary* join path was typing the 6-character code by hand (the fix for a real iPhone QR-handoff
+  bug already in this codebase), a path with no fragment to carry a separate key. **SEC-2 (2026-09-16)
+  retired that premise**: the typed-code join path is gone, so retro sessions now use the exact
+  same secret/room-id split team boards already used (see the "Board sync" security fix below) —
+  a high-entropy secret, never typed, is what the key derives from, and the relay only ever sees a
+  separate, one-way-derived room id. Full rationale and the researched Excalidraw/Vercel
+  architecture this is based on: `docs/standalone-plan.md`.
 - **The relay is a plain standalone Node process, deployed as a genuinely separate small service —
   deliberately NOT a Vercel Function**, even though Vercel Functions gained native WebSocket support
   in 2026. Verified against Vercel's own docs before deciding: a new connection there isn't
@@ -155,25 +151,26 @@ every other device on the same team link.
 - **Retro-session feature behavior** (consolidation rule, anonymity model, per-template scoring)
   is specified and versioned in `docs/facilitated-retro-spec.md` — that file has its own session
   log for that feature's history; don't duplicate it here.
-- **SEC-2 (split from SEC-1), PO decision, NOT YET IMPLEMENTED as of 2026-09-16: drop the typed
+- **SEC-2 (split from SEC-1), PO decision, DONE as of 2026-09-16: dropped the typed
   6-character join code, QR/link only.** Product owner call: the "type this code in" join path
   (the join-code modal, and the code front-and-center on the session card — see Story 3 in
-  `docs/facilitated-retro-spec.md`) goes away entirely. A retro session is joined only by scanning
-  its QR code or opening its link — the existing "Or scan/share a link" fallback becomes the *only*
-  path, promoted out of "collapsed by default." This also retires the premise the code-derived-key
-  decision above leaned on ("the app's *primary* join path is typing the 6-character code by
-  hand") — whoever implements this should decide then whether the session key stays derived from
-  the code (now purely internal, never shown/typed) or moves to a separate link/QR-carried secret
-  to match the board-sync model (see "Security fix" below). Ship it with a security notice
-  wherever a join or co-facilitate link/QR is shown (the session card, the link/QR fallback, and
-  the co-facilitator link/QR from Story 10 — all carry the same exposure):
+  `docs/facilitated-retro-spec.md`) is gone entirely. A retro session is joined only by scanning
+  its QR code or opening its link — the "Or scan/share a link" fallback that used to sit behind a
+  collapsed `<details>` is now the *only* path, and is shown directly on the session card.
+  Implementer's call on the question the PO decision left open (whether the session key stays
+  code-derived or moves to a separate secret): moved to a separate secret, to match the board-sync
+  model exactly — see the "Self-hosted relay + client-side encryption" decision above. `crypto.js`'s
+  already-existing `generateSecret()`/`roomIdFor()` (built for board sync) are reused as-is, no new
+  crypto primitives needed. A security notice is shown wherever a join or co-facilitate link/QR is
+  shown (the join-link block and the co-facilitator `<details>` section — the session card's own raw
+  code display this originally also applied to is gone, so that's now two places, not three):
   > Note: Anyone with this link — or who scans this QR code — can see the data in this Squad Pulse
   > session. Share it only over a secure channel, and make sure the QR code itself is visible only
   > to people who should have access.
 
   (Tightened from the PO's original draft — "secure media" → "secure channel," and calling out that
-  the link and the QR grant identical access rather than treating them as separately risky.) Not
-  coded yet; tracked here for whoever picks up the implementation.
+  the link and the QR grant identical access rather than treating them as separately risky.) Full
+  implementation notes in this session's log entry below.
 - **"This retro has ended" vs. "this retro isn't open" is a real distinction, but only within the
   relay's own room lifetime — not indefinitely.** `closeSession()` writes `status:"closed"` instead
   of deleting the doc, so the join screen can say "ended" for as long as that doc still exists (the
@@ -2807,9 +2804,10 @@ not just in this repo's own tests.
     documentation (same convention as this file's own "historical mentions... left as-is" rule for
     old test names).
   - Also fixed in passing: a self-inflicted NUL byte in this file's own previous session-log entry
-    (quoting the buggy `" pending-dimension:"` marker literally embedded `csv.js`'s bug
-    into STATUS.md's own bytes, the same mistake, caught by the same `file`/`grep` symptom) --
-    escaped as readable text instead.
+    (a literal NUL-byte marker from csv.js's own bug got typed directly into this prose
+    instead of being described in words, embedding the same mistake into STATUS.md's own bytes,
+    caught by the same `file`/`grep` symptom) -- reworded to describe the marker instead of
+    quoting it literally.
   - **Flagged, not fixed (out of scope for this rename/cleanup):** `local-store.js`'s
     `triggerBrowserDownload()` hardcodes `Blob` type `text/csv;charset=utf-8` for every download
     regardless of what's actually being saved -- pre-existing (already wrong for the JSON export
@@ -2865,3 +2863,61 @@ not just in this repo's own tests.
   plus a security notice shown alongside the link/QR. Split out of a broader security backlog item
   (SEC-1 → SEC-2). Full detail, the exact notice copy, and the open question this raises for the
   session-key-derivation decision are in "Decisions locked in" above.
+- 2026-09-16 — Implemented SEC-2's full redesign (see "Decisions locked in" above): dropped the
+  typed-code join path entirely and moved retro sessions onto the SAME secret/room-id split
+  board sync already used, closing the open question the PO decision above left for the
+  implementer. `startSession()`/`coFacilitateSessionByCode()` (retro-facilitator.js) now generate/
+  resolve a real secret via crypto.js's existing `generateSecret()`/`roomIdFor()` (built for board
+  sync, reused as-is -- no new crypto primitives); `listenJoinSession()` (retro-join.js) resolves
+  the room id from `?session=<secret>` before subscribing. `relay-client.js`'s knownCodes
+  bookkeeping now stores `{roomId, secret}` pairs (was: bare codes, since the code WAS the key
+  before this) behind a `remember` param keyed on the PATH (`isSessionPath()`), not on whether a
+  secret was given -- the old `if(!secret) rememberCode(code)` guard would have stopped remembering
+  ANY session now that sessions always pass a secret, silently breaking "my own open session
+  survives a reload." Added `SquadPulseRelay.secretForRoom()` so `renderSessionCardHtml()` can
+  recover a session's secret for its join/co-facilitate links and QR codes -- `state.sessions`
+  itself can't carry it, since it's rebuilt wholesale from the relay's own necessarily secret-less
+  broad snapshot on every change. Removed the join-code modal, the header's "Join a retro" button,
+  and the session card's raw code display entirely; the join-link block that used to sit behind a
+  collapsed "Or scan/share a link" `<details>` is now always shown, with the PO's security notice
+  next to it and next to the co-facilitator link/QR. A stale/bad co-facilitate link now shows the
+  same visible error dialog the old modal did (previously only the modal's submit handler wired
+  that up -- db.js's boot-time `.catch()` just logged to the diagnostic panel, a materially worse
+  experience once the link became the ONLY way to co-facilitate). Updated the About dialog's
+  copy (no more "or enter their six-character code"), i18n (en.js/he.js -- removed
+  `join.codeModal.*`/`retro.codeBlock.*`, added `retro.shareSecurity.notice`), and
+  `docs/facilitated-retro-spec.md`'s Story 3 with a forward-reference to this change (its own
+  session log stopped being authoritative after the 2026-09-12 migration entry, per that file's own
+  note). Test-first per this repo's TDD skill: rewrote every Playwright scenario that drove the
+  typed-code modal (8 files: `test_cofacilitator_join.py`, `test_join_flow_language.py`,
+  `test_retro_join_exit_and_return.py`, `test_retro_join_flow.py`,
+  `test_relay_cross_device_sync.py`, `test_board_sync_finish_retro_convergence.py`,
+  `test_facilitator_language.py`, `test_retro_join_link_carries_team_sync.py`,
+  `test_view_switch_refreshes_stale_state.py`, `test_header_language.py`, `test_about_help.py` --
+  11 total, more than the 8 first found by grepping for the typed-code identifiers directly, since
+  three more only referenced the now-removed `.session-code`/`.session-code-block` CSS selectors)
+  to join/co-facilitate via the real link instead, extracting the session's secret from the
+  rendered `#sessionJoinLink`/`#coFacilitateLink` values (or, for fake-store-only scenarios,
+  `SquadPulseRelay.secretForRoom()` directly) rather than typing anything. Also found and fixed two
+  real regressions a plain grep for the typed-code identifiers wouldn't have caught: `app.js`'s
+  app-wide Escape-key handler still called `document.getElementById("joinCodeBackdrop")` .hidden
+  unconditionally (would have thrown on every Escape press, since that element no longer exists),
+  and `i18n.js`'s `RTL_SCOPED_CONTAINERS` still listed `"joinCodeBackdrop"` (harmless but dead).
+  - A first full-suite run surfaced a second, more interesting bug this file's own list above
+    couldn't have caught either: `SquadPulseRelay.secretForRoom()` returned null for every session
+    in the Playwright suite's fake-store-backed tests (most of them), because `getRoom()`'s own
+    `rememberCode()` call -- the ONLY thing that ever populated it -- lives inside relay-client.js,
+    which the fake store (`tests/fixtures/fake_store.html`) bypasses entirely by design (its own
+    `window.claude.use("db")` shim is a completely separate, unencrypted, non-relay-routed
+    implementation -- see its own header comment). Fixed by having `startSession()`/
+    `coFacilitateSessionByCode()` call `SquadPulseRelay.rememberCode(roomId, secret)` EXPLICITLY the
+    moment they resolve a room id, rather than relying on it as a side effect of a relay write that
+    may never actually reach relay-client.js. This also surfaced 6 MORE test files needing the same
+    fix as the 11 above, invisible to a grep for typed-code identifiers because they never used the
+    modal at all -- they called `joinSessionByCode()`/built a `?session=` URL directly with the
+    session's raw relay room id (correct under the old code-is-the-key model, wrong now):
+    `test_join_link_carries_language.py`, `test_retro_statement_survey_submission.py`,
+    `test_hebrew_rtl_coverage.py`, `test_retro_direct_rating_flow.py`,
+    `test_retro_statement_language.py`, `test_scored_template_tuckman.py`.
+  - Full suite green: 140/140 unit tests, all 48 Playwright files (48s, under the 78s baseline),
+    relay's protocol + storage suites passing.

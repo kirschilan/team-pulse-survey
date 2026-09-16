@@ -31,34 +31,52 @@ var SquadPulseRelay = (function(){
   var broadListeners = [];
   function notifyBroadListeners(){ broadListeners.forEach(function(cb){ cb(); }); }
 
+  // SEC-2: retro sessions now use the same secret/roomId split as team
+  // boards (see crypto.js's header comment) -- a room's own id buys nothing
+  // without the secret the key derives from, so this list stores both, not
+  // just the routing id it used to hold back when the code WAS the key.
+  // Only ever populated for "sessions/*" rooms (see getRoom()'s `remember`
+  // param below) -- a board room's secret already lives in board-sync.js's
+  // own TEAM_SECRET_KEY, and mixing the two lists was a real bug once
+  // (see getRoom()'s own comment on why board rooms must never land here).
   function loadKnownCodes(){
     try{ return JSON.parse(localStorage.getItem(KNOWN_CODES_KEY) || "[]"); }catch(e){ return []; }
   }
-  function rememberCode(code){
+  function rememberCode(roomId, secret){
     try{
       var codes = loadKnownCodes();
-      if(codes.indexOf(code) === -1){ codes.push(code); localStorage.setItem(KNOWN_CODES_KEY, JSON.stringify(codes)); }
+      if(!codes.some(function(c){ return c.roomId===roomId; })){
+        codes.push({ roomId: roomId, secret: secret });
+        localStorage.setItem(KNOWN_CODES_KEY, JSON.stringify(codes));
+      }
     }catch(e){ /* localStorage unavailable -- this device just won't rediscover the session after a reload */ }
   }
-  function forgetCode(code){
+  function forgetCode(roomId){
     try{
-      var codes = loadKnownCodes().filter(function(c){ return c!==code; });
+      var codes = loadKnownCodes().filter(function(c){ return c.roomId!==roomId; });
       localStorage.setItem(KNOWN_CODES_KEY, JSON.stringify(codes));
     }catch(e){ /* ditto */ }
   }
+  // renderSessionCardHtml() (retro-facilitator.js) needs a session's secret
+  // to build its join/co-facilitate links and QR codes -- `state.sessions`
+  // itself can't carry it (it's rebuilt wholesale from the relay's own,
+  // necessarily secret-less, broad snapshot on every change -- see db.js).
+  // Any session this device has any business rendering a full card for was
+  // necessarily reached via getRoom(roomId, secret, true) already (starting
+  // it or co-facilitating it), so it's always in this same list.
+  function secretForRoom(roomId){
+    var entry = loadKnownCodes().filter(function(c){ return c.roomId===roomId; })[0];
+    return entry ? entry.secret : null;
+  }
 
   function isSessionPath(path){ return path.split("/")[0] === "sessions"; }
-  // "boards/<roomId>[/...]" is the same wire mechanism as a retro session,
-  // aimed at a different room namespace: an opt-in, durable, whole-board
-  // sync (see board-sync.js). `roomId` is a one-way hash of a high-entropy
-  // secret shared only via link/QR -- NOT the secret itself, and not
-  // user-typed (see crypto.js's roomIdFor()/generateSecret() and
-  // STATUS.md's "Board sync" plan for why: a session's code can double as
-  // its own key because it's random and short-lived, but a team's code
-  // would be user-chosen and long-lived, which is a real vulnerability
-  // once the board it protects is durably stored). The relay itself never
-  // inspects a path's meaning either way -- it just routes by whatever
-  // room code opened the connection (see relay/server.js).
+  // "boards/<roomId>[/...]" is the same wire mechanism a retro session uses
+  // (see crypto.js's generateSecret()/roomIdFor()), aimed at a different
+  // room namespace: an opt-in, durable, whole-board sync (see
+  // board-sync.js). `roomId` is a one-way hash of a high-entropy secret
+  // shared only via link/QR -- NOT the secret itself, and not user-typed.
+  // The relay itself never inspects a path's meaning either way -- it just
+  // routes by whatever room code opened the connection (see relay/server.js).
   function isBoardPath(path){ return path.split("/")[0] === "boards"; }
   function codeFromPath(path){ return path.split("/")[1]; }
 
@@ -206,33 +224,29 @@ var SquadPulseRelay = (function(){
     ws.addEventListener("error", function(){ /* the close handler above still fires and retries/gives up */ });
   }
 
-  // `secret`, when given, is what the encryption key derives from instead
-  // of `code` itself -- board-sync.js's whole reason for existing (see
-  // crypto.js's generateSecret()/roomIdFor()): `code` there is a one-way
-  // hash of the real secret, safe to use for routing since it can't be run
-  // backward, while `secret` never touches this room object's own `code`
-  // field or anything sent to the relay. Retro sessions never pass one,
-  // so `secret || code` preserves their exact original behavior --
-  // the code IS the key, unchanged.
-  function getRoom(code, secret){
+  // `secret` is what the encryption key derives from -- board rooms and,
+  // since SEC-2, session rooms too (see crypto.js's header comment):
+  // `code` is a one-way hash of the real secret, safe to use for routing
+  // since it can't be run backward, while `secret` never touches this room
+  // object's own `code` field or anything sent to the relay.
+  //
+  // `remember`, when true, persists {roomId: code, secret: secret} to this
+  // device's own knownCodes list (see rememberCode() above) so
+  // subscribeBroadSessions() can reconnect to it after a reload. Callers
+  // pass this based on the PATH, not on whether a secret was given (see
+  // docRef/collRef below) -- board rooms must never land in this list. A
+  // board room's own room id landing here let subscribeBroadSessions's
+  // blind reconnect loop create THIS room FIRST on a later page load,
+  // before board-sync.js's own correctly-secreted call ever ran -- and
+  // since the room object created by whichever call runs first is what
+  // every later getRoom(code) call for that code reuses (the cache check
+  // just above), a wrong key stuck for the rest of the page's life. Found
+  // exactly this way: two team-synced devices, after either one had ever
+  // joined a retro session and then reloaded, could no longer decrypt each
+  // other's board pushes at all.
+  function getRoom(code, secret, remember){
     if(rooms[code]) return rooms[code];
-    // Only remember plain retro-session codes here, for
-    // subscribeBroadSessions()'s reconnect-known-codes-on-boot logic below
-    // -- never a board room's id. A board room is always reached WITH a
-    // real secret (board-sync.js's push/hydrate/subscribe all pass one);
-    // a bare code with none is exactly the session case this bookkeeping
-    // is for. Remembering a board room id here too let
-    // subscribeBroadSessions's blind `getRoom(code)` loop (no secret)
-    // create THIS room FIRST on a later page load, before board-sync.js's
-    // own correctly-secreted call ever ran -- and since the room object
-    // created by whichever call runs first is what every later getRoom(
-    // code) call for that code reuses (the cache check just above), that
-    // wrong key (derived from the room id instead of the real secret)
-    // stuck for the rest of the page's life. Found exactly this way: two
-    // team-synced devices, after either one had ever joined a retro
-    // session (which is what first puts anything in knownCodes) and then
-    // reloaded, could no longer decrypt each other's board pushes at all.
-    if(!secret) rememberCode(code);
+    if(remember) rememberCode(code, secret);
 
     var room = {
       code: code, docs: {},
@@ -269,7 +283,7 @@ var SquadPulseRelay = (function(){
     }
 
     var keyPromise = SquadPulseCrypto.deriveKey(secret || code);
-    room.keyPromise = keyPromise; // putDoc() below reuses this rather than re-deriving from room.code, which is only the encryption key for a codeless (session) room -- see the getRoom() comment above
+    room.keyPromise = keyPromise; // putDoc() below reuses this rather than re-deriving
     connectRoom(room, keyPromise);
 
     return room;
@@ -360,7 +374,7 @@ var SquadPulseRelay = (function(){
   }
 
   function docRef(path, secret){
-    var room = getRoom(codeFromPath(path), secret);
+    var room = getRoom(codeFromPath(path), secret, isSessionPath(path));
     return {
       id: path.split("/").pop(), path: path,
       get: function(){
@@ -409,7 +423,7 @@ var SquadPulseRelay = (function(){
       doc: function(id){ return docRef(path + "/" + (id || ("auto"+Math.random().toString(36).slice(2))), secret); },
       add: function(data){
         var id = "auto"+Math.random().toString(36).slice(2);
-        var room = getRoom(codeHere, secret);
+        var room = getRoom(codeHere, secret, isSessionPath(path));
         return room.ready.then(function(){
           if(room.unavailable) return Promise.reject(unavailableError(room));
           return putDoc(room, path+"/"+id, data).then(function(){ return docRef(path+"/"+id, secret); });
@@ -418,14 +432,14 @@ var SquadPulseRelay = (function(){
       orderBy: function(){ return this; }, where: function(){ return this; }, limit: function(){ return this; },
       get: function(){
         if(codeHere){
-          var room = getRoom(codeHere, secret);
+          var room = getRoom(codeHere, secret, isSessionPath(path));
           return room.ready.then(function(){ return buildSnapshot(room, path); });
         }
         return Promise.resolve(broadSessionsSnapshot());
       },
       onSnapshot: function(next, err){
         if(codeHere){
-          var room = getRoom(codeHere, secret);
+          var room = getRoom(codeHere, secret, isSessionPath(path));
           var l = { path: path, cb: next };
           room.collListeners.push(l);
           room.ready.then(function(){ next(buildSnapshot(room, path)); });
@@ -448,10 +462,10 @@ var SquadPulseRelay = (function(){
   // scope for this step.
   function broadSessionsSnapshot(){
     var docs = [];
-    loadKnownCodes().forEach(function(code){
-      var room = rooms[code];
-      var d = room && room.docs["sessions/"+code];
-      if(d) docs.push({ id: code, exists:true, data: function(){ return deepFreezeClone(d); } });
+    loadKnownCodes().forEach(function(entry){
+      var room = rooms[entry.roomId];
+      var d = room && room.docs["sessions/"+entry.roomId];
+      if(d) docs.push({ id: entry.roomId, exists:true, data: function(){ return deepFreezeClone(d); } });
     });
     return { docs: docs, size: docs.length, empty: docs.length===0, metadata: { fromCache:false, hasPendingWrites:false } };
   }
@@ -466,10 +480,18 @@ var SquadPulseRelay = (function(){
   function subscribeBroadSessions(next){
     var cb = function(){ next(broadSessionsSnapshot()); };
     broadListeners.push(cb);
-    loadKnownCodes().forEach(function(code){ getRoom(code); });
+    loadKnownCodes().forEach(function(entry){ getRoom(entry.roomId, entry.secret, true); });
     cb();
     return function(){ broadListeners = broadListeners.filter(function(x){ return x!==cb; }); };
   }
 
-  return { isSessionPath: isSessionPath, isBoardPath: isBoardPath, doc: docRef, collection: collRef };
+  // rememberCode is also exported directly (not just used internally by
+  // getRoom()'s own `remember` param) -- retro-facilitator.js calls it
+  // explicitly the moment it generates/resolves a session's secret, so the
+  // {roomId, secret} pairing is recorded even when `state.db` isn't this
+  // module at all (e.g. the Playwright suite's fake local store, which
+  // implements its own doc()/collection() and never touches getRoom()).
+  // Relying only on getRoom()'s implicit side effect would leave
+  // secretForRoom() with nothing to find in that case.
+  return { isSessionPath: isSessionPath, isBoardPath: isBoardPath, doc: docRef, collection: collRef, secretForRoom: secretForRoom, rememberCode: rememberCode };
 })();

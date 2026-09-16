@@ -127,8 +127,11 @@ function langParamFor(){
   var locale = (state.ui && state.ui.locale) || "en";
   return locale === "en" ? "" : "&lang=" + encodeURIComponent(locale);
 }
-function joinUrlFor(sessionId){
-  return window.location.origin + window.location.pathname + "?session=" + encodeURIComponent(sessionId) + teamParamFor() + langParamFor();
+// SEC-2: `secret` is the session's high-entropy secret (crypto.js's
+// generateSecret()), not its relay room id -- see crypto.js's header
+// comment and retro-facilitator.js's startSession().
+function joinUrlFor(secret){
+  return window.location.origin + window.location.pathname + "?session=" + encodeURIComponent(secret) + teamParamFor() + langParamFor();
 }
 // Story 10: a SEPARATE link from joinUrlFor() above -- opening this one
 // attaches a device as a co-facilitator (full facilitator view) rather
@@ -136,8 +139,8 @@ function joinUrlFor(sessionId){
 // and retro-facilitator.js's coFacilitateSessionByCode(). Carries the same
 // team param and for the same reason: a co-facilitator needs the
 // facilitator's real board locally too, not just the session's own data.
-function coFacilitateUrlFor(sessionId){
-  return window.location.origin + window.location.pathname + "?cofacilitate=" + encodeURIComponent(sessionId) + teamParamFor() + langParamFor();
+function coFacilitateUrlFor(secret){
+  return window.location.origin + window.location.pathname + "?cofacilitate=" + encodeURIComponent(secret) + teamParamFor() + langParamFor();
 }
 function slugify(s, fallback){
   var slug = String(s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");

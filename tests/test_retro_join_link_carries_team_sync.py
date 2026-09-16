@@ -1,5 +1,6 @@
 from playwright.sync_api import sync_playwright
 import pathlib, subprocess, os, time, socket
+from urllib.parse import urlparse, parse_qs
 import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import write_plain_index
@@ -112,14 +113,15 @@ try:
         a.click('.view-btn[data-view="squad"]')
         a.click('.squad-pick-btn[data-id="squad-1"]')
         a.click("#startSessionBtn")
-        a.wait_for_selector(".session-code")
-        code = a.eval_on_selector(".session-code", "el=>el.textContent")
+        # real relay round trip (generateSecret()/roomIdFor() are real
+        # crypto.subtle calls too) -- wait for it, don't guess how long.
+        a.wait_for_function("() => document.getElementById('sessionJoinLink') && document.getElementById('sessionJoinLink').value.length > 0")
         join_link = a.eval_on_selector("#sessionJoinLink", "el=>el.value")
-        print("session code:", code)
         print("join link:", join_link)
 
         print("=== the join link carries the facilitator's OWN team secret, distinct from the plain team link ===")
-        assert "?session=" + code in join_link
+        secret = parse_qs(urlparse(join_link).query)["session"][0]
+        assert secret
         assert "team=" + a_secret in join_link, "the join link should carry the facilitator's current team secret"
         assert join_link != team_link, "the join link and the plain team link are not the same URL"
 
@@ -197,11 +199,10 @@ try:
         a.click('.view-btn[data-view="squad"]')
         a.click('.squad-pick-btn[data-id="squad-3"]')
         a.click("#startSessionBtn")
-        a.wait_for_selector(".session-code")
-        code2 = a.eval_on_selector(".session-code", "el=>el.textContent")
+        a.wait_for_function("() => document.getElementById('sessionJoinLink') && document.getElementById('sessionJoinLink').value.length > 0")
         join_link2 = a.eval_on_selector("#sessionJoinLink", "el=>el.value")
         print("disconnected facilitator's join link:", join_link2)
-        assert "?session=" + code2 in join_link2
+        assert "?session=" in join_link2
         assert "team=" not in join_link2, "no team secret to carry -- must not force one onto a joining device"
 
         c_ctx = browser.new_context(viewport={"width": 420, "height": 1400})
