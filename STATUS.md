@@ -179,6 +179,30 @@ every other device on the same team link.
   and a code that never existed are the same thing again — there is no way to keep that distinction
   forever without adding real persistence, which is exactly the trade-off already rejected for the
   relay itself (see the Vercel Function decision above). This is the deliberate stopping point.
+- **SEC-3 (STATUS.md's "Security hardening backlog"), DONE as of 2026-09-16, except one directive
+  left OPEN on purpose: browser-hardening headers.** Added a Content-Security-Policy (as a `<meta
+  http-equiv>` in `index.html`, not just a `vercel.json` header, so it's enforced over `file://` and
+  on a plain self-hosted static server too, not only on Vercel), `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy`, and a `Permissions-Policy` locking down camera/microphone/geolocation/payment/
+  usb/magnetometer/gyroscope/accelerometer (`vercel.json` — these three have no meta-tag equivalent,
+  so a self-hoster serving `public/` from their own web server needs to set them there themselves;
+  `relay/README.md`'s deployment docs are the place to point them if this ever comes up).
+  `frame-ancestors`/`X-Frame-Options` are **deliberately NOT set** — unlike the crypto question SEC-2
+  left for its own implementer to decide, the SEC-3 backlog item explicitly named permitted embedding
+  origins an **open product decision**, not an implementer's call, and `README.md`'s own "Deploying
+  for real" section lists "embedding this somewhere public (e.g. a subdomain + iframe on a website)"
+  as one of exactly two intended deployment shapes — shipping any default here (even `SAMEORIGIN`)
+  risks silently breaking that for every deployment. Whoever the PO designates should decide which
+  origins (if any) are allowed to embed this, then add `frame-ancestors <origins>` to both the CSP
+  meta tag and a `X-Frame-Options` header compatible with it (see the SEC-3 backlog item's own
+  wording in the PR that recorded it for the exact acceptance criteria). Getting the CSP's
+  `script-src 'self'` to hold with zero `'unsafe-inline'`/hashes required moving `index.html`'s one
+  inline `<script>` (the relay-URL fallback) into `public/js/relay-url-fallback.js` — a pure move, no
+  behavior change. `style-src` still needs `'unsafe-inline'`: the app's JS-generated markup uses
+  `style="..."` attributes extensively (rewriting all of them to CSS classes is a separate, much
+  larger change, out of scope here). `connect-src` allows the `ws:`/`wss:` schemes rather than a
+  specific host, since the relay's origin is deployment-configurable (`SQUAD_PULSE_RELAY_URL`), not
+  knowable at build time.
 
 ## Board sync (major change, DONE — default-on as of 2026-09-13)
 
@@ -2921,3 +2945,29 @@ not just in this repo's own tests.
     `test_retro_statement_language.py`, `test_scored_template_tuckman.py`.
   - Full suite green: 140/140 unit tests, all 48 Playwright files (48s, under the 78s baseline),
     relay's protocol + storage suites passing.
+- 2026-09-16 — Implemented SEC-3 (browser hardening headers), except the one directive the backlog
+  item itself flagged as an open PRODUCT decision rather than an implementer's call -- see "Decisions
+  locked in" above for the full writeup and why `frame-ancestors`/`X-Frame-Options` stay unset.
+  Shipped: a CSP as an `index.html` `<meta http-equiv>` tag (enforced over `file://` and on any
+  self-hosted static server, not just Vercel) plus `X-Content-Type-Options`/`Referrer-Policy`/
+  `Permissions-Policy` via `vercel.json` (no meta-tag equivalent for those three). Getting
+  `script-src 'self'` to hold with zero `'unsafe-inline'` required two things: moving `index.html`'s
+  one inline `<script>` (the relay-URL fallback) into `public/js/relay-url-fallback.js`, and a real
+  refactor to `tests/fixtures/build_page.py` -- its `build_page()`/`build_custom_page()`/
+  `write_plain_index()` all spliced raw inline `<script>` blocks (the fake store, the
+  welcome-already-seen seed, a caller's own bespoke fake db) directly into test pages' `<head>`,
+  which is exactly what a real `script-src 'self'` CSP blocks; a first attempt at this CSP silently
+  broke nearly the entire suite (every fake-store test hung on the welcome dialog it could no longer
+  suppress, since even THAT one-line seed script is inline). Fixed by writing each of those scripts
+  to a same-origin sibling `.js` file instead (`_write_sibling_script()`) and referencing it via
+  `<script src>` -- every existing caller's signature is unchanged, `.gitignore` extended to cover
+  the new `public/_test_*.js` outputs alongside the existing `.html` ones. Test-first per this repo's
+  TDD skill: `tests/unit/test_security_headers.js` (plain JSON assertions on `vercel.json` -- no
+  browser needed, and the one place `X-Content-Type-Options`/`Permissions-Policy` are testable at
+  all) and `tests/test_security_headers.py` (a real Playwright walkthrough -- boot, language switch,
+  About, start a session, render its QR, load a starter template, join as a participant -- listening
+  for the browser's own `securitypolicyviolation` events and asserting zero fired; verified this
+  wasn't a vacuous check by temporarily breaking `connect-src` and confirming the test caught it
+  before the walkthrough even ran). Full suite green: 144/144 unit tests, all 49 Playwright files
+  (50s, under the 78s baseline -- one more file than the last entry's 48, this one's own new test),
+  relay's protocol + storage suites passing.

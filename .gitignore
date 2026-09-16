@@ -1,7 +1,11 @@
 # Test-run artifacts (Playwright preview pages get written into public/ so
 # their relative asset links resolve; screenshots/scratch fixtures go to
 # tests/output/). Neither is a build product anyone ships or needs to keep.
+# The .js sibling files are build_page.py's externalized fake-store/seed
+# scripts (SEC-3: split out of inline <script> tags so test pages satisfy
+# the same script-src 'self' CSP the real app ships -- see its own comment).
 public/_test_*.html
+public/_test_*.js
 tests/output/
 __pycache__/
 *.pyc
