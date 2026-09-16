@@ -124,6 +124,16 @@ Each story is independently demoable before the next starts.
      can't be relied on to survive that hand-off on every device, the session code was added as the
      primary, environment-proof join method (pure in-page state, no URL dependency), demoting the QR/
      link to a secondary convenience.
+   - **Superseded (SEC-2, see STATUS.md's locked decisions and this file's own session log below):**
+     the typed-code modal and the code-front-and-center card display described above are GONE. A
+     product owner call, made after a security review flagged that this code also doubled as the
+     session's AES-256-GCM encryption key (a real gap once it was generated with `Math.random()`, and
+     low-entropy regardless of RNG quality), retired the iPhone-hand-off premise this whole section was
+     built on: a retro session is joined only by scanning its QR code or opening its link now, and that
+     link/QR is shown directly on the session card (no longer a collapsed fallback). The session's key
+     now derives from a separate, never-shown, high-entropy secret, matching the split team boards
+     already used (see crypto.js's `generateSecret()`/`roomIdFor()`) — the relay only ever sees a
+     one-way-derived room id, not the secret itself.
 4. **Individual submission — one dysfunction, end to end — DONE.** Re-scoped down from "all 15
    questions at once" after Story 3's integration bug (QR/join breaking on a real device) showed the
    cost of building the whole submission flow before proving the join→submit→facilitator loop actually

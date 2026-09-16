@@ -225,6 +225,9 @@ with sync_playwright() as p:
       })();
     """)
     sid = session_info["id"]
+    # SEC-2: joining uses the session's SECRET (?session=<secret>), not its
+    # relay room id.
+    secret = page.evaluate("SquadPulseRelay.secretForRoom(%r)" % sid)
     print("session started:", sid, "dims:", [d["key"] for d in session_info["doc"]["dimensions"]])
 
     # ---- participant device joins the same (direct-rating) retro ----
@@ -234,7 +237,7 @@ with sync_playwright() as p:
     pageP = browser.new_page(viewport={"width": 420, "height": 1400})
     errorsP = []
     pageP.on("pageerror", lambda e: errorsP.append(str(e)))
-    pageP.goto("file://" + str(participant_path.resolve()) + "?session=" + sid)
+    pageP.goto("file://" + str(participant_path.resolve()) + "?session=" + secret)
     pageP.wait_for_selector('.direct-row[data-dim="release"] .stmt-text', state="attached")
 
     print("=== retro-join.js: direct-row dim label + green/red anchors ===")

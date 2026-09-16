@@ -140,14 +140,28 @@ try:
         a.click('.view-btn[data-view="squad"]')
         a.click('.squad-pick-btn[data-id="squad-1"]')
         a.click("#startSessionBtn")
-        a.wait_for_selector(".session-code")  # real relay round trip -- wait for it, don't guess how long
-        code1 = a.eval_on_selector(".session-code", "el=>el.textContent")
-        assert code1 and len(code1) == 6
-        print("session 1 code:", code1)
+        # real relay round trip (generateSecret()/roomIdFor() are real
+        # crypto.subtle calls too) -- wait for it, don't guess how long.
+        a.wait_for_function("() => document.getElementById('sessionJoinLink') && document.getElementById('sessionJoinLink').value.length > 0")
+        join_link1 = a.eval_on_selector("#sessionJoinLink", "el=>el.value")
+        print("session 1 join link:", join_link1)
 
-        b.click("#joinCodeBtn")
-        b.fill("#joinCodeInput", code1)
-        b.click("#joinCodeGo")
+        # SEC-2: co-facilitating/joining is only ever reachable by opening
+        # the real link now (no typed-code modal) -- device B is already
+        # team-synced, and join_link1 carries device A's team secret too, so
+        # this one navigation both re-confirms the team and joins the session.
+        #
+        # Codex review on PR #14 (P1): join_link1 and device B's CURRENT
+        # document (team_link, just above) share the same URL apart from
+        # their fragment (#session=...&team=... vs #team=...) -- a plain
+        # goto() between two URLs that differ only by fragment is a same-
+        # document "fragment navigation" per the HTML spec (true in every
+        # real browser, not a Playwright quirk), so it would never actually
+        # reload/rerun the app's boot-time fragment parsing. An intermediate
+        # about:blank forces the real, full navigation this scenario means
+        # to exercise.
+        b.goto("about:blank")
+        b.goto(join_link1, wait_until="domcontentloaded")
         b.wait_for_selector(".direct-row")  # real relay round trip -- wait for it, don't guess how long
         rows = b.query_selector_all(".direct-row")
         assert len(rows) > 0, "device B should see squad-1's real dimensions over the relay"
@@ -206,14 +220,18 @@ try:
         print("=== round 2: reverse roles -- device B facilitates squad-2, device A answers ===")
         b.click('.squad-pick-btn[data-id="squad-2"]')
         b.click("#startSessionBtn")
-        b.wait_for_selector(".session-code")  # real relay round trip -- wait for it, don't guess how long
-        code2 = b.eval_on_selector(".session-code", "el=>el.textContent")
-        assert code2 and len(code2) == 6 and code2 != code1
-        print("session 2 code:", code2)
+        b.wait_for_function("() => document.getElementById('sessionJoinLink') && document.getElementById('sessionJoinLink').value.length > 0")
+        join_link2 = b.eval_on_selector("#sessionJoinLink", "el=>el.value")
+        print("session 2 join link:", join_link2)
+        assert join_link2 != join_link1
 
-        a.click("#joinCodeBtn")
-        a.fill("#joinCodeInput", code2)
-        a.click("#joinCodeGo")
+        # Codex review on PR #14 (P1): same fragment-only-navigation issue as
+        # round 1's identical b.goto(join_link1) above -- device A's current
+        # document (INDEX_URL, no fragment) and join_link2 share the same
+        # URL apart from the fragment, so this needs the same about:blank
+        # step to force a real reload.
+        a.goto("about:blank")
+        a.goto(join_link2, wait_until="domcontentloaded")
         a.wait_for_selector(".direct-row")  # real relay round trip -- wait for it, don't guess how long
         rows2 = a.query_selector_all(".direct-row")
         assert len(rows2) > 0, "device A should see squad-2's real dimensions over the relay"

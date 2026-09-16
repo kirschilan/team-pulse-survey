@@ -142,13 +142,24 @@ async function initDb(){
       pushBoardSnapshotIfConnected();
     }, function(err){ diag("Config snapshot listener error: " + (err && err.code ? err.code : String(err))); });
 
-    // Story 10: a co-facilitator link (?cofacilitate=<code>) attaches this
+    // Story 10: a co-facilitator link (?cofacilitate=<secret>) attaches this
     // device to an already-open session once everything above is wired up
     // (squads/dimensions listeners registered, so Squad view has real data
     // to show the moment coFacilitateSessionByCode() selects the squad).
+    // SEC-2: this is now the ONLY way to co-facilitate (the typed-code
+    // modal that used to also reach coFacilitateSessionByCode() -- and
+    // show this same error dialog on failure -- is gone), so a stale or
+    // mistyped/mis-shared link needs the same visible error here, not just
+    // a line in the diagnostic log nobody but a facilitator debugging a
+    // report would ever open.
     if(state.coFacilitateSessionId){
       coFacilitateSessionByCode(state.coFacilitateSessionId).catch(function(err){
         diag("Co-facilitate attach failed: " + (err && err.message ? err.message : String(err)));
+        openConfirm(
+          t("retro.coFacilitate.errorTitle"),
+          (err && err.message) ? err.message : t("retro.coFacilitate.errorFallback"),
+          function(){}, t("common.ok")
+        );
       });
     }
 

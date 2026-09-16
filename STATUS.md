@@ -126,20 +126,16 @@ every other device on the same team link.
   ephemeral, in-memory, per-session-code relay (dimensions snapshot + responses + status/
   revealMode/overrides/experimentNote), forgotten once the room empties. No database.
 - **Self-hosted relay + client-side encryption**, chosen deliberately over Firebase/Supabase.
-  Built 2026-09-11 — see `relay/` and `public/js/crypto.js`/`relay-client.js`. One deviation from
-  the original sketch, made deliberately: the encryption key is **derived from the session code
-  itself** (`SHA-256(code)`), not an independent random secret in a URL fragment. The reason is the
-  app's *primary* join path is typing the 6-character code by hand (the fix for a real iPhone
-  QR-handoff bug already in this codebase) — a path with no fragment to carry a separate key.
-  Deriving the key from the code keeps both join paths working. Be honest about what this does and
-  doesn't buy: real protection against passive network eavesdropping and against answers sitting in
-  plaintext in relay logs/memory/backups — but NOT protection against a relay operator who
-  deliberately computes the same public hash, since the code and the room id are the same value.
-  Full rationale and the researched Excalidraw/Vercel architecture this is based on:
-  `docs/standalone-plan.md`. **This code-is-the-key tradeoff is scoped to retro sessions
-  specifically** (app-generated random code, forgotten within minutes) — a team board's link-based
-  secret is deliberately NOT this model; see "Board sync"'s "Security fix" for why a persistent,
-  user-chosen team code would have been the wrong tradeoff there.
+  Built 2026-09-11 — see `relay/` and `public/js/crypto.js`/`relay-client.js`. Originally (until
+  SEC-2, below) the encryption key was **derived from the session code itself**
+  (`SHA-256(code)`), not an independent random secret in a URL fragment — because the app's
+  *primary* join path was typing the 6-character code by hand (the fix for a real iPhone QR-handoff
+  bug already in this codebase), a path with no fragment to carry a separate key. **SEC-2 (2026-09-16)
+  retired that premise**: the typed-code join path is gone, so retro sessions now use the exact
+  same secret/room-id split team boards already used (see the "Board sync" security fix below) —
+  a high-entropy secret, never typed, is what the key derives from, and the relay only ever sees a
+  separate, one-way-derived room id. Full rationale and the researched Excalidraw/Vercel
+  architecture this is based on: `docs/standalone-plan.md`.
 - **The relay is a plain standalone Node process, deployed as a genuinely separate small service —
   deliberately NOT a Vercel Function**, even though Vercel Functions gained native WebSocket support
   in 2026. Verified against Vercel's own docs before deciding: a new connection there isn't
@@ -155,25 +151,26 @@ every other device on the same team link.
 - **Retro-session feature behavior** (consolidation rule, anonymity model, per-template scoring)
   is specified and versioned in `docs/facilitated-retro-spec.md` — that file has its own session
   log for that feature's history; don't duplicate it here.
-- **SEC-2 (split from SEC-1), PO decision, NOT YET IMPLEMENTED as of 2026-09-16: drop the typed
+- **SEC-2 (split from SEC-1), PO decision, DONE as of 2026-09-16: dropped the typed
   6-character join code, QR/link only.** Product owner call: the "type this code in" join path
   (the join-code modal, and the code front-and-center on the session card — see Story 3 in
-  `docs/facilitated-retro-spec.md`) goes away entirely. A retro session is joined only by scanning
-  its QR code or opening its link — the existing "Or scan/share a link" fallback becomes the *only*
-  path, promoted out of "collapsed by default." This also retires the premise the code-derived-key
-  decision above leaned on ("the app's *primary* join path is typing the 6-character code by
-  hand") — whoever implements this should decide then whether the session key stays derived from
-  the code (now purely internal, never shown/typed) or moves to a separate link/QR-carried secret
-  to match the board-sync model (see "Security fix" below). Ship it with a security notice
-  wherever a join or co-facilitate link/QR is shown (the session card, the link/QR fallback, and
-  the co-facilitator link/QR from Story 10 — all carry the same exposure):
+  `docs/facilitated-retro-spec.md`) is gone entirely. A retro session is joined only by scanning
+  its QR code or opening its link — the "Or scan/share a link" fallback that used to sit behind a
+  collapsed `<details>` is now the *only* path, and is shown directly on the session card.
+  Implementer's call on the question the PO decision left open (whether the session key stays
+  code-derived or moves to a separate secret): moved to a separate secret, to match the board-sync
+  model exactly — see the "Self-hosted relay + client-side encryption" decision above. `crypto.js`'s
+  already-existing `generateSecret()`/`roomIdFor()` (built for board sync) are reused as-is, no new
+  crypto primitives needed. A security notice is shown wherever a join or co-facilitate link/QR is
+  shown (the join-link block and the co-facilitator `<details>` section — the session card's own raw
+  code display this originally also applied to is gone, so that's now two places, not three):
   > Note: Anyone with this link — or who scans this QR code — can see the data in this Squad Pulse
   > session. Share it only over a secure channel, and make sure the QR code itself is visible only
   > to people who should have access.
 
   (Tightened from the PO's original draft — "secure media" → "secure channel," and calling out that
-  the link and the QR grant identical access rather than treating them as separately risky.) Not
-  coded yet; tracked here for whoever picks up the implementation.
+  the link and the QR grant identical access rather than treating them as separately risky.) Full
+  implementation notes in this session's log entry below.
 - **"This retro has ended" vs. "this retro isn't open" is a real distinction, but only within the
   relay's own room lifetime — not indefinitely.** `closeSession()` writes `status:"closed"` instead
   of deleting the doc, so the join screen can say "ended" for as long as that doc still exists (the
@@ -182,6 +179,30 @@ every other device on the same team link.
   and a code that never existed are the same thing again — there is no way to keep that distinction
   forever without adding real persistence, which is exactly the trade-off already rejected for the
   relay itself (see the Vercel Function decision above). This is the deliberate stopping point.
+- **SEC-3 (STATUS.md's "Security hardening backlog"), DONE as of 2026-09-16, except one directive
+  left OPEN on purpose: browser-hardening headers.** Added a Content-Security-Policy (as a `<meta
+  http-equiv>` in `index.html`, not just a `vercel.json` header, so it's enforced over `file://` and
+  on a plain self-hosted static server too, not only on Vercel), `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy`, and a `Permissions-Policy` locking down camera/microphone/geolocation/payment/
+  usb/magnetometer/gyroscope/accelerometer (`vercel.json` — these three have no meta-tag equivalent,
+  so a self-hoster serving `public/` from their own web server needs to set them there themselves;
+  `relay/README.md`'s deployment docs are the place to point them if this ever comes up).
+  `frame-ancestors`/`X-Frame-Options` are **deliberately NOT set** — unlike the crypto question SEC-2
+  left for its own implementer to decide, the SEC-3 backlog item explicitly named permitted embedding
+  origins an **open product decision**, not an implementer's call, and `README.md`'s own "Deploying
+  for real" section lists "embedding this somewhere public (e.g. a subdomain + iframe on a website)"
+  as one of exactly two intended deployment shapes — shipping any default here (even `SAMEORIGIN`)
+  risks silently breaking that for every deployment. Whoever the PO designates should decide which
+  origins (if any) are allowed to embed this, then add `frame-ancestors <origins>` to both the CSP
+  meta tag and a `X-Frame-Options` header compatible with it (see the SEC-3 backlog item's own
+  wording in the PR that recorded it for the exact acceptance criteria). Getting the CSP's
+  `script-src 'self'` to hold with zero `'unsafe-inline'`/hashes required moving `index.html`'s one
+  inline `<script>` (the relay-URL fallback) into `public/js/relay-url-fallback.js` — a pure move, no
+  behavior change. `style-src` still needs `'unsafe-inline'`: the app's JS-generated markup uses
+  `style="..."` attributes extensively (rewriting all of them to CSS classes is a separate, much
+  larger change, out of scope here). `connect-src` allows the `ws:`/`wss:` schemes rather than a
+  specific host, since the relay's origin is deployment-configurable (`SQUAD_PULSE_RELAY_URL`), not
+  knowable at build time.
 
 ## Board sync (major change, DONE — default-on as of 2026-09-13)
 
@@ -453,6 +474,144 @@ since `relay-client.js` caches an opened room per page and a page that already o
 the right secret would otherwise mask the check). `tests/unit/test_board_sync.js` now covers
 `parseTeamSecretInput()`/`teamLinkFor()` instead of the retired `normalizeTeamCode()`. Full 25-file
 Playwright + 38-test unit suite passing.
+
+### SEC-4 (2026-09-16, STATUS.md's "Security hardening backlog"): team link secret moved to the URL fragment
+
+The 2026-09-12 fix above still shared the secret as `?team=<secret>` — a query param, sent to
+whatever's actually hosting `index.html` on every single request that carries it, landing in that
+host's own access logs (and, on the very next click to somewhere else, a Referer header) before this
+page's own JS ever ran to strip it. A URL **fragment** (`#team=<secret>`) is never sent to any server
+at all — the browser keeps it client-side, full stop — so `teamLinkFor()`/`parseTeamSecretInput()`/
+`autoConnectFromLink()` (board-sync.js) and `joinUrlFor()`/`coFacilitateUrlFor()` (helpers.js, a
+join/co-facilitate link's own piggybacked team secret — see the 2026-09-16 join-link-carries-
+team-sync fix above) all moved to it. Old links already shared/bookmarked before this change keep
+working: `parseTeamSecretInput()` checks the fragment first, then falls back to the legacy `?team=`
+query form.
+
+**A real, pre-existing bug got fixed along the way, not just the query→fragment move**:
+`autoConnectFromLink()`'s cleanup (stripping the secret from the visible URL/history) used to be
+skipped ENTIRELY whenever the URL's secret already matched what this device had already stored — an
+early `return` before the history rewrite ever ran. Re-opening the same bookmarked/shared link a
+second time, or simply reloading, left the secret sitting in the visible URL indefinitely (and, for
+the old query-string form, sent to the server again on that very reload). Cleanup now always runs
+whenever the URL carries a team param at all; only the (idempotent) `setTeamSecret()` call itself is
+skipped when there's nothing new to store.
+
+Also fixed: `state.js`'s `openedFromInvitation` (what suppresses the first-visit welcome dialog for
+someone arriving via a real invitation, not a plain fresh visit) only ever checked the QUERY string
+for `session`/`cofacilitate`/`team` — a bare team link with nothing else in its query string (now
+entirely possible, since the secret itself no longer lives there) would have gone undetected,
+incorrectly showing the welcome dialog to someone who just opened a real team invitation. Now also
+checks the fragment for `team=`.
+
+**Per this backlog item's own acceptance criteria, explicitly did NOT overclaim what this buys**:
+the About dialog's terms text now says plainly that a fragment being off the wire is not protection
+against a malicious script already running on this page, and doesn't stop the link itself from being
+forwarded to someone else — and that board data (including any connected team's secret) lives in
+this browser's own `localStorage`, readable by any same-origin script. Test-first per this repo's TDD
+skill: `tests/unit/test_board_sync.js` (fragment vs. legacy-query vs.-both precedence) and
+`tests/unit/test_helpers.js` (the new `teamHashFor()`, and that `joinUrlFor()`/`coFacilitateUrlFor()`
+put the fragment LAST, after every query param) cover the pure logic; the existing Playwright board-
+sync/join-link suite was updated in place (assertions on the literal `?team=`/`#team=` shape) rather
+than rewritten, plus one new case in `test_welcome_first_visit.py` for the `openedFromInvitation` fix
+(verified it would have failed pre-fix by temporarily reverting the check and confirming the welcome
+dialog wrongly appeared). Full suite green: 144/144 unit tests, all 48 Playwright files (47s, under
+the 78s baseline), relay's protocol + storage suites passing.
+
+### Codex review fixes on PR #14 (2026-09-16): the join/co-facilitate secret itself was still in the query string, a legacy-storage crash, and a CSP-unsafe test wait
+
+A Codex review of the combined security-hardening PR (#14, bundling SEC-2/SEC-3/SEC-4 above) found
+three real issues, all fixed here:
+
+**P1 — `joinUrlFor()`/`coFacilitateUrlFor()` (helpers.js) still put the SESSION's own secret in the
+query string** (`?session=<secret>`/`?cofacilitate=<secret>`) even after SEC-4 moved the piggybacked
+TEAM secret to the fragment — the exact exposure SEC-4 closed for one secret but missed for the
+other. Fixed by moving session/co-facilitate into the fragment too, combined with `team` into one
+fragment via a new `buildFragment()` helper (a URL only has one `#`; `teamHashFor()`'s own
+`#team=...` can't just be concatenated with a second `#session=...`). `state.js`'s boot-time
+`getLinkParam()` (new — fragment-first, falls back to the legacy query form) replaces the old
+query-only `getQueryParam("session")`/`getQueryParam("cofacilitate")` reads, same precedence
+`parseTeamSecretInput()` already used for a pasted team link. `lang` is the only thing left in the
+query string now, since it isn't a secret and is meant to be visible/bookmarkable. Legacy
+`?session=`/`?cofacilitate=`/`?team=` links (shared/bookmarked before this fix) still work.
+Test-first: `tests/unit/test_helpers.js` (`buildFragment()`, the new fragment shape, asserting
+`?session=`/`?cofacilitate=` never appear), `tests/unit/test_state.js` (new — `getLinkParam()`
+precedence), and a new **request-level** Playwright test,
+`tests/test_join_link_secret_not_in_http_request.py`, that serves a built test page over a real
+local HTTP server (not `file://` — this is what actually proves nothing lands in a server's access
+log) and captures every real HTTP request Playwright fires while navigating to a freshly-generated
+join/co-facilitate link, asserting neither secret ever appears in a request's query string.
+
+**A genuinely new class of test fragility, found fixing the above**: two URLs that differ only in
+their fragment (e.g. a stale `#cofacilitate=BAD&team=X` vs. the real `#cofacilitate=GOOD&team=X`)
+trigger a same-document "fragment navigation" per the HTML spec when navigated between on an
+ALREADY-OPEN page — true in every real browser, not a Playwright quirk — so the page never actually
+reloads and never reruns its boot-time fragment parsing. This silently broke two existing tests that
+reused one page/context across two different session-scoped links
+(`test_cofacilitator_join.py`, `test_board_sync_finish_retro_convergence.py`); fixed by forcing a
+real reload via an intermediate `about:blank` navigation between the two `goto()` calls. A brand-new
+page/tab opening a link for the first time is never affected (there's no prior document to
+fragment-navigate from), which is the overwhelmingly common real case — this is a same-tab,
+sequential-different-link edge case already latent for the team link since SEC-4 shipped it to the
+fragment first, not a new risk introduced here.
+
+**P2 — a device with a session saved under the OLDER `knownCodes` localStorage shape (a bare code
+string, from before SEC-2's redesign above) crashed `relay-client.js`'s reconnect logic**: `getRoom()`
+received `{roomId: undefined, secret: undefined}` and opened a WebSocket asking the relay to route
+`?code=undefined`, every single reload, forever. **Migration decision, per
+`docs/DefinitionOfDone.md`'s "new data shape" rule — RETIRE, don't migrate**: a legacy entry's bare
+string WAS the human-typed code itself; there is no secret to derive it into under the new
+`{roomId, secret}` shape, and a typed-code session was already short-lived by design (forgotten
+within minutes of the retro ending). Any such saved entry, by the time this ships, is for a retro
+that ended long ago. `loadKnownCodes()` now filters out anything that isn't a well-formed
+`{roomId, secret}` pair on every read — never attempting to reconnect it, never crashing, and never
+affecting any OTHER, well-formed entry sitting next to it in the same array. Test-first:
+`tests/test_relay_legacy_known_codes.py` (new) — a real relay + the same crypto.js/relay-client.js
+isolation harness `test_relay_error_handling.py` already uses, seeding a legacy bare-string entry
+alongside a well-formed one and confirming the legacy entry is silently dropped (no `?code=undefined`
+connection, no crash) while the well-formed one still reconnects.
+
+**P3 — `tests/test_welcome_first_visit.py`'s two `wait_for_function()` calls used a bare expression
+string** (`"localStorage.getItem(...) === '1'"`, no `() => ...`), which Codex's own repro (matching
+this repo's pinned Playwright/Chromium versions) hit as a CSP `unsafe-eval` violation — every OTHER
+`wait_for_function()` call in this suite already uses an explicit arrow-function predicate, so these
+two were the outliers. Fixed to match the rest of the suite; did not reproduce locally (this
+environment's Chromium build didn't trigger it), but the fix is a strict, zero-risk improvement that
+matches the suite's own established convention regardless.
+
+Full suite green: 154/154 unit tests, all 51 Playwright files (54s, under the 78s baseline — 2 more
+files than the PR's own last entry, both new tests from this fix), relay's protocol + storage suites
+passing.
+
+**Follow-up P2 (2026-09-16, same PR, next round of review) — a same-document navigation gap, found by
+the SAME test workaround that avoided it**: the P1 fix above moved session/co-facilitate/team
+secrets into the URL fragment, but `state.js` only ever read the fragment ONCE, at initial script
+load. Opening a DIFFERENT invitation link in the SAME already-open tab is a same-document "fragment
+navigation" per the HTML spec — true in every real browser, not a Playwright quirk (confirmed with a
+tiny probe: navigating from `url#a` to `url#b` fires no `load` event and leaves `state.*` untouched;
+navigating to a bare `url` with no fragment at all DOES force a real reload — the two cases behave
+differently). The regression tests written for the P1 fix's own test-fragility fallout
+(`test_cofacilitator_join.py`, `test_board_sync_finish_retro_convergence.py`) used an intermediate
+`about:blank` navigation to force a clean reload between two session-scoped links — a legitimate
+technique for THOSE tests' own actual subject, but it also happened to dodge the real gap rather than
+covering it, which the next review round correctly called out. Fixed with a `hashchange` listener in
+`state.js`: on any fragment-only URL change, re-derive `session`/`cofacilitate`/`team` via
+`getLinkParam()` and, only if what they NAME actually differs from what's currently active, reload
+the page — letting the file's own existing boot-time parsing (a few lines above) do the real work,
+rather than hand-rolling partial re-initialization of listeners/subscriptions. Narrow on purpose: an
+unrelated hash change never forces a reload. Test-first: `tests/test_invitation_hashchange.py` (new)
+— a real relay, one facilitator starting two distinct sessions, then a participant device and a
+co-facilitator device each navigating DIRECTLY between two different invitations (no `about:blank`
+detour) and confirming the app switches to the new one — covering a plain link-to-link case and a
+bad-link-then-corrected-link case, exactly the two the review named. (Also fixed a real port
+collision found while adding this: `tests/test_relay_legacy_known_codes.py` and
+`tests/test_relay_board_path_sync.py` had both landed on `RELAY_PORT = 8793`; moved the former to
+8799.) Full suite green: 154/154 unit tests, all 52 Playwright files, relay's protocol + storage
+suites — reliable at this repo's documented default concurrency (`tests/run_all.sh`, unset
+`TEST_JOBS`, defaults to 2); two of the relay-heavy files in this batch showed CPU-contention
+flakiness at `TEST_JOBS=4` specifically (consistent timeouts, not logic failures — both pass
+reliably standalone and at the documented default), matching `run_all.sh`'s own documented caution
+about parallelism exceeding a runner's headroom, not a functional regression.
 
 ## Multi-language rollout backlog
 
@@ -2912,9 +3071,10 @@ not just in this repo's own tests.
     documentation (same convention as this file's own "historical mentions... left as-is" rule for
     old test names).
   - Also fixed in passing: a self-inflicted NUL byte in this file's own previous session-log entry
-    (quoting the buggy `" pending-dimension:"` marker literally embedded `csv.js`'s bug
-    into STATUS.md's own bytes, the same mistake, caught by the same `file`/`grep` symptom) --
-    escaped as readable text instead.
+    (a literal NUL-byte marker from csv.js's own bug got typed directly into this prose
+    instead of being described in words, embedding the same mistake into STATUS.md's own bytes,
+    caught by the same `file`/`grep` symptom) -- reworded to describe the marker instead of
+    quoting it literally.
   - **Flagged, not fixed (out of scope for this rename/cleanup):** `local-store.js`'s
     `triggerBrowserDownload()` hardcodes `Blob` type `text/csv;charset=utf-8` for every download
     regardless of what's actually being saved -- pre-existing (already wrong for the JSON export
@@ -2970,3 +3130,139 @@ not just in this repo's own tests.
   plus a security notice shown alongside the link/QR. Split out of a broader security backlog item
   (SEC-1 → SEC-2). Full detail, the exact notice copy, and the open question this raises for the
   session-key-derivation decision are in "Decisions locked in" above.
+- 2026-09-16 — Implemented SEC-2's full redesign (see "Decisions locked in" above): dropped the
+  typed-code join path entirely and moved retro sessions onto the SAME secret/room-id split
+  board sync already used, closing the open question the PO decision above left for the
+  implementer. `startSession()`/`coFacilitateSessionByCode()` (retro-facilitator.js) now generate/
+  resolve a real secret via crypto.js's existing `generateSecret()`/`roomIdFor()` (built for board
+  sync, reused as-is -- no new crypto primitives); `listenJoinSession()` (retro-join.js) resolves
+  the room id from `?session=<secret>` before subscribing. `relay-client.js`'s knownCodes
+  bookkeeping now stores `{roomId, secret}` pairs (was: bare codes, since the code WAS the key
+  before this) behind a `remember` param keyed on the PATH (`isSessionPath()`), not on whether a
+  secret was given -- the old `if(!secret) rememberCode(code)` guard would have stopped remembering
+  ANY session now that sessions always pass a secret, silently breaking "my own open session
+  survives a reload." Added `SquadPulseRelay.secretForRoom()` so `renderSessionCardHtml()` can
+  recover a session's secret for its join/co-facilitate links and QR codes -- `state.sessions`
+  itself can't carry it, since it's rebuilt wholesale from the relay's own necessarily secret-less
+  broad snapshot on every change. Removed the join-code modal, the header's "Join a retro" button,
+  and the session card's raw code display entirely; the join-link block that used to sit behind a
+  collapsed "Or scan/share a link" `<details>` is now always shown, with the PO's security notice
+  next to it and next to the co-facilitator link/QR. A stale/bad co-facilitate link now shows the
+  same visible error dialog the old modal did (previously only the modal's submit handler wired
+  that up -- db.js's boot-time `.catch()` just logged to the diagnostic panel, a materially worse
+  experience once the link became the ONLY way to co-facilitate). Updated the About dialog's
+  copy (no more "or enter their six-character code"), i18n (en.js/he.js -- removed
+  `join.codeModal.*`/`retro.codeBlock.*`, added `retro.shareSecurity.notice`), and
+  `docs/facilitated-retro-spec.md`'s Story 3 with a forward-reference to this change (its own
+  session log stopped being authoritative after the 2026-09-12 migration entry, per that file's own
+  note). Test-first per this repo's TDD skill: rewrote every Playwright scenario that drove the
+  typed-code modal (8 files: `test_cofacilitator_join.py`, `test_join_flow_language.py`,
+  `test_retro_join_exit_and_return.py`, `test_retro_join_flow.py`,
+  `test_relay_cross_device_sync.py`, `test_board_sync_finish_retro_convergence.py`,
+  `test_facilitator_language.py`, `test_retro_join_link_carries_team_sync.py`,
+  `test_view_switch_refreshes_stale_state.py`, `test_header_language.py`, `test_about_help.py` --
+  11 total, more than the 8 first found by grepping for the typed-code identifiers directly, since
+  three more only referenced the now-removed `.session-code`/`.session-code-block` CSS selectors)
+  to join/co-facilitate via the real link instead, extracting the session's secret from the
+  rendered `#sessionJoinLink`/`#coFacilitateLink` values (or, for fake-store-only scenarios,
+  `SquadPulseRelay.secretForRoom()` directly) rather than typing anything. Also found and fixed two
+  real regressions a plain grep for the typed-code identifiers wouldn't have caught: `app.js`'s
+  app-wide Escape-key handler still called `document.getElementById("joinCodeBackdrop")` .hidden
+  unconditionally (would have thrown on every Escape press, since that element no longer exists),
+  and `i18n.js`'s `RTL_SCOPED_CONTAINERS` still listed `"joinCodeBackdrop"` (harmless but dead).
+  - A first full-suite run surfaced a second, more interesting bug this file's own list above
+    couldn't have caught either: `SquadPulseRelay.secretForRoom()` returned null for every session
+    in the Playwright suite's fake-store-backed tests (most of them), because `getRoom()`'s own
+    `rememberCode()` call -- the ONLY thing that ever populated it -- lives inside relay-client.js,
+    which the fake store (`tests/fixtures/fake_store.html`) bypasses entirely by design (its own
+    `window.claude.use("db")` shim is a completely separate, unencrypted, non-relay-routed
+    implementation -- see its own header comment). Fixed by having `startSession()`/
+    `coFacilitateSessionByCode()` call `SquadPulseRelay.rememberCode(roomId, secret)` EXPLICITLY the
+    moment they resolve a room id, rather than relying on it as a side effect of a relay write that
+    may never actually reach relay-client.js. This also surfaced 6 MORE test files needing the same
+    fix as the 11 above, invisible to a grep for typed-code identifiers because they never used the
+    modal at all -- they called `joinSessionByCode()`/built a `?session=` URL directly with the
+    session's raw relay room id (correct under the old code-is-the-key model, wrong now):
+    `test_join_link_carries_language.py`, `test_retro_statement_survey_submission.py`,
+    `test_hebrew_rtl_coverage.py`, `test_retro_direct_rating_flow.py`,
+    `test_retro_statement_language.py`, `test_scored_template_tuckman.py`.
+  - Full suite green: 140/140 unit tests, all 48 Playwright files (48s, under the 78s baseline),
+    relay's protocol + storage suites passing.
+- 2026-09-16 — Implemented SEC-3 (browser hardening headers), except the one directive the backlog
+  item itself flagged as an open PRODUCT decision rather than an implementer's call -- see "Decisions
+  locked in" above for the full writeup and why `frame-ancestors`/`X-Frame-Options` stay unset.
+  Shipped: a CSP as an `index.html` `<meta http-equiv>` tag (enforced over `file://` and on any
+  self-hosted static server, not just Vercel) plus `X-Content-Type-Options`/`Referrer-Policy`/
+  `Permissions-Policy` via `vercel.json` (no meta-tag equivalent for those three). Getting
+  `script-src 'self'` to hold with zero `'unsafe-inline'` required two things: moving `index.html`'s
+  one inline `<script>` (the relay-URL fallback) into `public/js/relay-url-fallback.js`, and a real
+  refactor to `tests/fixtures/build_page.py` -- its `build_page()`/`build_custom_page()`/
+  `write_plain_index()` all spliced raw inline `<script>` blocks (the fake store, the
+  welcome-already-seen seed, a caller's own bespoke fake db) directly into test pages' `<head>`,
+  which is exactly what a real `script-src 'self'` CSP blocks; a first attempt at this CSP silently
+  broke nearly the entire suite (every fake-store test hung on the welcome dialog it could no longer
+  suppress, since even THAT one-line seed script is inline). Fixed by writing each of those scripts
+  to a same-origin sibling `.js` file instead (`_write_sibling_script()`) and referencing it via
+  `<script src>` -- every existing caller's signature is unchanged, `.gitignore` extended to cover
+  the new `public/_test_*.js` outputs alongside the existing `.html` ones. Test-first per this repo's
+  TDD skill: `tests/unit/test_security_headers.js` (plain JSON assertions on `vercel.json` -- no
+  browser needed, and the one place `X-Content-Type-Options`/`Permissions-Policy` are testable at
+  all) and `tests/test_security_headers.py` (a real Playwright walkthrough -- boot, language switch,
+  About, start a session, render its QR, load a starter template, join as a participant -- listening
+  for the browser's own `securitypolicyviolation` events and asserting zero fired; verified this
+  wasn't a vacuous check by temporarily breaking `connect-src` and confirming the test caught it
+  before the walkthrough even ran). Full suite green: 144/144 unit tests, all 49 Playwright files
+  (50s, under the 78s baseline -- one more file than the last entry's 48, this one's own new test),
+  relay's protocol + storage suites passing.
+- 2026-09-16 — Implemented SEC-4 (team-link secret exposure): moved the team link's secret from
+  `?team=` (a query param, sent to whatever hosts `index.html` on every request, landing in its
+  access logs before this page's own JS ever ran) to `#team=` (a URL fragment, never sent to any
+  server at all). Legacy `?team=` links still work. Fixed a real pre-existing bug found along the
+  way: URL cleanup after opening a team link was silently skipped whenever the link's secret already
+  matched what this device had stored, leaving it sitting in the visible URL/history indefinitely.
+  Also fixed `openedFromInvitation` (state.js), which only checked the query string and would have
+  missed a bare team link now that its secret isn't there any more. Explicitly did NOT overclaim what
+  a fragment buys (About dialog copy: not a defense against a malicious script already on the page,
+  doesn't stop the link being forwarded, localStorage is readable by any same-origin script) per this
+  backlog item's own acceptance criteria. Full detail in the "Security fix" section under "Board
+  sync" above. Full suite green: 144/144 unit tests, 48/48 Playwright files, relay's protocol +
+  storage suites.
+- 2026-09-16 — Merged SEC-2/SEC-3/SEC-4 (all three above) into one `security-hardening-combined`
+  branch and opened PR #14 against `claude/optimistic-keller-holuql`, per an explicit user request to
+  combine all three (sibling branches off the same base commit, not stacked) into a single PR rather
+  than three separate ones. Real, non-mechanical merge conflicts in `STATUS.md` (session-log
+  append-order), `index.html`/`helpers.js`/`en.js`/`he.js` (SEC-2's removal of the false "session code
+  derives the key" claim needed to be kept AND SEC-4's new fragment/localStorage caveats needed to be
+  added -- neither side's version alone was correct once the other branch's changes were also true).
+  One cross-branch regression only visible after merging, not from either branch's own isolated
+  suite: `test_security_headers.py` (authored on the pre-SEC-2 branch) still called
+  `joinSessionByCode()` with a raw room id instead of a secret -- fixed with the same
+  `SquadPulseRelay.secretForRoom()` pattern the other 17 SEC-2-era test files already used. Full
+  suite green after every merge step (not just the final one, to isolate which step introduced any
+  given regression): 148/148 unit tests, 49/49 Playwright files (50s), relay's protocol + storage
+  suites.
+- 2026-09-16 — Fixed three issues a Codex review found on PR #14: `joinUrlFor()`/
+  `coFacilitateUrlFor()` still put the session/co-facilitate secret in the query string (SEC-4 had
+  only moved the piggybacked team secret to the fragment); a legacy `knownCodes` localStorage entry
+  (pre-SEC-2 bare-string shape) crashed `relay-client.js`'s reconnect logic with a
+  `?code=undefined` WebSocket connection attempt; and two `wait_for_function()` calls in
+  `test_welcome_first_visit.py` used a bare expression string that Codex's own repro caught as a CSP
+  `unsafe-eval` violation. Full writeup (migration decision for the localStorage shape, the new
+  request-level HTTP test, and a genuinely new class of test fragility found and fixed along the way
+  -- two same-tab links differing only by URL fragment don't force a real page reload, a real browser
+  behavior, not a Playwright quirk) in the "Codex review fixes on PR #14" section under "Board sync"
+  above. Full suite green: 154/154 unit tests, all 51 Playwright files (54s, under the 78s baseline),
+  relay's protocol + storage suites passing.
+- 2026-09-16 — Fixed a follow-up finding from the next round of review on PR #14: a fragment-only
+  URL change (opening a DIFFERENT session/co-facilitate invitation link in the SAME already-open
+  tab) is a same-document navigation in every real browser, so `state.js`'s boot-time fragment
+  parsing never reran and the OLD session stayed active despite the address bar showing a new
+  invitation -- a real gap the previous fix's own regression tests happened to dodge (via an
+  `about:blank` detour) rather than cover. Fixed with a `hashchange` listener in `state.js` that
+  reloads the page whenever the session/co-facilitate/team an incoming fragment actually names
+  differs from what's currently active. Also fixed a real `RELAY_PORT` collision between two test
+  files found while adding the new regression coverage. Full writeup in the "Follow-up P2" section
+  under "Board sync" above. Full suite green: 154/154 unit tests, all 52 Playwright files, relay's
+  protocol + storage suites passing (reliable at this repo's documented default `TEST_JOBS`; noted
+  but did not chase pure-timeout flakiness in two relay-heavy files specifically at `TEST_JOBS=4`,
+  consistent with `run_all.sh`'s own documented caution about parallelism above a runner's headroom).

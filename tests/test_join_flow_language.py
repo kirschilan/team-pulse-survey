@@ -5,13 +5,17 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import build_page, test_output_path
 
 # Multi-language rollout Story 10 (see STATUS.md's backlog table): the retro
-# JOIN flow -- the "Join a retro" code-entry modal, the join screen's own
-# connecting/ended/unreachable/not-open states, the survey form chrome
-# (scale buttons, the "Squad health check" sub-heading, Submit), and the
-# personal-result screen afterward. Dimension content itself (label/green/
-# red/statement text) stays untranslated by design -- same principle Story 9
-# applied to template names: it's the admin's own authored content,
-# snapshotted onto the session at start time, not app chrome.
+# JOIN flow -- the join screen's own connecting/ended/unreachable/not-open
+# states, the survey form chrome (scale buttons, the "Squad health check"
+# sub-heading, Submit), and the personal-result screen afterward. Dimension
+# content itself (label/green/red/statement text) stays untranslated by
+# design -- same principle Story 9 applied to template names: it's the
+# admin's own authored content, snapshotted onto the session at start time,
+# not app chrome. SEC-2 later removed the typed join-code modal this file
+# used to also cover (link/QR only now -- see joinSessionByCode()'s own
+# comment in retro-join.js); every scenario below enters join mode directly
+# via that function instead, exactly like a real ?session=<secret> link
+# would.
 
 out_path = build_page(out_name="_test_join_lang.html")
 
@@ -27,40 +31,27 @@ with sync_playwright() as p:
     # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
     page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
+    print("=== English baseline: bad/unknown secret shows the 'not open' state ===")
+    page.evaluate("joinSessionByCode('ZZZZZZ')")
+    not_open_h_en = page.eval_on_selector('#joinCard h2', 'el=>el.textContent')
+    not_open_hint_en = page.eval_on_selector('#joinCard .hint', 'el=>el.textContent')
+    page.click('#exitJoinBtn')
+
     # setView()/setLocale() are both synchronous (established across this
-    # pass), and #joinCodeBtn's click handler (retro-join.js) just resets
-    # the input and unhides the backdrop, also synchronous -- no wait needed
-    # for any of these three clicks.
+    # pass) -- no wait needed for either click.
     page.click('.view-btn[data-view="admin"]')
     page.click('.lang-btn[data-lang="he"]')
 
-    print("=== join-code modal chrome is Hebrew ===")
-    page.click('#joinCodeBtn')
-    assert page.eval_on_selector('#joinCodeBackdrop', 'el=>el.getAttribute("dir")') == "rtl"
-    title_he = page.eval_on_selector('#joinCodeBackdrop h3', 'el=>el.textContent')
-    hint_he = page.eval_on_selector('#joinCodeBackdrop .hint', 'el=>el.textContent')
-    placeholder_he = page.eval_on_selector('#joinCodeInput', 'el=>el.placeholder')
-    cancel_he = page.eval_on_selector('#joinCodeCancel', 'el=>el.textContent')
-    cofac_he = page.eval_on_selector('#coFacilitateGo', 'el=>el.textContent')
-    join_he = page.eval_on_selector('#joinCodeGo', 'el=>el.textContent')
-    print(title_he, "|", hint_he, "|", placeholder_he, "|", cancel_he, "|", cofac_he, "|", join_he)
-    assert title_he != "Join a retro" and title_he.strip()
-    assert hint_he.strip() and "Scrum Master" not in hint_he
-    assert placeholder_he != "e.g. 7K4QXB" and placeholder_he.strip()
-    assert cancel_he != "Cancel" and cancel_he.strip()
-    assert cofac_he != "Co-facilitate" and cofac_he.strip()
-    assert join_he != "Join" and join_he.strip()
-
-    print("=== a bad/unknown code shows the Hebrew 'not open' state ===")
-    page.fill('#joinCodeInput', 'ZZZZZZ')
+    print("=== a bad/unknown secret shows the Hebrew 'not open' state ===")
     # joinSessionByCode() (retro-join.js) is itself fully synchronous --
     # it sets state.joinSession=null then calls enterJoinMode(), which
-    # renders synchronously -- and for a code that never existed, that
-    # FIRST synchronous render already shows the "not open" state (sess is
-    # null both before and after listenJoinSession()'s own async first
-    # delivery, since the doc never exists either way), so no wait is
-    # needed here, unlike the two scenarios below that pre-seed a real doc.
-    page.click('#joinCodeGo')
+    # renders synchronously -- and for a secret whose derived room never
+    # existed, that FIRST synchronous render already shows the "not open"
+    # state (sess is null both before and after listenJoinSession()'s own
+    # async first delivery, since the doc never exists either way), so no
+    # wait is needed here, unlike the two scenarios below that pre-seed a
+    # real doc.
+    page.evaluate("joinSessionByCode('ZZZZZZ')")
     assert page.eval_on_selector('#viewJoin', 'el=>el.getAttribute("dir")') == "rtl"
     not_open_h = page.eval_on_selector('#joinCard h2', 'el=>el.textContent')
     not_open_hint = page.eval_on_selector('#joinCard .hint', 'el=>el.textContent')
@@ -89,16 +80,18 @@ with sync_playwright() as p:
     page.evaluate("state.joinUnavailable = false;")
 
     print("=== a CLOSED session shows the Hebrew 'ended' state ===")
-    # joinCodeBtn stays hidden forever once a device has joined once (see
-    # retro-join.js's exitJoinScreen() comment) -- a real participant only
-    # ever picks one session per device, so subsequent scenarios here call
-    # joinSessionByCode() directly instead of re-opening the (gone) modal.
+    # SEC-2: joinSessionByCode() takes a SECRET, not a relay room id any
+    # more -- the fake store is keyed by the room id the real app would
+    # derive via SquadPulseCrypto.roomIdFor(), so seed it under THAT, not
+    # under the literal secret string.
     page.evaluate("""
-      window.__FAKE_STORE__['sessions/CLOSEDX'] = {
-        squadId:'squad-1', squadName:'Squad 1', templateName:'Custom',
-        dimensions:[], status:'closed', revealMode:'hold', overrides:{}
-      };
-      joinSessionByCode('CLOSEDX');
+      SquadPulseCrypto.roomIdFor('CLOSEDX').then(function(roomId){
+        window.__FAKE_STORE__['sessions/' + roomId] = {
+          squadId:'squad-1', squadName:'Squad 1', templateName:'Custom',
+          dimensions:[], status:'closed', revealMode:'hold', overrides:{}
+        };
+        joinSessionByCode('CLOSEDX');
+      });
     """)
     # evaluate() above doesn't auto-wait -- unlike the bad-code scenario
     # above, this doc DOES exist, so listenJoinSession()'s FIRST onSnapshot
@@ -114,16 +107,18 @@ with sync_playwright() as p:
 
     print("=== a real OPEN mixed-dimension session: survey form chrome is Hebrew ===")
     page.evaluate("""
-      window.__FAKE_STORE__['sessions/MIXEDXX'] = {
-        squadId:'squad-1', squadName:'Squad 1', templateName:'Custom',
-        status:'open', revealMode:'hold', overrides:{}, experimentNote:'',
-        dimensions: [
-          { key:'trust', label:'Trust', green:'', red:'', order:1,
-            statements:['Statement one', 'Statement two'], scoreBands:{good:5,warn:3} },
-          { key:'health', label:'Health', green:'Feels healthy', red:'Feels unhealthy', order:2 }
-        ]
-      };
-      joinSessionByCode('MIXEDXX');
+      SquadPulseCrypto.roomIdFor('MIXEDXX').then(function(roomId){
+        window.__FAKE_STORE__['sessions/' + roomId] = {
+          squadId:'squad-1', squadName:'Squad 1', templateName:'Custom',
+          status:'open', revealMode:'hold', overrides:{}, experimentNote:'',
+          dimensions: [
+            { key:'trust', label:'Trust', green:'', red:'', order:1,
+              statements:['Statement one', 'Statement two'], scoreBands:{good:5,warn:3} },
+            { key:'health', label:'Health', green:'Feels healthy', red:'Feels unhealthy', order:2 }
+          ]
+        };
+        joinSessionByCode('MIXEDXX');
+      });
     """)
     # Same genuine-async-gap reasoning as the CLOSEDX scenario above.
     page.wait_for_function("() => state.joinSession && state.joinSession.status === 'open'")
@@ -183,18 +178,16 @@ with sync_playwright() as p:
 
     print("=== switching back to English restores every string above ===")
     # Admin is hidden while in join mode -- exit first, THEN switch language.
-    # joinCodeBtn stays hidden forever once a device has joined once, so
-    # read the (hidden but still real) modal DOM directly rather than
-    # re-opening it by click.
     # exitJoinScreen() (retro-join.js) is fully synchronous (established
     # across this pass), same as setView()/setLocale() -- no wait needed
     # for any of these three clicks.
     page.click('#exitJoinBtn')
     page.click('.view-btn[data-view="admin"]')
     page.click('.lang-btn[data-lang="en"]')
-    assert page.eval_on_selector('#joinCodeBackdrop h3', 'el=>el.textContent') == "Join a retro"
-    assert page.eval_on_selector('#joinCodeGo', 'el=>el.textContent') == "Join"
-    assert page.eval_on_selector('#joinCodeBackdrop', 'el=>el.getAttribute("dir")') != "rtl"
+    page.evaluate("joinSessionByCode('ZZZZZZ')")
+    assert page.eval_on_selector('#viewJoin', 'el=>el.getAttribute("dir")') != "rtl"
+    assert page.eval_on_selector('#joinCard h2', 'el=>el.textContent') == not_open_h_en
+    assert page.eval_on_selector('#joinCard .hint', 'el=>el.textContent') == not_open_hint_en
 
     print("errors:", errors)
     assert not errors, "unexpected JS errors: " + str(errors)

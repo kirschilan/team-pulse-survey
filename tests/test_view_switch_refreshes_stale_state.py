@@ -81,9 +81,15 @@ with sync_playwright() as p:
     print("closeSessionBtn present (should exist -- the in-progress card):", close_btn is not None)
     assert start_btn is None, "returning to Squad view still showed the stale disabled button instead of the session that actually started"
     assert close_btn is not None
-    session_code_shown = page.eval_on_selector('.session-code', 'el => el.textContent')
-    print("session code shown on card:", session_code_shown)
-    assert session_code_shown == "ABC123"
+    # SEC-2: no raw code is shown any more -- the real, current session
+    # renders its join-link block instead (this doc's own room id, "ABC123",
+    # never went through startSession()'s real secret generation, so the
+    # link itself is incidental here -- what matters is the card reflects
+    # the ACTUAL open session, not the stale disabled button).
+    join_link_present = page.query_selector('#sessionJoinLink') is not None
+    print("join link present on the real, current session card:", join_link_present)
+    assert join_link_present
+    assert page.query_selector('.session-code') is None
     print("errors:", errors)
 
     print("=== ALL VIEW-SWITCH REFRESH TESTS PASSED ===")

@@ -106,7 +106,7 @@ try:
         assert not_connected_hidden is True
         a_link = a.eval_on_selector("#teamLinkInput", "el=>el.value")
         print("device A's default team link (no click needed):", a_link)
-        assert "?team=" in a_link
+        assert "#team=" in a_link, "SEC-4: the secret rides in the URL fragment now, never the query string"
         assert a.eval_on_selector("#teamQr svg", "el=>!!el") is True
         print("errors:", a_errors)
 
@@ -116,7 +116,7 @@ try:
         name_input.fill("Auto-synced squad")
         name_input.dispatch_event("change")
         import re
-        a_secret = re.search(r"[?&]team=([^&]+)", a_link).group(1)
+        a_secret = re.search(r"[?&#]team=([^&]+)", a_link).group(1)
         # renameSquad() (squads.js) triggers a real relay round trip
         # (pushBoardSnapshotIfConnected() -> roomIdFor() -> a real WebSocket
         # write) -- poll the relay's own doc directly instead of guessing

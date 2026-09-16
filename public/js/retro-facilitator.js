@@ -34,24 +34,32 @@ function openSessionForSquad(squadId){
   return null;
 }
 
-// Story 10: attaches this device to an ALREADY-OPEN session by code,
-// without starting or answering anything -- just reading the session doc
-// once is enough to make relay-client.js's getRoom() remember the code
-// (see rememberCode()) and connect, so the broad `sessions` listener
-// db.js's initDb() already runs for every non-join-mode device picks it
-// up the moment the relay's initial snapshot for that room arrives.
-// openSessionForSquad() above never checks who created a state.sessions
-// entry, so once this device "knows" the code, Squad view for the
-// matching squad renders the exact same facilitator card (live tally,
-// reveal, override, finish) a device that started the session sees --
+// Story 10: attaches this device to an ALREADY-OPEN session by its
+// co-facilitate link's secret, without starting or answering anything --
+// just reading the session doc once is enough to make relay-client.js's
+// getRoom() remember the room (see rememberCode()) and connect, so the
+// broad `sessions` listener db.js's initDb() already runs for every
+// non-join-mode device picks it up the moment the relay's initial snapshot
+// for that room arrives. openSessionForSquad() above never checks who
+// created a state.sessions entry, so once this device "knows" the room, Squad
+// view for the matching squad renders the exact same facilitator card (live
+// tally, reveal, override, finish) a device that started the session sees --
 // no separate rendering path needed. Requires the squad to already exist
 // locally (e.g. via a connected team link, see board-sync.js) for
 // anything meaningful to show; without that, Squad view just has no
 // matching squad to select, same as picking any squad this device
 // doesn't have.
-function coFacilitateSessionByCode(code){
+function coFacilitateSessionByCode(secret){
   if(!(state.live && state.db)) return Promise.reject({ message: t("retro.coFacilitate.notConnected") });
-  return state.db.doc("sessions/" + code).get().then(function(snap){
+  return SquadPulseCrypto.roomIdFor(secret).then(function(roomId){
+    // Recorded explicitly, not left to relay-client.js's own getRoom() side
+    // effect (see relay-client.js's own comment on rememberCode) -- that
+    // side effect never runs at all against a `state.db` that isn't
+    // relay-client.js itself (e.g. the test suite's fake local store), and
+    // renderSessionCardHtml()'s secretForRoom() lookup needs this regardless.
+    SquadPulseRelay.rememberCode(roomId, secret);
+    return state.db.doc("sessions/" + roomId, secret).get();
+  }).then(function(snap){
     if(!snap.exists) return Promise.reject({ message: t("retro.coFacilitate.codeNotOpen") });
     var data = snap.data();
     if(data.squadId) selectSquad(data.squadId);
@@ -82,38 +90,30 @@ function startSession(sq){
     overrides: {}, experimentNote: "",
     createdAt: nowIso()
   };
-  var code = uniqueSessionCode();
-  return liveOr(function(){
-    return state.db.collection("sessions").doc(code).set(payload).then(function(){
-      diag("Started retro session " + code + " for squad " + sq.id);
-    }).catch(function(err){
-      diag("Start session failed: " + (err && err.code ? err.code : String(err)));
-      throw err;
+  // SEC-2: a live session's room id and its encryption key are no longer
+  // the same value -- see crypto.js's header comment. generateSecret()/
+  // roomIdFor() are the exact same primitives board-sync.js already uses
+  // for the identical reason; a session's secret never touches the relay,
+  // only its one-way-derived room id does.
+  var secret = SquadPulseCrypto.generateSecret();
+  return SquadPulseCrypto.roomIdFor(secret).then(function(roomId){
+    // See coFacilitateSessionByCode()'s identical call for why this is
+    // explicit rather than left to relay-client.js's own getRoom() side
+    // effect.
+    SquadPulseRelay.rememberCode(roomId, secret);
+    return liveOr(function(){
+      return state.db.doc("sessions/" + roomId, secret).set(payload).then(function(){
+        diag("Started retro session " + roomId + " for squad " + sq.id);
+      }).catch(function(err){
+        diag("Start session failed: " + (err && err.code ? err.code : String(err)));
+        throw err;
+      });
+    }, function(){
+      state.sessions.push(Object.assign({ id:roomId }, payload));
+      renderSquadView();
+      return Promise.resolve();
     });
-  }, function(){
-    state.sessions.push(Object.assign({ id:code }, payload));
-    renderSquadView();
-    return Promise.resolve();
   });
-}
-
-// Short, human-typeable session codes -- doubles as the session doc's id,
-// so joining by code needs no separate lookup index. Excludes visually
-// ambiguous characters (0/O, 1/I/L) since this gets read off a screen and
-// typed on a phone. Used as the PRIMARY join method (see the header's
-// "Join a retro" button): the QR/link is a secondary convenience that some
-// phones' camera-to-app handoff doesn't carry a query string through, so
-// the code has to work standalone.
-var SESSION_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
-function generateSessionCode(){
-  var code = "";
-  for(var i=0;i<6;i+=1) code += SESSION_CODE_ALPHABET[Math.floor(Math.random()*SESSION_CODE_ALPHABET.length)];
-  return code;
-}
-function uniqueSessionCode(){
-  var code;
-  do { code = generateSessionCode(); } while(state.sessions.some(function(s){ return s.id===code; }));
-  return code;
 }
 
 function closeSession(sessionId){
@@ -149,8 +149,13 @@ function renderSessionCardHtml(sq){
       '<button class="btn primary" id="startSessionBtn" type="button">'+esc(t("retro.startButton"))+'</button>' +
     '</div>';
   }
-  var joinUrl = joinUrlFor(sess.id);
-  var coFacilitateUrl = coFacilitateUrlFor(sess.id);
+  // SEC-2: state.sessions is rebuilt wholesale from the relay's own,
+  // necessarily secret-less, broad snapshot on every change (see db.js) --
+  // the secret a join/co-facilitate link needs lives only in
+  // relay-client.js's own knownCodes bookkeeping (see its secretForRoom()).
+  var sessSecret = SquadPulseRelay.secretForRoom(sess.id) || "";
+  var joinUrl = joinUrlFor(sessSecret);
+  var coFacilitateUrl = coFacilitateUrlFor(sessSecret);
   var activeDims = retroDimensions(sess.dimensions);
   var revealMode = sess.revealMode || "hold";
   var liveHtml = "";
@@ -234,32 +239,32 @@ function renderSessionCardHtml(sq){
   var finishHtml = activeDims.length
     ? '<button class="btn primary" id="finishSessionBtn" type="button" style="margin-top:14px;">'+esc(t("retro.finishButton"))+'</button>'
     : "";
+  // SEC-2: the join-code modal and the raw code display above are gone --
+  // per the locked PO decision in STATUS.md, a retro session is joined only
+  // by scanning its QR code or opening its link, so this block (previously
+  // collapsed behind an "Or scan/share a link" <details>) is now the only
+  // path and is shown directly, no longer collapsed by default.
+  var securityNoticeHtml = '<p class="hint security-notice">'+esc(t("retro.shareSecurity.notice"))+'</p>';
   return '<div class="card session-card">' +
     '<h2>'+esc(t("retro.inProgressHeading"))+'</h2>' +
     '<p class="hint">'+esc(t("retro.retroLabel", {name: sess.templateName}))+'</p>' +
-    '<div class="session-code-block">' +
-      '<div class="field-label" style="margin-top:0;">'+esc(t("retro.codeBlock.heading"))+'</div>' +
-      '<div class="session-code" dir="ltr">'+esc(sess.id)+'</div>' +
-      '<p class="hint" style="margin:8px 0 0;">'+esc(t("retro.codeBlock.hint"))+'</p>' +
-    '</div>' +
     liveHtml +
     experimentHtml +
-    '<details class="legend" style="margin-top:14px;">' +
-      '<summary><span>'+esc(t("retro.shareLink.summary"))+'</span> <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>' +
-      '<div style="padding:0 18px 16px;">' +
-        '<p class="hint" style="margin:0 0 10px;">'+esc(t("retro.shareLink.hint"))+'</p>' +
-        '<div class="join-row">' +
-          '<div class="qr-box" id="sessionQr"></div>' +
-          '<div class="join-link-col">' +
-            '<div class="field-label" style="margin-top:0;">'+esc(t("retro.shareLink.linkLabel"))+'</div>' +
-            '<div class="join-link-row">' +
-              '<input class="join-link-input" id="sessionJoinLink" type="text" readonly value="'+esc(joinUrl)+'" aria-label="'+esc(t("retro.shareLink.linkLabel"))+'">' +
-              '<button class="btn" id="copyJoinLinkBtn" type="button">'+esc(t("retro.shareLink.copy"))+'</button>' +
-            '</div>' +
+    '<div class="join-share-block" style="margin-top:14px;">' +
+      '<div class="field-label" style="margin-top:0;">'+esc(t("retro.shareLink.summary"))+'</div>' +
+      '<p class="hint" style="margin:0 0 10px;">'+esc(t("retro.shareLink.hint"))+'</p>' +
+      '<div class="join-row">' +
+        '<div class="qr-box" id="sessionQr"></div>' +
+        '<div class="join-link-col">' +
+          '<div class="field-label" style="margin-top:0;">'+esc(t("retro.shareLink.linkLabel"))+'</div>' +
+          '<div class="join-link-row">' +
+            '<input class="join-link-input" id="sessionJoinLink" type="text" readonly value="'+esc(joinUrl)+'" aria-label="'+esc(t("retro.shareLink.linkLabel"))+'">' +
+            '<button class="btn" id="copyJoinLinkBtn" type="button">'+esc(t("retro.shareLink.copy"))+'</button>' +
           '</div>' +
         '</div>' +
       '</div>' +
-    '</details>' +
+      securityNoticeHtml +
+    '</div>' +
     '<details class="legend" style="margin-top:8px;">' +
       '<summary><span>'+esc(t("retro.coFacilitate.summary"))+'</span> <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>' +
       '<div style="padding:0 18px 16px;">' +
@@ -274,6 +279,7 @@ function renderSessionCardHtml(sq){
             '</div>' +
           '</div>' +
         '</div>' +
+        securityNoticeHtml +
       '</div>' +
     '</details>' +
     finishHtml +
@@ -339,7 +345,7 @@ function bindSessionCardEvents(sq){
   var qrBox = document.getElementById("sessionQr");
   if(qrBox){
     var sess = openSessionForSquad(sq.id);
-    if(sess) renderQrInto(qrBox, joinUrlFor(sess.id));
+    if(sess) renderQrInto(qrBox, joinUrlFor(SquadPulseRelay.secretForRoom(sess.id) || ""));
   }
 
   var copyCoFacilitateBtn = document.getElementById("copyCoFacilitateLinkBtn");
@@ -353,7 +359,7 @@ function bindSessionCardEvents(sq){
   var coFacilitateQrBox = document.getElementById("coFacilitateQr");
   if(coFacilitateQrBox){
     var coFacSess = openSessionForSquad(sq.id);
-    if(coFacSess) renderQrInto(coFacilitateQrBox, coFacilitateUrlFor(coFacSess.id));
+    if(coFacSess) renderQrInto(coFacilitateQrBox, coFacilitateUrlFor(SquadPulseRelay.secretForRoom(coFacSess.id) || ""));
   }
 
   document.querySelectorAll(".reveal-btn").forEach(function(btn){
@@ -546,7 +552,7 @@ function subscribeSessionResponses(sess){
 }
 
 // Renders a QR code as inline SVG via the bundled qrcode-generator library
-// (kept inline rather than loaded from a CDN, so the join code still works
+// (kept inline rather than loaded from a CDN, so the join link still works
 // even if a live retro session has no route to an external script host).
 function renderQrInto(el, text){
   try{

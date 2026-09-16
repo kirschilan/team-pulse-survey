@@ -109,35 +109,70 @@ function isJoinMode(){ return !!state.joinSessionId; }
 // explicitly stopped syncing -- in that case this omits the team param
 // entirely, exactly like before this fix, rather than forcing a team back
 // onto a device that deliberately isn't using one.
-function teamParamFor(){
+// Builds one '#'-prefixed URL fragment out of several name/secret pairs,
+// skipping any pair whose value is empty -- the one place that knows how to
+// combine, say, a join link's own session secret AND its piggybacked team
+// secret into a single fragment (a URL only ever has one '#'; two callers
+// each returning their own "#foo=..." can't just be concatenated). Returns
+// "" (not a bare dangling "#") when nothing qualifies.
+function buildFragment(pairs){
+  var params = new URLSearchParams();
+  pairs.forEach(function(pair){ if(pair[1]) params.set(pair[0], pair[1]); });
+  var s = params.toString();
+  return s ? "#" + s : "";
+}
+// SEC-4 (STATUS.md's "Security hardening backlog"): the team secret rides
+// in the URL FRAGMENT (#team=...), not the query string -- same reasoning,
+// and the same shape, as board-sync.js's own teamLinkFor(): a fragment is
+// never sent to any server at all, unlike a query param.
+function teamHashFor(){
   var secret = (typeof getTeamSecret === "function") ? getTeamSecret() : "";
-  return secret ? "&team=" + encodeURIComponent(secret) : "";
+  return buildFragment([["team", secret]]);
 }
 // Real bug report from usage: a participant opening a join link on a fresh
 // device always landed on an English join screen, even when the
 // facilitator had switched the whole app to Hebrew first -- state.ui.locale
 // (i18n.js) is per-device UI state with no way to reach a device that's
-// never visited before. Same fix shape as teamParamFor() above: carry the
+// never visited before. Same fix shape as teamHashFor() below: carry the
 // facilitator's CURRENT locale on the link, omitted entirely for the "en"
 // default so an all-English board's links are unchanged. state.js's
 // boot-time loadUiPrefs() applies it, but only as a fallback for a device
 // with no locale of its own already saved -- see that function's own
 // comment for why an existing preference always wins.
+// The only thing this app ever puts in a join/co-facilitate link's QUERY
+// string -- deliberately not a secret, so it stays fine to sit in a server
+// access log or a Referer header. Standalone (a leading "?", not "&") since
+// SEC-2's fix below (Codex review on PR #14, finding P1) means it's now the
+// only query param these links ever carry -- the session/co-facilitate
+// secret moved into the fragment alongside the team secret.
 function langParamFor(){
   var locale = (state.ui && state.ui.locale) || "en";
-  return locale === "en" ? "" : "&lang=" + encodeURIComponent(locale);
+  return locale === "en" ? "" : "?lang=" + encodeURIComponent(locale);
 }
-function joinUrlFor(sessionId){
-  return window.location.origin + window.location.pathname + "?session=" + encodeURIComponent(sessionId) + teamParamFor() + langParamFor();
+// SEC-2: `secret` is the session's high-entropy secret (crypto.js's
+// generateSecret()), not its relay room id -- see crypto.js's header
+// comment and retro-facilitator.js's startSession().
+//
+// Codex review on PR #14 (P1, fixing a gap SEC-4 left open): this secret
+// used to ride in the query string (?session=<secret>) -- sent in the
+// initial HTTP navigation request, so it could land in the hosting server's
+// own access logs, exactly the exposure SEC-4 closed for the PIGGYBACKED
+// team secret but missed for the session secret itself. It now rides in the
+// fragment too, alongside team (buildFragment() above combines them into
+// one "#session=...&team=..." rather than two separate fragments).
+function joinUrlFor(secret){
+  var team = (typeof getTeamSecret === "function") ? getTeamSecret() : "";
+  return window.location.origin + window.location.pathname + langParamFor() + buildFragment([["session", secret], ["team", team]]);
 }
 // Story 10: a SEPARATE link from joinUrlFor() above -- opening this one
 // attaches a device as a co-facilitator (full facilitator view) rather
 // than the participant join screen. See state.js's coFacilitateSessionId
 // and retro-facilitator.js's coFacilitateSessionByCode(). Carries the same
-// team param and for the same reason: a co-facilitator needs the
+// team fragment and for the same reason: a co-facilitator needs the
 // facilitator's real board locally too, not just the session's own data.
-function coFacilitateUrlFor(sessionId){
-  return window.location.origin + window.location.pathname + "?cofacilitate=" + encodeURIComponent(sessionId) + teamParamFor() + langParamFor();
+function coFacilitateUrlFor(secret){
+  var team = (typeof getTeamSecret === "function") ? getTeamSecret() : "";
+  return window.location.origin + window.location.pathname + langParamFor() + buildFragment([["cofacilitate", secret], ["team", team]]);
 }
 function slugify(s, fallback){
   var slug = String(s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
@@ -344,6 +379,8 @@ if (typeof module !== "undefined" && module.exports) {
     retroDimensions: retroDimensions, statementDimensions: statementDimensions,
     directRatingDimensions: directRatingDimensions,
     isStatementDimension: isStatementDimension, colorWord: colorWord, trendWord: trendWord,
-    liveOr: liveOr, syncLiveIfConnected: syncLiveIfConnected, DIAG_LINES: DIAG_LINES
+    liveOr: liveOr, syncLiveIfConnected: syncLiveIfConnected, DIAG_LINES: DIAG_LINES,
+    teamHashFor: teamHashFor, langParamFor: langParamFor, buildFragment: buildFragment,
+    joinUrlFor: joinUrlFor, coFacilitateUrlFor: coFacilitateUrlFor
   };
 }

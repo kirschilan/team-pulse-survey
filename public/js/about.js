@@ -5,7 +5,13 @@
 var aboutDialog = document.getElementById("aboutDialog");
 var aboutHelpBtn = document.getElementById("aboutHelpBtn");
 aboutHelpBtn.addEventListener("click", function(){
-  document.getElementById("aboutJoinBtn").textContent = t(state.joinSessionId ? "about.return" : "about.join");
+  // SEC-2: there's no more "open the join-code modal" action for this
+  // button to fall back to (see index.html's removed join-with-code modal)
+  // -- it's only ever useful to jump BACK to a session this device is
+  // already joining, so it's hidden the rest of the time.
+  var joinBtn = document.getElementById("aboutJoinBtn");
+  joinBtn.hidden = !state.joinSessionId;
+  joinBtn.textContent = t("about.return");
   if(!aboutDialog.open) aboutDialog.showModal();
 });
 document.getElementById("aboutCloseBtn").addEventListener("click", function(){
@@ -13,8 +19,7 @@ document.getElementById("aboutCloseBtn").addEventListener("click", function(){
 });
 aboutDialog.addEventListener("close", function(){
   try{ localStorage.setItem("squadpulse:welcomeSeen", "1"); }catch(e){ /* dismissal must work without storage */ }
-  // A guide action may already have focused the join-code input.
-  if(document.getElementById("joinCodeBackdrop").hidden) aboutHelpBtn.focus();
+  aboutHelpBtn.focus();
 });
 // Do not let the app-wide Escape handler close an underlying editor too.
 aboutDialog.addEventListener("keydown", function(event){
@@ -39,7 +44,6 @@ aboutDialog.addEventListener("click", function(event){
 document.getElementById("aboutJoinBtn").addEventListener("click", function(){
   aboutDialog.close();
   if(state.joinSessionId) returnToJoinScreen();
-  else document.getElementById("joinCodeBtn").click();
 });
 
 // A per-browser convenience, separate from any terms acknowledgment.

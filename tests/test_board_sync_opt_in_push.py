@@ -115,7 +115,7 @@ try:
         assert "connected" in status_after.lower()
         team_link = a.eval_on_selector("#teamLinkInput", "el=>el.value")
         print("team link:", team_link)
-        assert "?team=" in team_link, "the link should carry the high-entropy secret as a query param"
+        assert "#team=" in team_link, "SEC-4: the secret rides in the URL fragment now, never the query string"
         assert a.eval_on_selector("#teamQr svg", "el=>!!el") is True, "a QR code should render for the link"
 
         a.click("#addSquadBtn")
@@ -125,7 +125,7 @@ try:
         # SAME link A generated, exactly as a second device joining for
         # real would end up doing (opening the link, or pasting it).
         from urllib.parse import urlparse, parse_qs
-        secret = parse_qs(urlparse(team_link).query)["team"][0]
+        secret = parse_qs(urlparse(team_link).fragment)["team"][0]
         # renameSquad()/addSquad() (squads.js) writing to "squads" is a
         # purely local write (local-store.js), but the SEPARATE board-sync
         # push (pushBoardSnapshotIfConnected() -> roomIdFor() -> a real
