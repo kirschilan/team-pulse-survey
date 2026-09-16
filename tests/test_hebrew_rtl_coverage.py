@@ -13,7 +13,6 @@ from fixtures.build_page import build_page, test_output_path
 # "rtl" no matter what) would be caught, not just an always-true assertion.
 HEB_SQUAD = "יחידה א"
 HEB_LABEL = "שחרור קל"
-HEB_LABEL_V2 = "שחרור קל (גרסה 2)"
 HEB_GREEN = "שחרורים הם שגרתיים ובטוחים"
 HEB_RED = "שחרורים הם נדירים ומסוכנים"
 HEB_NOTE = "הערה בעברית לבדיקה"
@@ -311,50 +310,13 @@ with sync_playwright() as p:
 
     pageP.close()
 
-    # ================= 9. CSV Hebrew round-trip (csv.js) =================
-    # The scenario csv.js's own comments call out (lines 13, 164-166): a
-    # dimension's label gets translated to Hebrew, then translated/edited
-    # AGAIN later -- re-importing an OLDER export must still match by the
-    # stable Dimension Key, not by the (now-stale) label text.
-    page.click('.view-btn[data-view="admin"]')
-    with page.expect_popup() as popup_info:
-        page.click('#exportBtn')
-    popup = popup_info.value
-    popup.wait_for_load_state()
-    csv_text = popup.eval_on_selector('pre', 'el => el.textContent')
-    popup.close()
-    print("=== csv.js: exported CSV contains Hebrew squad/label + stable key ===")
-    print(csv_text)
-    assert HEB_SQUAD in csv_text, "Hebrew squad name missing/mangled in CSV export"
-    assert HEB_LABEL in csv_text, "Hebrew dimension label missing/mangled in CSV export"
-    assert ",release" in csv_text or "release" in csv_text.splitlines()[1], "Dimension Key column missing 'release'"
-
-    old_csv_path = test_output_path("test_hebrew_old_export.csv")
-    old_csv_path.write_text(csv_text)
-
-    # relabel the dimension AGAIN, simulating a later re-translation
-    page.click('#dimManageBtn')
-    page.wait_for_selector('.dim-row[data-key="release"] input.dim-label', state="attached")
-    label_input2 = page.query_selector('.dim-row[data-key="release"] input.dim-label')
-    label_input2.fill(HEB_LABEL_V2)
-    label_input2.dispatch_event("change")
-    page.click('#dimDoneBtn')
-
-    # re-import the OLDER export, whose Dimension text still says HEB_LABEL
-    # (now stale) -- it must still match via the Dimension Key column.
-    # csv.js reads the file via FileReader (genuinely async), so
-    # pendingImportPlan isn't set the instant set_input_files() returns --
-    # poll for it rather than guess how long the read takes.
-    page.set_input_files('#csvFileInput', str(old_csv_path))
-    page.wait_for_function("() => pendingImportPlan !== null")
-    plan = page.evaluate("({ ratingCount: pendingImportPlan.ratingCount, skipped: pendingImportPlan.skipped })")
-    print("=== csv.js: re-import after dimension re-translated (matched via Dimension Key) ===")
-    print("plan:", plan)
-    assert plan["ratingCount"] >= 1, "expected the Hebrew-labeled row to still match by Dimension Key"
-    assert len(plan["skipped"]) == 0, "no row should be skipped -- Dimension Key should resolve despite stale label text"
-    page.click('#importApplyBtn')
-    print("squad-1/release after Hebrew-key re-import:", page.evaluate("window.__FAKE_STORE__['squads/squad-1'].dimensions.release"))
-    print("errors:", errors)
+    # Section 9 (CSV Hebrew round-trip via the "Dimension Key" column)
+    # removed along with CSV itself -- Story 13 item 4. The property it
+    # proved (re-importing an older export still matches a rating to the
+    # right dimension after its label has since been re-translated/renamed,
+    # by KEY rather than by label text) isn't language-specific and is
+    # proven directly, independent of CSV's own column-based workaround, in
+    # tests/unit/test_json_import.js.
 
     page.screenshot(path=str(test_output_path("shot_hebrew_rtl_coverage.png")), full_page=True)
     browser.close()

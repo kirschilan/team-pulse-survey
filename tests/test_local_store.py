@@ -108,14 +108,14 @@ with sync_playwright() as p:
     assert "good" in cell_class_live
     print("errors2:", errors2)
 
-    # ---- CSV export triggers a real browser download, not the old fallback tab ----
-    print("=== CSV export downloads a real file ===")
+    # ---- JSON export triggers a real browser download, not the old fallback tab ----
+    print("=== JSON export downloads a real file ===")
     page.click('.view-btn[data-view="admin"]')  # setView() is synchronous
     with page.expect_download() as dl_info:
-        page.click("#exportBtn")
+        page.click("#exportJsonBtn")
     download = dl_info.value
     print("download filename:", download.suggested_filename)
-    assert download.suggested_filename == "squad-pulse-snapshot.csv"
+    assert download.suggested_filename == "squad-pulse-board.json"
 
     # ---- a real window.claude (Claude Artifact-shaped) must be left alone ----
     print("=== local-store.js does not override a real window.claude ===")

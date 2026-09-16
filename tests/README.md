@@ -7,9 +7,9 @@ file is the mechanics.
 Two tiers:
 
 - **`tests/unit/`** — plain Node (`node:test`, nothing to install) tests of
-  pure logic with no DOM dependency: consolidation/scoring math, CSV
-  parsing/column-matching. Milliseconds, not seconds. See
-  `tests/unit/README.md`.
+  pure logic with no DOM dependency: consolidation/scoring math, JSON
+  board export/import plan-building and validation. Milliseconds, not
+  seconds. See `tests/unit/README.md`.
 - **`tests/test_*.py`** (this directory) — Playwright + Python end-to-end
   tests against `public/index.html` running over `file://`, for everything
   that needs a real browser: UI interaction, real DOM state, real
@@ -24,8 +24,8 @@ Two tiers:
   `relay/README.md`). Each file is a standalone script, not a pytest suite.
 
 Together, these are the full regression suite — a change to consolidation
-math or CSV matching should get a unit test; a change to what the user sees
-or clicks needs a Playwright test.
+math or import-plan matching logic should get a unit test; a change to what
+the user sees or clicks needs a Playwright test.
 
 ## Setup
 
@@ -95,7 +95,7 @@ network in this harness yet. `window.__NOTIFY__(collectionPath)` fires that
 store's listeners by hand, standing in for what a real backend would push
 automatically.
 
-Screenshots and scratch CSV fixtures go through `test_output_path(name)`,
+Screenshots and scratch import fixtures go through `test_output_path(name)`,
 which resolves to `tests/output/` (gitignored).
 
 A test needing a materially different fake store than `fake_store.html`
@@ -179,18 +179,13 @@ converted just to remove a sleep.
 Before adding a new Playwright test, check whether what it would prove is
 already fully covered by a `tests/unit/*.js` test on the same underlying
 pure function (see `docs/` and `tests/unit/README.md` — `helpers.js`'s
-consolidation/scoring math and `csv.js`'s column-matching/import-plan
-logic are the two richest examples). A Playwright test earns its slower,
-real-browser cost by covering something a unit test structurally can't:
-real DOM rendering/interaction, `localStorage`, a real WebSocket, or
-`crypto.subtle`. A scenario whose ONLY assertions re-check already
-unit-tested logic through a preview pane, with nothing applied or
-rendered beyond that, is a case for trimming it (see
-`test_csv_import_column_matching.py`'s history for a worked example: its
-"renamed headers, positional-fallback" scenario was removed once
-`tests/unit/test_csv.js` was confirmed to cover that exact logic, since
-the file's other two scenarios already proved the same preview-rendering
-pipeline works).
+consolidation/scoring math and `board-export-import.js`'s import-plan
+matching/validation logic are the two richest examples). A Playwright test
+earns its slower, real-browser cost by covering something a unit test
+structurally can't: real DOM rendering/interaction, `localStorage`, a real
+WebSocket, or `crypto.subtle`. A scenario whose ONLY assertions re-check
+already unit-tested logic through a preview pane, with nothing applied or
+rendered beyond that, is a case for trimming it.
 
 ## Naming
 
@@ -206,12 +201,13 @@ references.)
 | File | Covers |
 |---|---|
 | `test_dimension_and_template_admin.py` | Rating a cell; Admin's dimension manager (rename/add/reorder/delete); saving and reloading a custom template |
-| `test_template_switching_and_csv_import.py` | Switching templates preserves each one's own dimension set and squad ratings underneath; a basic CSV import |
-| `test_hebrew_rtl_coverage.py` | Real Hebrew content resolves `dir="auto"` to actual rtl (not just the attribute's presence) across every such surface in the app -- admin's dimension manager and squad list, Squad view, the rating modal, Tribe view's grid/legend/tooltip/hotspots, Templates, and the retro facilitator/join flow -- each paired with an English control; a Dimension-Key-based CSV re-import after a dimension's Hebrew label is edited again |
+| `test_template_switching.py` | Switching templates preserves each one's own dimension set and squad ratings underneath |
+| `test_hebrew_rtl_coverage.py` | Real Hebrew content resolves `dir="auto"` to actual rtl (not just the attribute's presence) across every such surface in the app -- admin's dimension manager and squad list, Squad view, the rating modal, Tribe view's grid/legend/tooltip/hotspots, Templates, and the retro facilitator/join flow -- each paired with an English control |
 | `test_admin_language_switch.py` | Multi-language support Story 1 (`i18n.js`): the Admin panel's language switcher renders Hebrew (static markup via `[data-i18n]`/`[data-i18n-placeholder]`, plus JS-built strings like the squad list's aria-labels and confirm dialogs, all via `t()`), scopes `dir="rtl"` to `#viewAdmin` only (the rest of the still-English app stays untouched), and persists the choice across reload via `localStorage` |
 | `test_main_screen_language.py` | Multi-language support Story 4: Tribe view, Squad view, and the shared rating modal as i18n-supported screens -- translated chrome, `dir="rtl"` scoped to `#viewTribe`/`#viewSquad`/`#backdrop` (not the document root, and not the still-English retro session card embedded inside `#viewSquad`, which opts out with its own `dir="ltr"`), template-sourced dimension content staying English on purpose, and `t()`'s bidi-isolate marks keeping composite Hebrew+English/number strings in the correct visual order |
-| `test_csv_import_column_matching.py` | CSV export/import round-tripping through renamed headers, reordered columns, and a template-mismatch warning |
-| `test_tooltip_busy_overlay_and_csv_key.py` | Grid header hover/focus tooltip; the busy overlay during template switches and CSV import; the CSV "Dimension Key" column surviving a dimension rename |
+| `test_tooltip_and_busy_overlay.py` | Grid header hover/focus tooltip; the busy overlay during template switches and a JSON import that creates a new squad |
+| `test_json_export.py` | Story 13 item 1: the JSON board export button, English/Hebrew label, and a real click producing real, parseable JSON with the right shape |
+| `test_json_import.py` | Story 13 items 3a+3b: the JSON board import preview modal end to end -- both error states, a Squads/Templates scope choice, a real Merge apply and a real Replace apply (squads/ratings, dimensions, saved templates, board settings) asserted against `window.__FAKE_STORE__` directly, the backup-first offer, and Hebrew/RTL |
 | `test_view_navigation_and_squad_admin.py` | Tribe view's read-only grid; Squad view rating and its "hotspots" panel; Admin squad CRUD; view/squad selection persisting across reload |
 | `test_scored_template_five_dysfunctions.py` | Loading the Five Dysfunctions starter template (statements/scoreBands/strategies) and reloading it idempotently |
 | `test_scored_template_tuckman.py` | The Tuckman starter template end to end: 20 interleaved statements, source-assessment scoring bands (not a health judgment) |
@@ -222,7 +218,7 @@ references.)
 | `test_retro_override_and_response_table.py` | Facilitator override of a consolidated result, resetting it, and the per-response anonymized table |
 | `test_retro_experiment_note_and_finish.py` | The shared sprint-experiment note; finishing a retro writes results into the squad, or no-ops with nothing submitted |
 | `test_tribe_hotspots.py` | Tribe view's cross-squad hotspot rollup and ranking (`renderHotspots`/`renderStats`) |
-| `test_local_store.py` | `public/local-store.js` itself — seeding, reload persistence, cross-tab sync, real CSV download, non-interference with a real `window.claude` |
+| `test_local_store.py` | `public/local-store.js` itself — seeding, reload persistence, cross-tab sync, real JSON download, non-interference with a real `window.claude` |
 | `test_relay_cross_device_sync.py` | The real relay end to end: starts `relay/server.js` as a subprocess and drives two independent browser contexts (facilitator + participant) through a full retro over a real encrypted WebSocket connection, plus a third late-joiner confirming a just-closed session reads as "ended" (not the generic "isn't open"), and a fourth joining a code that never existed at all confirming that one still gets the generic message |
 | `test_starter_template_spotify.py` | The Spotify Squad Health Check starter template — listed, loadable, and reloadable after switching away, same as the other two starters |
 | `test_view_switch_refreshes_stale_state.py` | A db snapshot that arrives while a view (Tribe/Squad/Admin) is hidden updates `state` but not that view's DOM, since every listener gates its own render on the currently-visible view (see `db.js`) -- switching back must show current state, not whatever was last rendered before you left |
