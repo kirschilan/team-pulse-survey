@@ -475,6 +475,49 @@ the right secret would otherwise mask the check). `tests/unit/test_board_sync.js
 `parseTeamSecretInput()`/`teamLinkFor()` instead of the retired `normalizeTeamCode()`. Full 25-file
 Playwright + 38-test unit suite passing.
 
+### SEC-4 (2026-09-16, STATUS.md's "Security hardening backlog"): team link secret moved to the URL fragment
+
+The 2026-09-12 fix above still shared the secret as `?team=<secret>` — a query param, sent to
+whatever's actually hosting `index.html` on every single request that carries it, landing in that
+host's own access logs (and, on the very next click to somewhere else, a Referer header) before this
+page's own JS ever ran to strip it. A URL **fragment** (`#team=<secret>`) is never sent to any server
+at all — the browser keeps it client-side, full stop — so `teamLinkFor()`/`parseTeamSecretInput()`/
+`autoConnectFromLink()` (board-sync.js) and `joinUrlFor()`/`coFacilitateUrlFor()` (helpers.js, a
+join/co-facilitate link's own piggybacked team secret — see the 2026-09-16 join-link-carries-
+team-sync fix above) all moved to it. Old links already shared/bookmarked before this change keep
+working: `parseTeamSecretInput()` checks the fragment first, then falls back to the legacy `?team=`
+query form.
+
+**A real, pre-existing bug got fixed along the way, not just the query→fragment move**:
+`autoConnectFromLink()`'s cleanup (stripping the secret from the visible URL/history) used to be
+skipped ENTIRELY whenever the URL's secret already matched what this device had already stored — an
+early `return` before the history rewrite ever ran. Re-opening the same bookmarked/shared link a
+second time, or simply reloading, left the secret sitting in the visible URL indefinitely (and, for
+the old query-string form, sent to the server again on that very reload). Cleanup now always runs
+whenever the URL carries a team param at all; only the (idempotent) `setTeamSecret()` call itself is
+skipped when there's nothing new to store.
+
+Also fixed: `state.js`'s `openedFromInvitation` (what suppresses the first-visit welcome dialog for
+someone arriving via a real invitation, not a plain fresh visit) only ever checked the QUERY string
+for `session`/`cofacilitate`/`team` — a bare team link with nothing else in its query string (now
+entirely possible, since the secret itself no longer lives there) would have gone undetected,
+incorrectly showing the welcome dialog to someone who just opened a real team invitation. Now also
+checks the fragment for `team=`.
+
+**Per this backlog item's own acceptance criteria, explicitly did NOT overclaim what this buys**:
+the About dialog's terms text now says plainly that a fragment being off the wire is not protection
+against a malicious script already running on this page, and doesn't stop the link itself from being
+forwarded to someone else — and that board data (including any connected team's secret) lives in
+this browser's own `localStorage`, readable by any same-origin script. Test-first per this repo's TDD
+skill: `tests/unit/test_board_sync.js` (fragment vs. legacy-query vs.-both precedence) and
+`tests/unit/test_helpers.js` (the new `teamHashFor()`, and that `joinUrlFor()`/`coFacilitateUrlFor()`
+put the fragment LAST, after every query param) cover the pure logic; the existing Playwright board-
+sync/join-link suite was updated in place (assertions on the literal `?team=`/`#team=` shape) rather
+than rewritten, plus one new case in `test_welcome_first_visit.py` for the `openedFromInvitation` fix
+(verified it would have failed pre-fix by temporarily reverting the check and confirming the welcome
+dialog wrongly appeared). Full suite green: 144/144 unit tests, all 48 Playwright files (47s, under
+the 78s baseline), relay's protocol + storage suites passing.
+
 ## Multi-language rollout backlog
 
 The product owner is driving Hebrew/RTL support in one story at a time on this branch (see the
@@ -2971,3 +3014,16 @@ not just in this repo's own tests.
   before the walkthrough even ran). Full suite green: 144/144 unit tests, all 49 Playwright files
   (50s, under the 78s baseline -- one more file than the last entry's 48, this one's own new test),
   relay's protocol + storage suites passing.
+- 2026-09-16 — Implemented SEC-4 (team-link secret exposure): moved the team link's secret from
+  `?team=` (a query param, sent to whatever hosts `index.html` on every request, landing in its
+  access logs before this page's own JS ever ran) to `#team=` (a URL fragment, never sent to any
+  server at all). Legacy `?team=` links still work. Fixed a real pre-existing bug found along the
+  way: URL cleanup after opening a team link was silently skipped whenever the link's secret already
+  matched what this device had stored, leaving it sitting in the visible URL/history indefinitely.
+  Also fixed `openedFromInvitation` (state.js), which only checked the query string and would have
+  missed a bare team link now that its secret isn't there any more. Explicitly did NOT overclaim what
+  a fragment buys (About dialog copy: not a defense against a malicious script already on the page,
+  doesn't stop the link being forwarded, localStorage is readable by any same-origin script) per this
+  backlog item's own acceptance criteria. Full detail in the "Security fix" section under "Board
+  sync" above. Full suite green: 144/144 unit tests, 48/48 Playwright files, relay's protocol +
+  storage suites.

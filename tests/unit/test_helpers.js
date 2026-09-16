@@ -178,3 +178,27 @@ test("sortedDimensions/sortedSquads/dimByKey/findSquad/squadScore read from glob
   assert.equal(score.total, 2);
   assert.deepEqual(score.counts, { good: 1, warn: 0, crit: 1, unscored: 0 });
 });
+
+// SEC-4 (STATUS.md's "Security hardening backlog"): a retro join/
+// co-facilitate link's piggybacked team secret (see this file's own header
+// comment on why one link now carries both) moved from a query param to
+// the URL fragment, same as the standalone team link (board-sync.js) --
+// never sent to a server at all, unlike a query param.
+test("teamHashFor() builds a #team= fragment when a team secret is connected, empty otherwise", () => {
+  global.getTeamSecret = () => "the-team-secret";
+  assert.equal(helpers.teamHashFor(), "#team=the-team-secret");
+  global.getTeamSecret = () => "";
+  assert.equal(helpers.teamHashFor(), "", "no team connected -- omit the fragment entirely, don't force one on");
+});
+
+test("joinUrlFor()/coFacilitateUrlFor() put ?session=/?cofacilitate= and &lang= in the query string, and #team= LAST as the fragment", () => {
+  global.state = { ui: { locale: "he" } };
+  global.getTeamSecret = () => "the-team-secret";
+  const joinUrl = helpers.joinUrlFor("abc123");
+  assert.equal(joinUrl, "http://localhost/?session=abc123&lang=he#team=the-team-secret");
+  const cofacUrl = helpers.coFacilitateUrlFor("abc123");
+  assert.equal(cofacUrl, "http://localhost/?cofacilitate=abc123&lang=he#team=the-team-secret");
+  // no team connected -- the fragment is omitted, not left dangling as a bare "#"
+  global.getTeamSecret = () => "";
+  assert.ok(!helpers.joinUrlFor("abc123").includes("#"), "no trailing # when there's no team secret to carry");
+});

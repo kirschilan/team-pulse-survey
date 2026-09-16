@@ -21,7 +21,7 @@ from fixtures.build_page import write_plain_index
 # joins that one retro AND switches this device onto the facilitator's
 # team -- one link, one shared board, same as opening the team link
 # directly would. autoConnectFromLink() (board-sync.js) already applies a
-# `?team=` param generically and strips it from the visible URL; nothing
+# `#team=` fragment generically and strips it from the visible URL; nothing
 # else needed to change for a joining device to end up team-synced.
 #
 # Happy path: a device that NEVER opens the team link, only ever the
