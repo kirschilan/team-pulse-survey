@@ -17,6 +17,13 @@ milliseconds, not seconds, and a failure points straight at the function and
 input that broke, rather than at a UI assertion three layers away from the
 actual bug.
 
+`test_security_headers.js` is a different flavor of "no browser needed":
+`vercel.json`'s `headers` config is plain JSON, not logic, so it's validated
+by parsing and asserting on it directly rather than loading a page --
+`X-Content-Type-Options`/`Permissions-Policy` have no meta-tag equivalent, so
+this is their only test coverage (see `tests/test_security_headers.py` for
+the CSP meta tag's own, real-browser coverage).
+
 ## Why these exist alongside the Playwright suite
 
 `public/js/*.js` are plain classic scripts sharing one global scope, not ES

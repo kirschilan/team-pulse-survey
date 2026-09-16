@@ -5,6 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Squad Pulse</title>
 <meta name="description" content="A no-database team pulse survey and facilitated retro tool, with customizable predefined templates (Five Dysfunctions of a Team, Spotify Squad Health Check, Tuckman's stages).">
+<!-- SEC-3 (STATUS.md's "Security hardening backlog"): scoped to what this
+     app actually loads -- see relay-client.js/crypto.js for why connect-src
+     needs the ws:/wss: schemes rather than a specific host (the relay's
+     origin is deployment-configurable, set via SQUAD_PULSE_RELAY_URL, not
+     knowable at build time -- see relay/README.md), and index.html's own
+     extensive `style="..."` attributes on JS-generated markup for why
+     style-src needs 'unsafe-inline' (rewriting every one to a class is a
+     separate, much larger change, not part of this security pass).
+     Deliberately NOT setting frame-ancestors here: unlike every other
+     directive below, the PO backlog item this satisfies (SEC-3) explicitly
+     flagged permitted embedding origins as an OPEN PRODUCT DECISION, not an
+     implementer's call -- and README.md's own "Deploying for real" section
+     lists "embedding this somewhere public (e.g. a subdomain + iframe on a
+     website)" as one of exactly two intended deployment shapes, so shipping
+     a default here risks silently breaking that. See STATUS.md's locked
+     decisions for the full writeup and what an operator who KNOWS their own
+     embedding origins should do meanwhile. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws: wss:; img-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';">
+<meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -331,27 +350,9 @@
 </div>
 <script src="vendor/qrcode.js"></script>
 <script src="relay-config.js"></script>
-<script>
-  // Where retro sessions actually live-sync (relay-client.js + crypto.js
-  // below) -- ws:// for a plain local relay, wss:// once it's deployed
-  // somewhere real. relay-config.js (above) sets window.SQUAD_PULSE_RELAY_URL
-  // directly when a Vercel deployment has the SQUAD_PULSE_RELAY_URL
-  // environment variable set (see scripts/generate-relay-config.js and
-  // relay/README.md) -- the `||` below only kicks in when that didn't
-  // happen. Only defaults to a locally-run relay when this PAGE ITSELF is
-  // local (file:// or localhost) -- a real deployment with no relay
-  // configured must NOT silently fall back to "ws://localhost:8787", since
-  // that means the VISITOR'S OWN machine: Chrome flags that as a
-  // cross-context private-network request (a scary permission prompt for a
-  // connection that can never succeed), and relay-client.js would then
-  // retry forever. Leave it explicitly null instead so relay-client.js can
-  // recognize "no relay configured" and fail fast with one clear message.
-  window.SQUAD_PULSE_RELAY_URL = window.SQUAD_PULSE_RELAY_URL || (
-    (location.protocol === "file:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")
-      ? "ws://localhost:8787"
-      : null
-  );
-</script>
+<!-- SEC-3: was an inline <script> here -- moved to js/relay-url-fallback.js
+     so the page's CSP can use script-src 'self' with no 'unsafe-inline'. -->
+<script src="js/relay-url-fallback.js"></script>
 <script src="js/crypto.js"></script>
 <script src="js/relay-client.js"></script>
 <script src="local-store.js"></script>
