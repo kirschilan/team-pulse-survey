@@ -68,7 +68,11 @@ with sync_playwright() as p:
     session_id = page.evaluate("""
       Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/') && k.split('/').length===2)[0].split('/')[1]
     """)
-    page.evaluate("joinSessionByCode(%r)" % session_id)
+    # SEC-2: joinSessionByCode() takes the session's SECRET, not its relay
+    # room id -- relay-client.js's secretForRoom() is the same lookup
+    # renderSessionCardHtml() itself uses to build the real join link.
+    secret = page.evaluate("SquadPulseRelay.secretForRoom(%r)" % session_id)
+    page.evaluate("joinSessionByCode(%r)" % secret)
     page.wait_for_selector('.stmt-row, .direct-row', state="attached")
 
     print("errors:", errors)
