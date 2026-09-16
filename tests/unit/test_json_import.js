@@ -9,7 +9,7 @@ global.sortedDimensions = helpers.sortedDimensions;
 global.sortedSquads = helpers.sortedSquads;
 global.nowIso = function(){ return new Date().toISOString(); };
 
-const csv = require(path.join(__dirname, "..", "..", "public", "js", "csv.js"));
+const boardIO = require(path.join(__dirname, "..", "..", "public", "js", "board-export-import.js"));
 
 function withBoard(board, fn) {
   global.state = Object.assign(
@@ -22,31 +22,31 @@ function withBoard(board, fn) {
 // ---------- parseBoardImportFile() ----------
 
 test("parseBoardImportFile() accepts a well-formed export", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [] }));
   assert.equal(result.ok, true);
   assert.deepEqual(result.data.squads, []);
 });
 
 test("parseBoardImportFile() rejects text that isn't JSON at all", () => {
-  const result = csv.parseBoardImportFile("not json { at all");
+  const result = boardIO.parseBoardImportFile("not json { at all");
   assert.equal(result.ok, false);
   assert.equal(result.error, "not-json");
 });
 
 test("parseBoardImportFile() rejects a file with no squads array", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1 }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1 }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "missing-squads");
 });
 
 test("parseBoardImportFile() rejects a file with no formatVersion", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ squads: [] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ squads: [] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "missing-version");
 });
 
 test("parseBoardImportFile() refuses a formatVersion newer than this app understands, rather than guessing", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 4, squads: [] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 4, squads: [] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "unsupported-version");
   assert.equal(result.fileVersion, 4);
@@ -61,25 +61,25 @@ test("parseBoardImportFile() refuses a formatVersion newer than this app underst
 // function already being the one place that decides ok:true/false.
 
 test("parseBoardImportFile() rejects a null entry in the squads array", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [null] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [null] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-squad");
 });
 
 test("parseBoardImportFile() rejects a squad entry whose name isn't a string", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: 5, dimensions: {} }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: 5, dimensions: {} }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-squad");
 });
 
 test("parseBoardImportFile() rejects a squad entry whose dimensions isn't a plain object", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: ["not", "an", "object"] }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: ["not", "an", "object"] }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-squad");
 });
 
 test("parseBoardImportFile() still accepts a squad entry with no dimensions field at all", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1" }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1" }] }));
   assert.equal(result.ok, true);
 });
 
@@ -99,25 +99,25 @@ test("parseBoardImportFile() still accepts a squad entry with no dimensions fiel
 // string") closes both problems with the same check.
 
 test("parseBoardImportFile() rejects a rating value that isn't a plain object", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: "good" } }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: "good" } }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-rating");
 });
 
 test("parseBoardImportFile() rejects a rating whose note isn't a string", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: "good", note: 123 } } }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: "good", note: 123 } } }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-rating");
 });
 
 test("parseBoardImportFile() rejects a rating whose color isn't one of the app's known colors", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: "not-a-real-color" } } }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: "not-a-real-color" } } }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-rating");
 });
 
 test("parseBoardImportFile() rejects a rating whose trend isn't one of the app's known trends", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { trend: "sideways" } } }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { trend: "sideways" } } }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-rating");
 });
@@ -137,44 +137,44 @@ test("parseBoardImportFile() rejects a rating whose trend isn't one of the app's
 // with) before checking OWN-property membership, not bracket lookup.
 
 test("parseBoardImportFile() rejects a rating color that isn't a string, even if it would coerce to a valid one", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: ["good"] } } }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: ["good"] } } }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-rating");
 });
 
 test("parseBoardImportFile() rejects a rating color naming an inherited Object.prototype property", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: "constructor" } } }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: "constructor" } } }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-rating");
 });
 
 test("parseBoardImportFile() rejects a non-coercible rating color without throwing", () => {
   assert.doesNotThrow(() => {
-    const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: { toString: null } } } }] }));
+    const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: { toString: null } } } }] }));
     assert.equal(result.ok, false);
     assert.equal(result.error, "invalid-rating");
   });
 });
 
 test("parseBoardImportFile() rejects a rating trend that isn't a string, even if it would coerce to a valid one", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { trend: ["up"] } } }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { trend: ["up"] } } }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-rating");
 });
 
 test("parseBoardImportFile() rejects a rating trend naming an inherited Object.prototype property", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { trend: "hasOwnProperty" } } }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { trend: "hasOwnProperty" } } }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-rating");
 });
 
 test("parseBoardImportFile() accepts a well-formed rating with every known-good field", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: "good", trend: "up", note: "great work" } } }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: { color: "good", trend: "up", note: "great work" } } }] }));
   assert.equal(result.ok, true);
 });
 
 test("parseBoardImportFile() accepts a rating with no fields at all (an empty object)", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: {} } }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [{ name: "Squad 1", dimensions: { release: {} } }] }));
   assert.equal(result.ok, true);
 });
 
@@ -187,7 +187,7 @@ test("buildSquadImportPlan() matches an existing squad by name and reports its f
     dimensions: [{ key: "release", label: "Easy to release", order: 1 }],
     squads: [{ id: "sq-1", name: "Squad 1", dimensions: {} }]
   }, () => {
-    const plan = csv.buildSquadImportPlan(fileWith([
+    const plan = boardIO.buildSquadImportPlan(fileWith([
       { name: "Squad 1", dimensions: { release: { color: "good" } } }
     ]), "merge");
     assert.equal(plan.ratingCount, 1);
@@ -197,9 +197,38 @@ test("buildSquadImportPlan() matches an existing squad by name and reports its f
   });
 });
 
+// Ports forward the assurance CSV's own "Dimension Key column" existed for
+// (removed along with CSV itself, Story 13 item 4): re-importing an export
+// still matches a rating to the right dimension even after that dimension's
+// LABEL has since been renamed or translated on the board. CSV needed a
+// whole extra column as a workaround for this, since its flat-table format
+// has no natural way to reference a dimension except by label; JSON never
+// had that problem -- a rating's file-key is matched directly against the
+// board's CURRENT dimension KEY (dimByKeyMap, the primary path in
+// buildSquadImportPlan(), unconditional and unrelated to label at all), so
+// nothing about a label rename can ever affect it.
+test("buildSquadImportPlan() still matches a rating by key after the board's dimension label has been renamed", () => {
+  withBoard({
+    dimensions: [{ key: "release", label: "Renamed / Translated Label", order: 1 }],
+    squads: [{ id: "sq-1", name: "Squad 1", dimensions: {} }]
+  }, () => {
+    // the file itself still carries the dimension's OLD label (as it was at
+    // export time) -- irrelevant, since matching never looks at fd.label
+    // when the file-key already matches a board dimension directly.
+    const plan = boardIO.buildSquadImportPlan({
+      formatVersion: 1,
+      squads: [{ name: "Squad 1", dimensions: { release: { color: "good" } } }],
+      dimensions: [{ key: "release", label: "Easy to release" }]
+    }, "merge");
+    assert.equal(plan.ratingCount, 1);
+    assert.equal(plan.skipped.length, 0);
+    assert.deepEqual(plan.patches[0].fileDims, { release: { color: "good" } });
+  });
+});
+
 test("buildSquadImportPlan() flags a file squad name not on the board as new", () => {
   withBoard({ dimensions: [], squads: [] }, () => {
-    const plan = csv.buildSquadImportPlan(fileWith([{ name: "Squad 9", dimensions: {} }]), "merge");
+    const plan = boardIO.buildSquadImportPlan(fileWith([{ name: "Squad 9", dimensions: {} }]), "merge");
     assert.deepEqual(plan.newSquadNames, ["Squad 9"]);
     assert.equal(plan.patches[0].existing, null);
   });
@@ -207,7 +236,7 @@ test("buildSquadImportPlan() flags a file squad name not on the board as new", (
 
 test("buildSquadImportPlan() skips a rating for a dimension key not on the current board, without guessing", () => {
   withBoard({ dimensions: [{ key: "release", label: "Easy to release", order: 1 }], squads: [] }, () => {
-    const plan = csv.buildSquadImportPlan(fileWith([
+    const plan = boardIO.buildSquadImportPlan(fileWith([
       { name: "Squad 1", dimensions: { "not-a-real-dim": { color: "good" } } }
     ]), "merge");
     assert.equal(plan.ratingCount, 0);
@@ -222,7 +251,7 @@ test("buildSquadImportPlan() in MERGE mode never marks a board squad absent from
     dimensions: [],
     squads: [{ id: "sq-1", name: "Squad 1", dimensions: {} }, { id: "sq-2", name: "Squad 2", dimensions: {} }]
   }, () => {
-    const plan = csv.buildSquadImportPlan(fileWith([{ name: "Squad 1", dimensions: {} }]), "merge");
+    const plan = boardIO.buildSquadImportPlan(fileWith([{ name: "Squad 1", dimensions: {} }]), "merge");
     assert.deepEqual(plan.squadsToRemove, []);
   });
 });
@@ -232,7 +261,7 @@ test("buildSquadImportPlan() in REPLACE mode marks a board squad absent from the
     dimensions: [],
     squads: [{ id: "sq-1", name: "Squad 1", dimensions: {} }, { id: "sq-2", name: "Squad 2", dimensions: {} }]
   }, () => {
-    const plan = csv.buildSquadImportPlan(fileWith([{ name: "Squad 1", dimensions: {} }]), "replace");
+    const plan = boardIO.buildSquadImportPlan(fileWith([{ name: "Squad 1", dimensions: {} }]), "replace");
     assert.equal(plan.squadsToRemove.length, 1);
     assert.equal(plan.squadsToRemove[0].id, "sq-2");
   });
@@ -246,7 +275,7 @@ test("buildSquadImportPlan() in REPLACE mode reports a matched squad's own ratin
     ],
     squads: [{ id: "sq-1", name: "Squad 1", dimensions: { release: { color: "good" }, speed: { color: "warn" } } }]
   }, () => {
-    const plan = csv.buildSquadImportPlan(fileWith([
+    const plan = boardIO.buildSquadImportPlan(fileWith([
       { name: "Squad 1", dimensions: { release: { color: "crit" } } }
     ]), "replace");
     assert.equal(plan.clearedRatings.length, 1);
@@ -263,7 +292,7 @@ test("buildSquadImportPlan() in MERGE mode reports no cleared ratings even when 
     ],
     squads: [{ id: "sq-1", name: "Squad 1", dimensions: { release: { color: "good" }, speed: { color: "warn" } } }]
   }, () => {
-    const plan = csv.buildSquadImportPlan(fileWith([
+    const plan = boardIO.buildSquadImportPlan(fileWith([
       { name: "Squad 1", dimensions: { release: { color: "crit" } } }
     ]), "merge");
     assert.deepEqual(plan.clearedRatings, []);
@@ -276,7 +305,7 @@ test("buildSquadImportPlan() in MERGE mode reports no cleared ratings even when 
 // its logic and is fully unit-testable on its own.
 
 test("mergeSquadDimensions() in MERGE mode keeps a squad's existing ratings the file doesn't mention", () => {
-  const result = csv.mergeSquadDimensions(
+  const result = boardIO.mergeSquadDimensions(
     { release: { color: "good" }, speed: { color: "warn" } },
     { release: { color: "crit" } },
     "merge"
@@ -294,16 +323,16 @@ test("mergeSquadDimensions() in MERGE mode keeps a squad's existing ratings the 
 
 test("planHasChanges() is true when a REPLACE plan only clears existing ratings", () => {
   const plan = { ratingCount: 0, newSquadNames: [], squadsToRemove: [], clearedRatings: [{ squad: "Squad 1", dimension: "Speed" }] };
-  assert.equal(csv.planHasChanges(plan), true);
+  assert.equal(boardIO.planHasChanges(plan), true);
 });
 
 test("planHasChanges() is false when a plan truly changes nothing", () => {
   const plan = { ratingCount: 0, newSquadNames: [], squadsToRemove: [], clearedRatings: [] };
-  assert.equal(csv.planHasChanges(plan), false);
+  assert.equal(boardIO.planHasChanges(plan), false);
 });
 
 test("mergeSquadDimensions() in REPLACE mode drops a squad's existing ratings the file doesn't mention", () => {
-  const result = csv.mergeSquadDimensions(
+  const result = boardIO.mergeSquadDimensions(
     { release: { color: "good" }, speed: { color: "warn" } },
     { release: { color: "crit" } },
     "replace"
@@ -327,14 +356,14 @@ test("mergeSquadDimensions() in REPLACE mode drops a squad's existing ratings th
 // marker (pendingDimensionKey()) instead of being silently skipped --
 // resolvePendingDimensionKeys() turns that marker into the dimension's
 // real key once it actually exists, called right after the dimension
-// import runs (see csv.js's Apply-button handler). ----
+// import runs (see board-export-import.js's Apply-button handler). ----
 
 test("buildSquadImportPlan() resolves a rating via label when an EXISTING board dimension has a different key than the file", () => {
   withBoard({
     dimensions: [{ key: "release", label: "Easy to release", order: 1 }],
     squads: [{ id: "sq-1", name: "Squad 1", dimensions: {} }]
   }, () => {
-    const plan = csv.buildSquadImportPlan({
+    const plan = boardIO.buildSquadImportPlan({
       formatVersion: 1,
       squads: [{ name: "Squad 1", dimensions: { source_board_key: { color: "warn" } } }],
       dimensions: [{ key: "source_board_key", label: "Easy to release" }]
@@ -347,7 +376,7 @@ test("buildSquadImportPlan() resolves a rating via label when an EXISTING board 
 
 test("buildSquadImportPlan() still reports 'not found' when no board dimension matches by key OR by label", () => {
   withBoard({ dimensions: [{ key: "release", label: "Easy to release", order: 1 }], squads: [] }, () => {
-    const plan = csv.buildSquadImportPlan({
+    const plan = boardIO.buildSquadImportPlan({
       formatVersion: 1,
       squads: [{ name: "Squad 1", dimensions: { source_board_key: { color: "warn" } } }],
       dimensions: [{ key: "source_board_key", label: "Something else entirely" }]
@@ -359,21 +388,21 @@ test("buildSquadImportPlan() still reports 'not found' when no board dimension m
 
 test("buildSquadImportPlan() counts a rating for a not-yet-existing dimension as pending when its label is in extraDimensionLabels", () => {
   withBoard({ dimensions: [], squads: [{ id: "sq-1", name: "Squad 1", dimensions: {} }] }, () => {
-    const plan = csv.buildSquadImportPlan({
+    const plan = boardIO.buildSquadImportPlan({
       formatVersion: 1,
       squads: [{ name: "Squad 1", dimensions: { psych_key: { color: "good", note: "great" } } }],
       dimensions: [{ key: "psych_key", label: "Psychological safety" }]
     }, "merge", ["Psychological safety"]);
     assert.equal(plan.ratingCount, 1);
     assert.equal(plan.skipped.length, 0);
-    const pendingKey = csv.pendingDimensionKey("Psychological safety");
+    const pendingKey = boardIO.pendingDimensionKey("Psychological safety");
     assert.deepEqual(plan.patches[0].fileDims, { [pendingKey]: { color: "good", note: "great" } });
   });
 });
 
 test("buildSquadImportPlan() reports 'not found' for the same file, without extraDimensionLabels (e.g. templates scope unchecked)", () => {
   withBoard({ dimensions: [], squads: [{ id: "sq-1", name: "Squad 1", dimensions: {} }] }, () => {
-    const plan = csv.buildSquadImportPlan({
+    const plan = boardIO.buildSquadImportPlan({
       formatVersion: 1,
       squads: [{ name: "Squad 1", dimensions: { psych_key: { color: "good" } } }],
       dimensions: [{ key: "psych_key", label: "Psychological safety" }]
@@ -385,16 +414,16 @@ test("buildSquadImportPlan() reports 'not found' for the same file, without extr
 
 test("resolvePendingDimensionKeys() resolves a pending marker to the dimension's real key once it exists on the board", () => {
   withBoard({ dimensions: [{ key: "local-dim-999", label: "Psychological safety", order: 1 }] }, () => {
-    const pendingKey = csv.pendingDimensionKey("Psychological safety");
-    const resolved = csv.resolvePendingDimensionKeys({ [pendingKey]: { color: "good" }, release: { color: "warn" } });
+    const pendingKey = boardIO.pendingDimensionKey("Psychological safety");
+    const resolved = boardIO.resolvePendingDimensionKeys({ [pendingKey]: { color: "good" }, release: { color: "warn" } });
     assert.deepEqual(resolved, { "local-dim-999": { color: "good" }, release: { color: "warn" } });
   });
 });
 
 test("resolvePendingDimensionKeys() drops a pending marker that still doesn't resolve to any board dimension", () => {
   withBoard({ dimensions: [] }, () => {
-    const pendingKey = csv.pendingDimensionKey("Nonexistent");
-    const resolved = csv.resolvePendingDimensionKeys({ [pendingKey]: { color: "good" } });
+    const pendingKey = boardIO.pendingDimensionKey("Nonexistent");
+    const resolved = boardIO.resolvePendingDimensionKeys({ [pendingKey]: { color: "good" } });
     assert.deepEqual(resolved, {});
   });
 });
@@ -405,37 +434,37 @@ test("resolvePendingDimensionKeys() drops a pending marker that still doesn't re
 // parse boundary, not thrown from deep inside plan-building or render code.
 
 test("parseBoardImportFile() rejects a non-array dimensions field", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: "nope" }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: "nope" }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-dimensions");
 });
 
 test("parseBoardImportFile() rejects a dimension entry with no label", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: [{ key: "release" }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: [{ key: "release" }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-dimension");
 });
 
 test("parseBoardImportFile() rejects a dimension entry whose label is blank", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: [{ label: "   " }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: [{ label: "   " }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-dimension");
 });
 
 test("parseBoardImportFile() rejects a dimension entry whose green field isn't a string", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: [{ label: "Speed", green: 5 }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: [{ label: "Speed", green: 5 }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-dimension");
 });
 
 test("parseBoardImportFile() rejects a dimension entry whose statements isn't an array", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: [{ label: "Speed", statements: "nope" }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], dimensions: [{ label: "Speed", statements: "nope" }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-dimension");
 });
 
 test("parseBoardImportFile() accepts a well-formed dimensions section", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({
+  const result = boardIO.parseBoardImportFile(JSON.stringify({
     formatVersion: 1, squads: [],
     dimensions: [{ key: "release", label: "Easy to release", green: "smooth", red: "risky", order: 1 }]
   }));
@@ -443,19 +472,19 @@ test("parseBoardImportFile() accepts a well-formed dimensions section", () => {
 });
 
 test("parseBoardImportFile() rejects a non-array templates field", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], templates: {} }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], templates: {} }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-templates");
 });
 
 test("parseBoardImportFile() rejects a template entry with no name", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], templates: [{ dimensions: [] }] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], templates: [{ dimensions: [] }] }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-template");
 });
 
 test("parseBoardImportFile() rejects a template entry whose own dimensions array is malformed", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({
+  const result = boardIO.parseBoardImportFile(JSON.stringify({
     formatVersion: 1, squads: [],
     templates: [{ name: "Onboarding", dimensions: [{ label: "" }] }]
   }));
@@ -464,7 +493,7 @@ test("parseBoardImportFile() rejects a template entry whose own dimensions array
 });
 
 test("parseBoardImportFile() accepts a well-formed templates section", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({
+  const result = boardIO.parseBoardImportFile(JSON.stringify({
     formatVersion: 1, squads: [],
     templates: [{ name: "Onboarding", unit: "Squad", unitPlural: "Squads", attribution: "", dimensions: [{ key: "release", label: "Easy to release", order: 1 }] }]
   }));
@@ -472,29 +501,29 @@ test("parseBoardImportFile() accepts a well-formed templates section", () => {
 });
 
 test("parseBoardImportFile() rejects a non-object config field", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], config: "nope" }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], config: "nope" }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-config");
 });
 
 test("parseBoardImportFile() rejects a config field whose known value isn't a string", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], config: { unit: 5 } }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], config: { unit: 5 } }));
   assert.equal(result.ok, false);
   assert.equal(result.error, "invalid-config");
 });
 
 test("parseBoardImportFile() accepts a config section with an unknown extra field (forward-compat, ignored not rejected)", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], config: { unit: "Squad", someFutureField: 123 } }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [], config: { unit: "Squad", someFutureField: 123 } }));
   assert.equal(result.ok, true);
 });
 
 test("parseBoardImportFile() accepts a file with no dimensions/templates/config sections at all", () => {
-  const result = csv.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [] }));
+  const result = boardIO.parseBoardImportFile(JSON.stringify({ formatVersion: 1, squads: [] }));
   assert.equal(result.ok, true);
 });
 
 // ---------- buildDimensionImportPlan() ----------
-// Matches by LABEL, not key -- see csv.js's own comment on why: a custom
+// Matches by LABEL, not key -- see board-export-import.js's own comment on why: a custom
 // dimension's key is exactly as device-local/random as a template's id, so
 // key-matching would import every admin-created dimension as "new" every
 // time, defeating cross-tribe reuse. Only 3a's separate rating-to-dimension
@@ -502,7 +531,7 @@ test("parseBoardImportFile() accepts a file with no dimensions/templates/config 
 
 test("buildDimensionImportPlan() matches an existing dimension by label, case-insensitively and trimmed", () => {
   withBoard({ dimensions: [{ key: "release", label: "Easy to release", order: 1 }] }, () => {
-    const plan = csv.buildDimensionImportPlan([{ label: "  EASY TO RELEASE  ", green: "g", red: "r" }], "merge");
+    const plan = boardIO.buildDimensionImportPlan([{ label: "  EASY TO RELEASE  ", green: "g", red: "r" }], "merge");
     assert.equal(plan.added.length, 0);
     assert.equal(plan.patches[0].existing.key, "release");
   });
@@ -510,7 +539,7 @@ test("buildDimensionImportPlan() matches an existing dimension by label, case-in
 
 test("buildDimensionImportPlan() flags a file dimension label not on the board as added", () => {
   withBoard({ dimensions: [] }, () => {
-    const plan = csv.buildDimensionImportPlan([{ label: "Psychological safety" }], "merge");
+    const plan = boardIO.buildDimensionImportPlan([{ label: "Psychological safety" }], "merge");
     assert.deepEqual(plan.added, ["Psychological safety"]);
     assert.equal(plan.patches[0].existing, null);
   });
@@ -518,14 +547,14 @@ test("buildDimensionImportPlan() flags a file dimension label not on the board a
 
 test("buildDimensionImportPlan() in MERGE mode never marks a board dimension absent from the file for removal", () => {
   withBoard({ dimensions: [{ key: "release", label: "Easy to release", order: 1 }, { key: "speed", label: "Speed", order: 2 }] }, () => {
-    const plan = csv.buildDimensionImportPlan([{ label: "Easy to release" }], "merge");
+    const plan = boardIO.buildDimensionImportPlan([{ label: "Easy to release" }], "merge");
     assert.deepEqual(plan.toRemove, []);
   });
 });
 
 test("buildDimensionImportPlan() in REPLACE mode marks a board dimension absent from the file for removal", () => {
   withBoard({ dimensions: [{ key: "release", label: "Easy to release", order: 1 }, { key: "speed", label: "Speed", order: 2 }] }, () => {
-    const plan = csv.buildDimensionImportPlan([{ label: "Easy to release" }], "replace");
+    const plan = boardIO.buildDimensionImportPlan([{ label: "Easy to release" }], "replace");
     assert.equal(plan.toRemove.length, 1);
     assert.equal(plan.toRemove[0].key, "speed");
   });
@@ -539,7 +568,7 @@ test("buildDimensionImportPlan() in REPLACE mode marks a board dimension absent 
 // mode silently wiped every dimension on the board.
 test("buildDimensionImportPlan() with no dimensions field at all touches nothing, even in REPLACE mode", () => {
   withBoard({ dimensions: [{ key: "release", label: "Easy to release", order: 1 }, { key: "speed", label: "Speed", order: 2 }] }, () => {
-    const plan = csv.buildDimensionImportPlan(undefined, "replace");
+    const plan = boardIO.buildDimensionImportPlan(undefined, "replace");
     assert.deepEqual(plan.toRemove, []);
     assert.deepEqual(plan.added, []);
     assert.deepEqual(plan.patches, []);
@@ -553,7 +582,7 @@ test("buildDimensionImportPlan() with no dimensions field at all touches nothing
 
 test("buildTemplateImportPlan() matches an existing template by name, case-insensitively and trimmed", () => {
   withBoard({ templates: [{ id: "tpl-1", name: "Onboarding Checklist" }] }, () => {
-    const plan = csv.buildTemplateImportPlan([{ name: "  onboarding checklist  " }], "merge");
+    const plan = boardIO.buildTemplateImportPlan([{ name: "  onboarding checklist  " }], "merge");
     assert.equal(plan.added.length, 0);
     assert.equal(plan.patches[0].existing.id, "tpl-1");
   });
@@ -561,7 +590,7 @@ test("buildTemplateImportPlan() matches an existing template by name, case-insen
 
 test("buildTemplateImportPlan() flags a file template name not on the board as added", () => {
   withBoard({ templates: [] }, () => {
-    const plan = csv.buildTemplateImportPlan([{ name: "New Hire 30-60-90" }], "merge");
+    const plan = boardIO.buildTemplateImportPlan([{ name: "New Hire 30-60-90" }], "merge");
     assert.deepEqual(plan.added, ["New Hire 30-60-90"]);
     assert.equal(plan.patches[0].existing, null);
   });
@@ -569,14 +598,14 @@ test("buildTemplateImportPlan() flags a file template name not on the board as a
 
 test("buildTemplateImportPlan() in MERGE mode never marks a board template absent from the file for removal", () => {
   withBoard({ templates: [{ id: "tpl-1", name: "Onboarding Checklist" }, { id: "tpl-2", name: "Quarterly Deep Dive" }] }, () => {
-    const plan = csv.buildTemplateImportPlan([{ name: "Onboarding Checklist" }], "merge");
+    const plan = boardIO.buildTemplateImportPlan([{ name: "Onboarding Checklist" }], "merge");
     assert.deepEqual(plan.toRemove, []);
   });
 });
 
 test("buildTemplateImportPlan() in REPLACE mode marks a board template absent from the file for removal", () => {
   withBoard({ templates: [{ id: "tpl-1", name: "Onboarding Checklist" }, { id: "tpl-2", name: "Quarterly Deep Dive" }] }, () => {
-    const plan = csv.buildTemplateImportPlan([{ name: "Onboarding Checklist" }], "replace");
+    const plan = boardIO.buildTemplateImportPlan([{ name: "Onboarding Checklist" }], "replace");
     assert.equal(plan.toRemove.length, 1);
     assert.equal(plan.toRemove[0].id, "tpl-2");
   });
@@ -587,7 +616,7 @@ test("buildTemplateImportPlan() in REPLACE mode marks a board template absent fr
 // templates" and wipe the board's saved-templates list in REPLACE mode.
 test("buildTemplateImportPlan() with no templates field at all touches nothing, even in REPLACE mode", () => {
   withBoard({ templates: [{ id: "tpl-1", name: "Onboarding Checklist" }] }, () => {
-    const plan = csv.buildTemplateImportPlan(undefined, "replace");
+    const plan = boardIO.buildTemplateImportPlan(undefined, "replace");
     assert.deepEqual(plan.toRemove, []);
     assert.deepEqual(plan.added, []);
     assert.deepEqual(plan.patches, []);
@@ -596,25 +625,25 @@ test("buildTemplateImportPlan() with no templates field at all touches nothing, 
 
 // ---------- buildConfigImportPlan() ----------
 // Board settings are 4 named fields, not a collection -- no mode parameter,
-// no removal concept, same in Merge or Replace (see csv.js's own comment).
+// no removal concept, same in Merge or Replace (see board-export-import.js's own comment).
 
 test("buildConfigImportPlan() reports only known fields that actually differ", () => {
   withBoard({ config: { unit: "Squad", unitPlural: "Squads", activeTemplateName: "Spotify", attribution: "orig" } }, () => {
-    const changes = csv.buildConfigImportPlan({ unit: "Squad", activeTemplateName: "Tuckman" });
+    const changes = boardIO.buildConfigImportPlan({ unit: "Squad", activeTemplateName: "Tuckman" });
     assert.deepEqual(changes, [{ field: "activeTemplateName", from: "Spotify", to: "Tuckman" }]);
   });
 });
 
 test("buildConfigImportPlan() ignores an unknown field even if it would differ", () => {
   withBoard({ config: { unit: "Squad", unitPlural: "Squads", activeTemplateName: "Spotify", attribution: "orig" } }, () => {
-    const changes = csv.buildConfigImportPlan({ someFutureField: "x" });
+    const changes = boardIO.buildConfigImportPlan({ someFutureField: "x" });
     assert.deepEqual(changes, []);
   });
 });
 
 test("buildConfigImportPlan() returns no changes when the file has no config section", () => {
   withBoard({ config: { unit: "Squad", unitPlural: "Squads", activeTemplateName: "Spotify", attribution: "orig" } }, () => {
-    const changes = csv.buildConfigImportPlan(undefined);
+    const changes = boardIO.buildConfigImportPlan(undefined);
     assert.deepEqual(changes, []);
   });
 });
@@ -625,17 +654,17 @@ test("buildConfigImportPlan() returns no changes when the file has no config sec
 // buildDimensionImportPlan()/buildTemplateImportPlan() return.
 
 test("entityImportPlanHasChanges() is true when there's a new entity to add", () => {
-  assert.equal(csv.entityImportPlanHasChanges({ patches: [], added: ["New one"], toRemove: [] }), true);
+  assert.equal(boardIO.entityImportPlanHasChanges({ patches: [], added: ["New one"], toRemove: [] }), true);
 });
 
 test("entityImportPlanHasChanges() is true when an existing entity is matched (would be updated)", () => {
-  assert.equal(csv.entityImportPlanHasChanges({ patches: [{ existing: { key: "release" }, file: {} }], added: [], toRemove: [] }), true);
+  assert.equal(boardIO.entityImportPlanHasChanges({ patches: [{ existing: { key: "release" }, file: {} }], added: [], toRemove: [] }), true);
 });
 
 test("entityImportPlanHasChanges() is true when REPLACE mode would remove something", () => {
-  assert.equal(csv.entityImportPlanHasChanges({ patches: [], added: [], toRemove: [{ key: "speed" }] }), true);
+  assert.equal(boardIO.entityImportPlanHasChanges({ patches: [], added: [], toRemove: [{ key: "speed" }] }), true);
 });
 
 test("entityImportPlanHasChanges() is false when a plan truly changes nothing", () => {
-  assert.equal(csv.entityImportPlanHasChanges({ patches: [], added: [], toRemove: [] }), false);
+  assert.equal(boardIO.entityImportPlanHasChanges({ patches: [], added: [], toRemove: [] }), false);
 });

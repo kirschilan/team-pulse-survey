@@ -110,8 +110,6 @@ var LOCALE_HE = {
   "admin.boardSetup.hint": "נהלו את מודל הסקר ואת רשימת הצוותים. שינויים כאן חלים על כל מי שצופה בלוח הזה.",
   "admin.boardSetup.editDimensions": "עריכת ממדים",
   "admin.boardSetup.templates": "תבניות",
-  "admin.boardSetup.importCsv": "ייבוא CSV",
-  "admin.boardSetup.exportCsv": "ייצוא CSV",
   "admin.boardSetup.exportJson": "ייצוא JSON (בטא)",
   "admin.boardSetup.importJson": "ייבוא JSON (בטא)",
 

@@ -1,5 +1,5 @@
 from playwright.sync_api import sync_playwright
-import pathlib
+import pathlib, json
 import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import build_page, test_output_path
@@ -113,7 +113,7 @@ with sync_playwright() as p:
     # this just moves the mouse away before switching views below.
     page.mouse.move(5,5)
 
-    # ============ Admin view: dimensions/templates/CSV buttons + squad CRUD ============
+    # ============ Admin view: dimensions/templates/JSON export buttons + squad CRUD ============
     print("=== Admin view ===")
     page.click('.view-btn[data-view="admin"]')
     # eval_on_selector_all() below doesn't auto-wait -- wait for the real
@@ -165,7 +165,7 @@ with sync_playwright() as p:
     assert admin_rows_after_delete == 2
     print("errors:", errors)
 
-    # dimension manager / templates / CSV import triggers still open their modals from Admin
+    # dimension manager / templates / JSON export triggers still open their modals from Admin
     page.click('#dimManageBtn')
     page.wait_for_selector('#dimBackdrop', state="visible")  # real modal-open signal, not a guess
     print("dim manager modal visible:", page.eval_on_selector('#dimBackdrop', 'el=>!el.hidden'))
@@ -179,14 +179,14 @@ with sync_playwright() as p:
     page.click('#tplCloseBtn')
 
     with page.expect_popup() as popup_info:
-        page.click('#exportBtn')
+        page.click('#exportJsonBtn')
     popup = popup_info.value
     popup.wait_for_load_state()
-    csv_text = popup.eval_on_selector('pre', 'el => el.textContent')
+    json_text = popup.eval_on_selector('pre', 'el => el.textContent')
     popup.close()
-    header = csv_text.strip().splitlines()[0].split(",")
-    print("CSV export header still correct from Admin view:", header)
-    assert "Dimension Key" in header
+    exported = json.loads(json_text)
+    print("JSON export still correct from Admin view, formatVersion:", exported.get("formatVersion"))
+    assert exported.get("formatVersion") == 1
 
     print("errors:", errors)
     page.screenshot(path=str(test_output_path("shot_views_admin.png")), full_page=True)

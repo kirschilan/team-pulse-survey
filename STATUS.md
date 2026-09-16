@@ -68,7 +68,7 @@ along the seams the original file already had (`// ---------- section ----------
 | `retro-join.js` | The PARTICIPANT half: the join screen, the blind interleaved statement survey, direct-rating swatches, submission, and the personal-result view. Shares almost no code with `retro-facilitator.js` (different device, different role) — that's what made the split clean. |
 | `dimensions.js` | The dimension manager (add/rename/reorder/remove). Split out of a combined `dimensions-templates.js` on 2026-09-12. |
 | `templates.js` | Template save/load/delete. Split out of the same combined file, same day. |
-| `csv.js` | CSV export and import (parsing, column matching, preview, apply). |
+| `board-export-import.js` | JSON board export and import (squads/ratings, dimensions, templates, board settings) — the only board export/import format; CSV's own runtime code was deleted, and this file was renamed from `csv.js` to match, in Story 13 item 4. |
 | `db.js` | `initDb()` — the Firestore-shaped snapshot listeners that wire `db` writes into `state` and back into a render. |
 | `crypto.js` | AES-256-GCM encrypt/decrypt. For a retro session, the key derives from the session code itself; for a team board, `generateSecret()`/`roomIdFor()` split a high-entropy secret (the key) from a separate one-way-derived room id (routing only) — see "Board sync" below. |
 | `relay-client.js` | The other half of `local-store.js`'s router: a `collection()`/`doc()` implementation for `sessions`- and `boards`-rooted paths, backed by a real WebSocket to `relay/server.js` instead of `localStorage`. `doc(path, secret)`/`collection(path, secret)` take an optional second argument so a caller (board-sync.js) can supply the encryption key separately from the path's own routing id; omitted, behavior is unchanged (the path's own code IS the key, as sessions have always used). |
@@ -107,7 +107,7 @@ whole board too, genuinely sync across different devices/browsers** through the 
 bullet above, `relay/README.md`, and "Board sync" below. `localStorage` is still each device's own
 source of truth (nothing here changes that), but by default it now also stays in sync, live, with
 every other device on the same team link.
-(There's one other `window.claude.use(...)` call, for `"downloads"` in `public/js/csv.js`, and a
+(There's one other `window.claude.use(...)` call, for `"downloads"` in `public/js/board-export-import.js`, and a
 `window.claude.hot` hot-reload guard at the bottom of `app.js` that already degrades safely with no
 `window.claude` present — neither of those blocks anything.)
 
@@ -456,7 +456,7 @@ recall exercise instead of something anyone could just read.
 | 10 | Retro join flow (participant-facing screens) | **DONE** (2026-09-14) |
 | 11 | Retro facilitation flow (facilitator-facing screens, session cards, overrides) | **DONE** (2026-09-14) |
 | 12 | Dimension detail and Edit Dimensions modal (Admin) | **DONE** (2026-09-14) |
-| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass. Redesigned as a full JSON board export/import replacing CSV (see session log): (1) JSON board export (beta), additive — **DONE** (2026-09-15); (2) JSON import — squads/ratings — **DONE** (2026-09-15); (3) JSON import — dimensions/templates/board settings — **DONE** (2026-09-15); (4) delete the CSV runtime code | **In progress** |
+| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass. Redesigned as a full JSON board export/import replacing CSV (see session log): (1) JSON board export (beta), additive — **DONE** (2026-09-15); (2) JSON import — squads/ratings — **DONE** (2026-09-15); (3) JSON import — dimensions/templates/board settings — **DONE** (2026-09-15); (4) delete the CSV runtime code, rename `csv.js` → `board-export-import.js` — **DONE** (2026-09-16) | **DONE** |
 
 ## Deliberately not built yet (and why)
 
@@ -2715,7 +2715,7 @@ not just in this repo's own tests.
      `notify()` SYNCHRONOUSLY, before the returned Promise even resolves, so `state.dimensions`
      is already current by the time the sequenced callback runs, in both.
   Found and fixed a second, self-inflicted bug while writing this fix: the first draft used an
-  actual embedded NUL byte (`" pending-dimension:"`) as the marker prefix, meant as a
+  actual embedded NUL byte (`"\u0000pending-dimension:"`) as the marker prefix, meant as a
   belt-and-suspenders "can never collide with a real key" guard -- caught immediately because it
   turned `csv.js` into a binary file (`file` reported "data", `grep` refused to match it as
   text). Replaced with a plain, printable prefix (`"pending-dimension:"`); a collision was never
@@ -2730,3 +2730,76 @@ not just in this repo's own tests.
   carries the ratings under real destination keys, with zero leftover pending markers. Stress-tested
   5x clean. Full suite green: 149/149 unit tests, all 48 Playwright files (75s, under the 78s
   baseline), relay's own protocol suite. Same branch/PR (#12).
+- **2026-09-16 — Story 13, item 4: deleted the CSV runtime code and renamed `csv.js` →
+  `board-export-import.js`.** JSON is now the board's only export/import format. Two decisions
+  confirmed with the product owner before touching anything: (1) full removal (export AND import),
+  not just the export button, since JSON already fully replaces both directions; (2) the rename
+  target, `board-export-import.js` — matches this repo's existing `board-sync.js` naming pattern
+  (names the domain, not the format), confirmed over `board-io.js` (too terse) and
+  `json-export-import.js` (names the format instead).
+  - Removed from `csv.js`/now `board-export-import.js`: `toCSV()` + the `exportBtn` handler, and
+    the entire CSV import section (`parseCSV`, `colorFromWord`, `trendFromWord`,
+    `mapImportColumns`, `buildImportPlan`, CSV's own `renderImportPreview`/`applyImportPlan`/
+    `applyImportRatingsToSquad`). Everything left is JSON board export/import.
+  - `index.html`: removed the `Export CSV`/`Import CSV` buttons, the `#csvFileInput`, and the
+    entire CSV import preview modal (`#importBackdrop`). Removed the now-dead
+    `admin.boardSetup.importCsv`/`exportCsv` i18n keys (`en.js`/`he.js`). No CSS changes needed --
+    every class the CSV modal used (`.import-stats`/`.import-warning`/`.import-skips`/etc.) is
+    shared with, and still actively used by, the JSON import modal.
+  - **A real regression, caught by the full suite, not by writing a new test first:**
+    `app.js`'s cross-cutting Escape-key handler had its own reference to CSV's `importBackdrop`/
+    `closeImport()`, missed by every grep pass because it was scoped to `public/js/*.js` and
+    `tests/`, never `public/app.js` itself. Pressing Escape anywhere threw an uncaught
+    `ReferenceError` there and aborted the rest of that handler -- silently breaking Escape-to-close
+    for the join-code modal too (the next line, never reached). Found by `test_retro_join_flow.py`
+    failing (reproducibly, 3/3) after this change, confirmed as a genuine regression rather than a
+    pre-existing flake by running the same test against the pre-refactor code via `git stash`
+    (passed cleanly there). Fixed by pointing that line at the JSON import modal's own
+    `importJsonBackdrop`/`closeSquadImport()` instead of deleting it outright -- which also fixes a
+    separate, latent gap: the JSON import modal apparently never had Escape-to-close wired in at
+    all, even after items 1/3a/3b. No new test needed for the fix itself: `test_retro_join_flow.py`
+    already covers Escape-closing a modal and is what caught the break; re-run 3x clean after the
+    fix, then folded into the full-suite pass below.
+  - Test suite: deleted `tests/unit/test_csv.js` and `tests/test_csv_import_column_matching.py`
+    outright (purely CSV). Trimmed and renamed two files that mixed CSV coverage with unrelated
+    coverage rather than deleting them wholesale: `test_template_switching_and_csv_import.py` →
+    `test_template_switching.py` (kept the template-switching scenarios, dropped the CSV-import
+    half); `test_tooltip_busy_overlay_and_csv_key.py` → `test_tooltip_and_busy_overlay.py` (kept
+    the tooltip coverage and the template-switch busy-overlay scenario; replaced the
+    CSV-import-triggers-the-busy-overlay scenario with a JSON-import equivalent rather than
+    dropping that coverage; dropped the CSV "Dimension Key column" round-trip scenario outright --
+    that column only ever existed to work around CSV's flat-table format having no natural way to
+    reference a dimension except by label, a problem JSON's `dimensions[key]` shape never had).
+    Same trim for `test_hebrew_rtl_coverage.py`'s CSV Hebrew round-trip section (Section 9) and
+    `test_json_import.py`'s existing Hebrew-label assertion (unrelated to this, left alone). Ported
+    forward the one property actually worth keeping from the deleted "Dimension Key" coverage --
+    re-importing an export still matches a rating to the right dimension after its label has been
+    renamed/translated -- as a new, JSON-native unit test (`buildSquadImportPlan()` matches by KEY
+    unconditionally, unrelated to label at all, so the property holds by construction; the test
+    proves it directly rather than via CSV's column workaround). `test_local_store.py` and
+    `test_view_navigation_and_squad_admin.py` each had one CSV-triggered scenario (a real-download
+    check, an Admin-view smoke check) swapped for the JSON equivalent rather than deleted, since
+    both were really testing something else (the `downloads` capability firing a real browser
+    download; that Admin's buttons still open their modals) that just happened to use CSV as the
+    trigger. `helpers.js`'s `fake_dom.js`, both READMEs (`tests/README.md`,
+    `tests/unit/README.md`), and `.claude/skills/tdd/SKILL.md` updated to stop citing deleted
+    files/functions as current examples -- `docs/refactoring-report.md`'s own `csv.js` references
+    left untouched, since it's an explicitly dated 2026-09-12 snapshot report, not living
+    documentation (same convention as this file's own "historical mentions... left as-is" rule for
+    old test names).
+  - Also fixed in passing: a self-inflicted NUL byte in this file's own previous session-log entry
+    (quoting the buggy `" pending-dimension:"` marker literally embedded `csv.js`'s bug
+    into STATUS.md's own bytes, the same mistake, caught by the same `file`/`grep` symptom) --
+    escaped as readable text instead.
+  - **Flagged, not fixed (out of scope for this rename/cleanup):** `local-store.js`'s
+    `triggerBrowserDownload()` hardcodes `Blob` type `text/csv;charset=utf-8` for every download
+    regardless of what's actually being saved -- pre-existing (already wrong for the JSON export
+    button since item 1, unrelated to CSV's removal), low-impact (browsers generally trust the
+    `download` attribute + filename extension over blob MIME type for a local save, which is why
+    nothing user-visible broke), but worth a follow-up to derive the type from the filename.
+  - Full suite green: 137/137 unit tests (down from the prior tier's count, minus `test_csv.js`'s
+    own tests, deleted along with the file), all 47 Playwright
+    files (one fewer than 48: `test_csv_import_column_matching.py` deleted outright), 71s --
+    under the 78s baseline, no update needed. Relay's own protocol suite passing.
+  - Story 13 status: **DONE** -- all four items complete. The CSV→JSON board export/import
+    redesign this story tracked from its very first backlog conversation is finished.
