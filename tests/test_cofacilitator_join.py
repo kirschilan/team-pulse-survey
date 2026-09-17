@@ -1,5 +1,6 @@
 from playwright.sync_api import sync_playwright
 import pathlib, subprocess, os, time, socket
+from urllib.parse import urlparse, parse_qs
 import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import write_plain_index
@@ -8,13 +9,16 @@ from fixtures.build_page import write_plain_index
 # barcode/link, getting the FULL facilitator view (live tally, reveal,
 # override, finish) rather than the participant survey retro-join.js
 # already handles. Unlike joining as a participant, this doesn't answer
-# anything -- it just needs this device to "know about" the session code
-# (see relay-client.js's rememberCode()) so the existing broad `sessions`
-# listener (already running for every non-join-mode device) picks it up.
-# openSessionForSquad() never checks who started a session, only whether
-# state.sessions has a matching open one for the squad being viewed -- so
-# once a device knows the code, Squad view renders the identical
-# facilitator card any device sees for a session it started itself.
+# anything -- it just needs this device to "know about" the session's
+# secret (see relay-client.js's rememberCode()) so the existing broad
+# `sessions` listener (already running for every non-join-mode device)
+# picks it up. openSessionForSquad() never checks who started a session,
+# only whether state.sessions has a matching open one for the squad being
+# viewed -- so once a device knows the secret, Squad view renders the
+# identical facilitator card any device sees for a session it started
+# itself. SEC-2: co-facilitating is now ONLY reachable by opening the real
+# co-facilitate link/QR (no typed-code modal any more), so every scenario
+# below does exactly that.
 #
 # Both devices are team-synced (board sync, steps 1-6) so the co-facilitator
 # actually has the right squad locally and "Finish & apply" lands in the
@@ -104,25 +108,29 @@ try:
         # fake store's near-instant local writes) -- poll for the real value
         # landing instead of guessing how long key generation takes.
         a.wait_for_function("() => document.getElementById('teamLinkInput') && document.getElementById('teamLinkInput').value.length > 0")
-        team_link = a.eval_on_selector("#teamLinkInput", "el=>el.value")
 
         a.click('.view-btn[data-view="squad"]')
         a.click('.squad-pick-btn[data-id="squad-1"]')
         a.click("#startSessionBtn")
-        a.wait_for_selector(".session-code")  # real relay round trip -- wait for it, don't guess how long
-        code = a.eval_on_selector(".session-code", "el=>el.textContent")
-        print("session code:", code)
+        # real relay round trip (generateSecret()/roomIdFor() are both real
+        # crypto.subtle calls too, not instant) -- wait for it, don't guess.
+        a.wait_for_function("() => document.getElementById('sessionJoinLink') && document.getElementById('sessionJoinLink').value.length > 0")
 
         print("=== device A's session card offers a REAL co-facilitator link/QR, distinct from the participant join link ===")
         cofac_link = a.eval_on_selector("#coFacilitateLink", "el=>el.value")
         join_link = a.eval_on_selector("#sessionJoinLink", "el=>el.value")
         print("co-facilitator link:", cofac_link)
         print("participant join link:", join_link)
-        assert "?cofacilitate=" + code in cofac_link
+        # Codex review on PR #14 (P1): session/co-facilitate secrets ride in
+        # the URL FRAGMENT now, not the query string (helpers.js's
+        # joinUrlFor()/coFacilitateUrlFor()).
+        secret = parse_qs(urlparse(join_link).fragment)["session"][0]
+        cofac_secret = parse_qs(urlparse(cofac_link).fragment)["cofacilitate"][0]
+        assert cofac_secret == secret, "the join and co-facilitate links carry the SAME session secret, just under different params"
         assert cofac_link != join_link
         assert a.eval_on_selector("#coFacilitateQr svg", "el=>!!el") is True, "a QR code should render for the co-facilitator link too"
 
-        print("=== a device that OPENS that real link directly (not the typed-code modal) also lands as co-facilitator ===")
+        print("=== a device that OPENS that real link directly (the only way to co-facilitate now -- SEC-2) also lands as co-facilitator ===")
         d_ctx = browser.new_context(viewport={"width": 1280, "height": 1200})
         d_ctx.add_init_script(point_at_test_relay)
         d = d_ctx.new_page()
@@ -146,11 +154,11 @@ try:
         c = c_ctx.new_page()
         c_errors = []
         c.on("pageerror", lambda e: c_errors.append(str(e)))
-        c.goto(team_link, wait_until="domcontentloaded")
-        c.wait_for_timeout(500)
-        c.click("#joinCodeBtn")
-        c.fill("#joinCodeInput", code)
-        c.click("#joinCodeGo")
+        # join_link already carries device A's team secret too (see
+        # helpers.js's joinUrlFor()/teamParamFor()), so one navigation does
+        # what visiting the team link then typing a code used to take two
+        # steps to do.
+        c.goto(join_link, wait_until="domcontentloaded")
         c.wait_for_selector(".direct-row")  # real relay round trip -- wait for it, don't guess how long
         rows = c.query_selector_all(".direct-row")
         assert len(rows) > 0
@@ -159,35 +167,42 @@ try:
         rows[-1].query_selector(".swatch.crit").click()
         c.click("#stmtSubmitBtn")
 
-        # ============ device B: opens the SAME team link, then attaches as
-        # CO-FACILITATOR (never started this session) ============
+        # ============ device B: opens a co-facilitate link (bad, then real)
+        # -- never started this session ============
+        # SEC-2: co-facilitating is only ever reachable by a link now, so the
+        # rainy-day case below is a link carrying a wrong/nonexistent secret,
+        # not a typo in a modal's input. It's built from the REAL cofac_link
+        # so it still carries device A's real team secret (a co-facilitator
+        # needs the shared team board regardless of whether the session
+        # secret itself is any good) -- only the session secret is wrong.
+        bad_cofac_link = cofac_link.replace("cofacilitate=" + cofac_secret, "cofacilitate=ZZZZZZ-bad-session-secret")
         b_ctx = browser.new_context(viewport={"width": 1280, "height": 1200})
         b_ctx.add_init_script(point_at_test_relay)
         b = b_ctx.new_page()
         b_errors = []
         b.on("pageerror", lambda e: b_errors.append(str(e)))
-        b.goto(team_link, wait_until="domcontentloaded")
-        b.wait_for_timeout(500)
 
-        print("=== RAINY DAY: co-facilitating with a wrong/nonexistent code shows an error, not a crash ===")
-        b.click("#joinCodeBtn")
-        b.fill("#joinCodeInput", "ZZZZZZ")
-        b.click("#coFacilitateGo")
+        print("=== RAINY DAY: co-facilitating with a wrong/nonexistent secret shows an error, not a crash ===")
+        b.goto(bad_cofac_link, wait_until="domcontentloaded")
         b.wait_for_selector("#confirmBackdrop", state="visible")  # real relay round trip -- wait for it, don't guess how long
         error_shown = b.query_selector("#confirmBackdrop") is not None and b.eval_on_selector("#confirmBackdrop", "el=>!el.hidden")
-        print("error dialog shown for a bad code:", error_shown)
+        print("error dialog shown for a bad secret:", error_shown)
         assert error_shown
         b.click("#confirmOk")
-        # eval_on_selector()/query_selector() below don't auto-wait -- poll
-        # for the exact condition asserted next instead of guessing.
-        b.wait_for_function("() => { var el = document.getElementById('joinCodeBackdrop'); return !el || el.hidden; }")
-        assert b.eval_on_selector("#joinCodeBackdrop", "el=>el.hidden") is True or b.query_selector("#joinCodeBackdrop") is None
         print("errors so far:", b_errors)
 
-        print("=== HAPPY PATH: device B co-facilitates the REAL open session by its real code ===")
-        b.click("#joinCodeBtn")
-        b.fill("#joinCodeInput", code)
-        b.click("#coFacilitateGo")
+        print("=== HAPPY PATH: device B co-facilitates the REAL open session by its real link ===")
+        # Codex review on PR #14 (P1): now that the secret rides in the URL
+        # FRAGMENT (bad_cofac_link and cofac_link differ ONLY in their
+        # fragment, same page path), a plain goto() from one straight to the
+        # other is a same-document "fragment navigation" per the HTML spec --
+        # true in every real browser too, not a Playwright quirk -- so the
+        # page never actually reloads/reruns its boot-time fragment parsing.
+        # An intermediate about:blank forces the real, full navigation this
+        # scenario (device B opens a bad link, then a corrected one) means to
+        # exercise.
+        b.goto("about:blank")
+        b.goto(cofac_link, wait_until="domcontentloaded")
         b.wait_for_selector(".session-card")  # real relay round trip -- wait for it, don't guess how long
 
         print("device B should be on the normal board, Squad view, squad-1 selected -- NOT the participant join screen")

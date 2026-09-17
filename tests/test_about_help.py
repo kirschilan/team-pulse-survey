@@ -40,10 +40,11 @@ with sync_playwright() as p:
         expect(page.locator('#about-' + guide)).to_have_attribute('open', '')
     expect(page.locator('#about-facilitator')).to_contain_text('Finish')
     expect(page.locator('#about-results')).to_contain_text('Yellow')
-    page.click('#aboutJoinBtn')
-    expect(page.locator('#aboutDialog')).not_to_be_visible()
-    expect(page.locator('#joinCodeInput')).to_be_focused()
-    page.click('#joinCodeCancel')
+    # SEC-2: no typed-code join path any more -- the "Join a retro" button
+    # inside this dialog only ever means "return to my retro," so it's
+    # hidden while this device isn't already joining one (see about.js).
+    expect(page.locator('#aboutJoinBtn')).to_be_hidden()
+    page.click('#aboutCloseBtn')
     page.evaluate("setLocale('he')")
     page.click('#aboutHelpBtn')
     expect(page.locator('#aboutDialog')).to_have_attribute('dir', 'rtl')

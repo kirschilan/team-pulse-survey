@@ -34,18 +34,17 @@ var LOCALE_EN = {
   "about.termsVersion": "Draft v0.1 • 2026-09-15 • Pending owner approval; no effective date yet.",
   "about.termsPurpose": "Squad Pulse supports team reflection and improvement. Results are discussion prompts, not validated individual performance measures or professional advice. Facilitators and participants remain responsible for how they interpret and use results.",
   "about.termsUse": "Use the app lawfully and with permission to share the information you enter. Respect participants and third-party rights. Do not use it to harass people, access boards without authorization, or disrupt the service.",
-  "about.termsData": "Board data is stored in your browser. When sync is enabled, an encrypted copy is sent to the configured relay and may be retained there. Anyone with a team link can access and change that board. Session codes and invitations grant access to retro sessions; participant links can also share the team board. Share them only with intended collaborators.",
-  "about.termsPrivacy": "Avoid entering sensitive personal information. Encryption does not make shared links private: retro encryption keys derive from the session code, so a relay operator can derive them. Hosting providers may receive connection metadata. Ask the operator of your deployment about retention and deletion; clearing browser storage does not delete relay copies.",
+  "about.termsData": "Board data is stored in your browser. When sync is enabled, an encrypted copy is sent to the configured relay and may be retained there. Anyone with a team link can access and change that board — possessing the link is what grants access, the same as a password. Retro invitation links and QR codes grant access to retro sessions the same way; participant links can also share the team board. Share them only with intended collaborators, and only over a secure channel.",
+  "about.termsPrivacy": "Avoid entering sensitive personal information. Encryption does not make shared links private: anyone who has the link or scans the QR code can see the data it grants access to. A team link's secret is carried after the # in its address (never sent to any server), which keeps it out of server request logs — but that is not protection against a malicious script running on this page, and it does not stop the link itself from being forwarded to someone else. Board data, including any connected team's secret, is kept in this browser's local storage, which any script running on this site can read. Hosting providers may receive connection metadata. Ask the operator of your deployment about retention and deletion; clearing browser storage does not delete relay copies.",
   "about.termsAvailability": "The software is provided as is under its applicable licenses, without guarantees of availability, accuracy, or preservation of data. Keep copies of information you need. Nothing in this notice excludes rights or liabilities that cannot lawfully be excluded.",
   "about.termsAcceptance": "Closing this introduction only remembers your display preference on this browser. It does not record acceptance of these draft terms. You can reopen them at any time through About & help.",
 
   "about.participantTitle": "Joining a retro?",
-  "about.participantText": "Open your facilitator’s invitation or enter their six-character code. Answer each statement or choose a color, then submit. Follow the discussion; results may be held until the facilitator reveals them.",
-  "about.join": "Join a retro",
+  "about.participantText": "Open your facilitator’s invitation link, or scan their QR code. Answer each statement or choose a color, then submit. Follow the discussion; results may be held until the facilitator reveals them.",
   "about.return": "Back to my retro",
   "about.facilitatorTitle": "Running a retro?",
   "about.setup": "In Admin, set up your squads and choose or customize a template.",
-  "about.start": "In Squad view, choose a squad and start a retro. Share the participant link, QR code, or session code.",
+  "about.start": "In Squad view, choose a squad and start a retro. Share the participant link or QR code.",
   "about.discuss": "Choose live or held results. Discuss the responses, adjust the consolidated rating if needed, and record an improvement experiment.",
   "about.finish": "Finish retro & apply results saves the consolidated ratings to the squad’s board.",
   "about.links": "A team link shares the board for ongoing collaboration. A retro invitation opens a particular session; participant invitations also carry the team link when team sync is enabled. Use the separate co-facilitator invitation for someone helping run the session.",
@@ -75,7 +74,6 @@ var LOCALE_EN = {
   "header.syncConnecting": "Connecting…",
   "header.syncLive": "Live — synced across viewers",
   "header.syncPreviewOnly": "Preview only — not connected",
-  "header.joinRetro": "Join a retro",
   "header.backToRetro": "← Back to my retro",
   "header.viewTribe": "Tribe view",
   "header.viewSquad": "Squad view",
@@ -272,19 +270,14 @@ var LOCALE_EN = {
   "ratingModal.greenLabel": "Green looks like:",
   "ratingModal.redLabel": "Red looks like:",
 
-  // Story 10: the retro JOIN flow (participant-facing screens) -- the
-  // "Join a retro" code-entry modal, the join screen's connecting/ended/
-  // unreachable/not-open states, the survey form chrome, and the personal
-  // result screen. Dimension content itself (label/green/red/statement
+  // Story 10: the retro JOIN flow (participant-facing screens) -- the join
+  // screen's connecting/ended/unreachable/not-open states, the survey form
+  // chrome, and the personal result screen. SEC-2: the code-entry modal
+  // this section used to also cover is gone -- a session is joined only by
+  // its link or QR now. Dimension content itself (label/green/red/statement
   // text) stays untranslated by the same principle Story 9 applied to
   // template names: it's the admin's own authored content, snapshotted
   // onto the session at start time, not app chrome.
-  "join.codeModal.title": "Join a retro",
-  "join.codeModal.hint": "Enter the session code your Scrum Master shared. Answering a survey? Tap Join. Co-facilitating (you'll see the live results and can finish the retro too)? Tap Co-facilitate instead.",
-  "join.codeModal.codePlaceholder": "e.g. 7K4QXB",
-  "join.codeModal.cancel": "Cancel",
-  "join.codeModal.coFacilitate": "Co-facilitate",
-  "join.codeModal.join": "Join",
   "join.backButton": "← Back to Squad Pulse",
   "join.diagSummary": "Trouble joining? Tap for diagnostics",
   "join.diagHint": "If this isn't connecting, copy or screenshot what appears below and send it to whoever's running the retro.",
@@ -321,8 +314,6 @@ var LOCALE_EN = {
   "retro.startingButton": "Starting…",
   "retro.inProgressHeading": "Retro session in progress",
   "retro.retroLabel": "Retro: “{name}”.",
-  "retro.codeBlock.heading": "Session code",
-  "retro.codeBlock.hint": "Have teammates open Squad Pulse and tap “Join a retro” up top, then type this code in.",
   "retro.reveal.ariaLabel": "Reveal mode",
   "retro.reveal.hold": "Hold results",
   "retro.reveal.live": "Show live",
@@ -344,17 +335,18 @@ var LOCALE_EN = {
   "retro.experiment.saveButton": "Save note",
   "retro.finishButton": "Finish retro & apply results",
   "retro.closeButton": "Close session without applying results",
-  "retro.shareLink.summary": "Or scan/share a link",
-  "retro.shareLink.hint": "On some phones, scanning this opens the Claude app to the regular board instead of the retro — if that happens, use the session code above instead.",
+  "retro.shareLink.summary": "Scan or share a link",
+  "retro.shareLink.hint": "On some phones, scanning this opens the Claude app to the regular board instead of the retro — if that happens, copy the link below and share that instead.",
   "retro.shareLink.linkLabel": "Join link",
   "retro.shareLink.copy": "Copy",
+  "retro.shareSecurity.notice": "Note: Anyone with this link — or who scans this QR code — can see the data in this Squad Pulse session. Share it only over a secure channel, and make sure the QR code itself is visible only to people who should have access.",
   "retro.coFacilitate.summary": "Bring in a co-facilitator",
   "retro.coFacilitate.hint": "A different link from the join link above — opening this gets the FULL facilitator view (live tally, override, finish), not the survey.",
   "retro.coFacilitate.linkLabel": "Co-facilitator link",
   "retro.coFacilitate.errorTitle": "Couldn't co-facilitate that session",
   "retro.coFacilitate.errorFallback": "Something went wrong reaching the relay. Check the diagnostic log below for details.",
   "retro.coFacilitate.notConnected": "Not connected to the relay yet — try again in a moment.",
-  "retro.coFacilitate.codeNotOpen": "That session code isn't open.",
+  "retro.coFacilitate.codeNotOpen": "That session link isn't open.",
   "retro.confirmStart.errorTitle": "Couldn't start the retro session",
   "retro.confirmClose.title": "Close this retro session?",
   "retro.confirmClose.message": "Ends the session for everyone with the link. This does not change any of {name}'s existing ratings.",

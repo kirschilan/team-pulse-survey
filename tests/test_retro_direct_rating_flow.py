@@ -47,6 +47,9 @@ with sync_playwright() as p:
       })();
     """)
     sid = session_info["id"]
+    # SEC-2: joining uses the session's SECRET (?session=<secret>), not its
+    # relay room id.
+    secret = page.evaluate("SquadPulseRelay.secretForRoom(%r)" % sid)
     dims = session_info["doc"]["dimensions"]
     dim_keys = [d["key"] for d in dims]
     print("=== session started on the default Spotify-style template ===", sid, dim_keys)
@@ -65,7 +68,7 @@ with sync_playwright() as p:
     pageA = browser.new_page(viewport={"width":420,"height":2600})
     errorsA = []
     pageA.on("pageerror", lambda e: errorsA.append(str(e)))
-    pageA.goto("file://" + str(join_out.resolve()) + "?session=" + sid)
+    pageA.goto("file://" + str(join_out.resolve()) + "?session=" + secret)
     # query_selector() below doesn't auto-wait -- wait for the real "join
     # screen rendered the direct-rating form" signal (a genuine async gap:
     # listenJoinSession()'s onSnapshot first delivery) instead of guessing.

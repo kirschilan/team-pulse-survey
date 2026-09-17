@@ -54,7 +54,6 @@ document.addEventListener("keydown", function(e){
   if(!templatesBackdrop.hidden) closeTemplates();
   if(!importJsonBackdrop.hidden) closeSquadImport();
   if(!confirmBackdrop.hidden) closeConfirm();
-  if(!document.getElementById("joinCodeBackdrop").hidden) closeJoinCodeModal();
 });
 
 // ---------- boot ----------

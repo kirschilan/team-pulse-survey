@@ -9,17 +9,15 @@
 // session card, overrides, the live tally) never runs any of this; see
 // retro-facilitator.js for that half.
 //
-// Reached either by opening ?session=<id> directly, or -- the reliable
-// path, since some phones' camera-to-app handoff doesn't carry a query
-// string through -- by typing the session code into the "Join a retro"
-// button in the header. Either way, once in join mode the device never
-// sees the Tribe/Squad/Admin switcher -- only this one screen, which just
-// watches that one session doc and reflects its current state.
+// SEC-2 (STATUS.md's locked PO decision): reached only by opening
+// ?session=<secret> -- scanning its QR code or opening its link -- never by
+// typing a code in by hand; the join-code modal that used to offer that is
+// gone. Once in join mode the device never sees the Tribe/Squad/Admin
+// switcher -- only this one screen, which just watches that one session doc
+// and reflects its current state.
 function enterJoinMode(){
   var switcher = document.querySelector(".view-switch");
   if(switcher) switcher.hidden = true;
-  var joinBtn = document.getElementById("joinCodeBtn");
-  if(joinBtn) joinBtn.hidden = true;
   document.getElementById("viewTribe").hidden = true;
   document.getElementById("viewSquad").hidden = true;
   document.getElementById("viewAdmin").hidden = true;
@@ -27,12 +25,16 @@ function enterJoinMode(){
   renderJoinScreen();
 }
 
-// Entering a code at runtime (rather than loading with ?session= already in
-// the URL) needs to kick off the same session listener manually, since the
-// boot-time initDb() only auto-attaches it once, before any code exists.
-function joinSessionByCode(code){
-  state.joinSessionId = code;
+// Entering a session at runtime (rather than loading with ?session=<secret>
+// already in the URL) needs to kick off the same session listener manually,
+// since the boot-time initDb() only auto-attaches it once, before any
+// secret exists. Kept as its own function (rather than inlined into the
+// boot-time path) since it's also the most direct way for a test to enter
+// join mode for a known secret without going through the UI.
+function joinSessionByCode(secret){
+  state.joinSessionId = secret;
   state.joinSession = null;
+  state.joinRoomId = null;
   enterJoinMode();
   if(state.live && state.db) listenJoinSession();
 }
@@ -43,10 +45,9 @@ function joinSessionByCode(code){
 // doesn't touch `state.joinSessionId` or unsubscribe listenJoinSession(),
 // so the session keeps updating in the background and any in-progress
 // draft answer or already-submitted personal result is still there,
-// unchanged, on return. `joinCodeBtn` stays hidden the whole time (exited
-// or not) so a participant can't accidentally start joining a SECOND
-// session while this one's still open -- the join flow only ever tracks
-// one at a time (see state.joinSessionId).
+// unchanged, on return. There's no way to start joining a SECOND session
+// from within the app (no typed-code entry point any more -- see SEC-2) so
+// the join flow only ever tracks one at a time (see state.joinSessionId).
 function exitJoinScreen(){
   if(!state.joinSessionId) return;
   document.getElementById("viewJoin").hidden = true;
@@ -68,44 +69,6 @@ function returnToJoinScreen(){
 }
 document.getElementById("exitJoinBtn").addEventListener("click", exitJoinScreen);
 document.getElementById("backToRetroBtn").addEventListener("click", returnToJoinScreen);
-
-document.getElementById("joinCodeBtn").addEventListener("click", function(){
-  document.getElementById("joinCodeInput").value = "";
-  document.getElementById("joinCodeBackdrop").hidden = false;
-  document.getElementById("joinCodeInput").focus({preventScroll:true});
-});
-function closeJoinCodeModal(){ document.getElementById("joinCodeBackdrop").hidden = true; }
-document.getElementById("joinCodeCancel").addEventListener("click", closeJoinCodeModal);
-document.getElementById("joinCodeBackdrop").addEventListener("click", function(e){
-  if(e.target===document.getElementById("joinCodeBackdrop")) closeJoinCodeModal();
-});
-function submitJoinCode(){
-  var raw = document.getElementById("joinCodeInput").value.trim().toUpperCase().replace(/\s+/g,"");
-  if(!raw) return;
-  closeJoinCodeModal();
-  joinSessionByCode(raw);
-}
-document.getElementById("joinCodeGo").addEventListener("click", submitJoinCode);
-
-// Story 10: same modal, same code, different verb -- "Co-facilitate"
-// attaches this device to the session (coFacilitateSessionByCode(), in
-// retro-facilitator.js) instead of entering the participant join screen.
-function submitCoFacilitateCode(){
-  var raw = document.getElementById("joinCodeInput").value.trim().toUpperCase().replace(/\s+/g,"");
-  if(!raw) return;
-  closeJoinCodeModal();
-  coFacilitateSessionByCode(raw).catch(function(err){
-    openConfirm(
-      t("retro.coFacilitate.errorTitle"),
-      (err && err.message) ? err.message : t("retro.coFacilitate.errorFallback"),
-      function(){}, t("common.ok")
-    );
-  });
-}
-document.getElementById("coFacilitateGo").addEventListener("click", submitCoFacilitateCode);
-document.getElementById("joinCodeInput").addEventListener("keydown", function(e){
-  if(e.key==="Enter") submitJoinCode();
-});
 
 // Personal result shown to a participant right after they submit one
 // dimension: their score, its band, the pyramid's characterization line
@@ -366,7 +329,7 @@ function bindStatementForm(stmtDims, directDims){
       renderJoinScreen();
     };
     liveOr(function(){
-      return state.db.collection("sessions").doc(state.joinSessionId).collection("responses").add(payload)
+      return state.db.doc("sessions/" + state.joinRoomId, state.joinSessionId).collection("responses").add(payload)
         .then(afterSubmit)
         .catch(function(err){
           diag("Submit answer failed: " + (err && err.code ? err.code : String(err)));
@@ -377,20 +340,30 @@ function bindStatementForm(stmtDims, directDims){
   });
 }
 
+// SEC-2: state.joinSessionId holds the session's SECRET (from ?session=
+// in the URL), not its relay room id any more -- resolve the room id
+// first (the same async step board-sync.js's own hydrate/subscribe do),
+// then subscribe with both, exactly like startSession()/
+// coFacilitateSessionByCode() in retro-facilitator.js.
 function listenJoinSession(){
-  state.db.doc("sessions/" + state.joinSessionId).onSnapshot(function(snap){
-    state.joinSession = snap.exists ? Object.assign({ id: snap.id }, snap.data()) : null;
-    // `unavailable` (relay-client.js only -- local-store.js's other,
-    // non-session snapshots never set it, so this is falsy/absent there)
-    // means this device never reached the relay at all, as distinct from
-    // reaching it and finding no such document -- see renderJoinScreen()
-    // above.
-    state.joinUnavailable = !!snap.unavailable;
-    diag("Join session snapshot: " + (state.joinSession ? state.joinSession.status : (state.joinUnavailable ? "relay unavailable" : "not found")));
-    renderJoinScreen();
-  }, function(err){
-    diag("Join session listener error: " + (err && err.code ? err.code : String(err)));
-    state.joinSession = null;
-    renderJoinScreen();
+  var secret = state.joinSessionId;
+  SquadPulseCrypto.roomIdFor(secret).then(function(roomId){
+    if(state.joinSessionId !== secret) return; // superseded before this resolved
+    state.joinRoomId = roomId;
+    state.db.doc("sessions/" + roomId, secret).onSnapshot(function(snap){
+      state.joinSession = snap.exists ? Object.assign({ id: snap.id }, snap.data()) : null;
+      // `unavailable` (relay-client.js only -- local-store.js's other,
+      // non-session snapshots never set it, so this is falsy/absent there)
+      // means this device never reached the relay at all, as distinct from
+      // reaching it and finding no such document -- see renderJoinScreen()
+      // above.
+      state.joinUnavailable = !!snap.unavailable;
+      diag("Join session snapshot: " + (state.joinSession ? state.joinSession.status : (state.joinUnavailable ? "relay unavailable" : "not found")));
+      renderJoinScreen();
+    }, function(err){
+      diag("Join session listener error: " + (err && err.code ? err.code : String(err)));
+      state.joinSession = null;
+      renderJoinScreen();
+    });
   });
 }

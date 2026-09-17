@@ -1,5 +1,6 @@
 from playwright.sync_api import sync_playwright
 import pathlib, subprocess, os, time, socket
+from urllib.parse import urlparse, parse_qs
 import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import write_plain_index
@@ -83,33 +84,32 @@ try:
         fac.click('.view-btn[data-view="squad"]')
         fac.click('.squad-pick-btn[data-id="squad-1"]')
         fac.click('#startSessionBtn')
-        fac.wait_for_selector('.session-code')  # real relay round trip -- wait for it, don't guess how long
+        # real relay round trip (generateSecret()/roomIdFor() are real
+        # crypto.subtle calls too) -- wait for it, don't guess how long.
+        fac.wait_for_function("() => document.getElementById('sessionJoinLink') && document.getElementById('sessionJoinLink').value.length > 0")
 
-        code = fac.eval_on_selector('.session-code', 'el=>el.textContent')
+        join_link = fac.eval_on_selector('#sessionJoinLink', 'el=>el.value')
+        # Codex review on PR #14 (P1): the session secret rides in the URL
+        # FRAGMENT now, not the query string (helpers.js's joinUrlFor()).
+        secret = parse_qs(urlparse(join_link).fragment)["session"][0]
         print("=== facilitator started a session ===")
-        print("session code:", code)
-        assert code and len(code) == 6
+        print("join link:", join_link)
+        assert secret
         print("errors so far:", fac_errors)
 
         # ============ participant device: a SEPARATE browser context (own
-        # localStorage/board), joining purely by the code, exactly as a
-        # teammate on their own laptop would ============
+        # localStorage/board), joining purely by opening the real join link
+        # -- SEC-2: the only way a teammate on their own laptop can join now
+        # ============
         participant_ctx = browser.new_context(viewport={"width":420,"height":1400})
         participant_ctx.add_init_script(point_at_test_relay)
         team = participant_ctx.new_page()
         team_errors = []
         team.on("pageerror", lambda e: team_errors.append(str(e)))
-        team.goto(INDEX_URL, wait_until="domcontentloaded")
-        team.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
-
-        # #joinCodeBtn's click handler (retro-join.js) just resets the
-        # input and unhides the backdrop, synchronous -- no wait needed.
-        team.click('#joinCodeBtn')
-        team.fill('#joinCodeInput', code)
-        team.click('#joinCodeGo')
+        team.goto(join_link, wait_until="domcontentloaded")
         team.wait_for_selector('#joinCard .direct-row')  # real relay round trip -- wait for it, don't guess how long
 
-        print("=== participant joined by code, over the real relay ===")
+        print("=== participant joined via the real link, over the real relay ===")
         heading = team.eval_on_selector('#joinCard h2', 'el=>el.textContent')
         print("join screen heading:", heading)
         assert "retro" in heading.lower()
@@ -170,7 +170,7 @@ try:
         late = late_ctx.new_page()
         late_errors = []
         late.on("pageerror", lambda e: late_errors.append(str(e)))
-        late.goto(INDEX_URL + "?session=" + code, wait_until="domcontentloaded")
+        late.goto(INDEX_URL + "#session=" + secret, wait_until="domcontentloaded")
         late.wait_for_function("() => { var h = document.querySelector('#joinCard h2'); return h && h.textContent.indexOf('Connecting') === -1; }")
         late_heading = late.eval_on_selector('#joinCard h2', 'el=>el.textContent')
         print("late joiner heading:", late_heading)

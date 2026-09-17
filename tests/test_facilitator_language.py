@@ -6,13 +6,16 @@ from fixtures.build_page import build_page, test_output_path
 
 # Multi-language rollout Story 11 (see STATUS.md's backlog table): the retro
 # FACILITATION flow -- the session card (no-session hint + Start button,
-# session code block, live/hold reveal toggle, live results / results held,
-# the response-consolidation table, the sprint-experiment note, finish/close
-# buttons and their confirm dialogs, the share-link and co-facilitator
-# <details> sections), plus the per-dimension override editor (shares the
+# live/hold reveal toggle, live results / results held, the
+# response-consolidation table, the sprint-experiment note, finish/close
+# buttons and their confirm dialogs, the share-link block and co-facilitator
+# <details> section), plus the per-dimension override editor (shares the
 # rating modal's own markup -- see modals.js). Dimension content itself
 # (label/green/red/statement text) stays untranslated by design, same
-# principle Story 9/10 established for template/session content.
+# principle Story 9/10 established for template/session content. SEC-2
+# later removed the raw session-code block this file used to also cover
+# (link/QR only now, always shown rather than collapsed -- see
+# retro-facilitator.js's renderSessionCardHtml()).
 
 out_path = build_page(out_name="_test_facilitator_lang.html")
 
@@ -74,13 +77,18 @@ with sync_playwright() as p:
     print("=== session-in-progress card chrome is Hebrew ===")
     in_progress_h = page.eval_on_selector('.session-card h2', 'el=>el.textContent')
     retro_line = page.eval_on_selector('.session-card > .hint', 'el=>el.textContent')
-    code_heading = page.eval_on_selector('.session-code-block .field-label', 'el=>el.textContent')
-    code_hint = page.eval_on_selector('.session-code-block .hint', 'el=>el.textContent')
-    print(in_progress_h, "|", retro_line, "|", code_heading, "|", code_hint)
+    print(in_progress_h, "|", retro_line)
     assert in_progress_h != "Retro session in progress" and in_progress_h.strip()
     assert "The Five Dysfunctions of a Team" in retro_line
-    assert code_heading.strip() and code_heading != "Session code"
-    assert code_hint.strip() and "Join a retro" not in code_hint
+
+    print("=== the join-link block (always shown, no longer collapsed -- SEC-2) is Hebrew, including the security notice ===")
+    share_heading_he = page.eval_on_selector('.join-share-block .field-label', 'el=>el.textContent')
+    share_hint_he = page.eval_on_selector('.join-share-block > .hint', 'el=>el.textContent')
+    security_notice_he = page.eval_on_selector('.join-share-block .security-notice', 'el=>el.textContent')
+    print(share_heading_he, "|", share_hint_he, "|", security_notice_he)
+    assert share_heading_he != "Scan or share a link" and share_heading_he.strip()
+    assert share_hint_he.strip() and "session code" not in share_hint_he.lower()
+    assert security_notice_he.strip() and "anyone" not in security_notice_he.lower()
 
     hold_btn_he = page.eval_on_selector('.reveal-btn[data-reveal="hold"]', 'el=>el.textContent')
     live_btn_he = page.eval_on_selector('.reveal-btn[data-reveal="live"]', 'el=>el.textContent')
@@ -91,8 +99,8 @@ with sync_playwright() as p:
     assert held_heading_he != "Results held" and held_heading_he.strip()
 
     exp_headings = page.eval_on_selector_all('.session-card .field-label', 'els=>els.map(e=>e.textContent)')
-    print("field-label headings (Hebrew, should include experiment + code + held):", exp_headings)
-    assert not any(h in ("Sprint experiment", "Session code", "Results held") for h in exp_headings)
+    print("field-label headings (Hebrew, should include experiment + share-link + held):", exp_headings)
+    assert not any(h in ("Sprint experiment", "Scan or share a link", "Results held") for h in exp_headings)
 
     note_placeholder_he = page.eval_on_selector('#experimentNoteBox', 'el=>el.placeholder')
     save_note_btn_he = page.eval_on_selector('#saveExperimentNoteBtn', 'el=>el.textContent')
@@ -109,9 +117,14 @@ with sync_playwright() as p:
     print("'Saved' hint (Hebrew):", saved_hint_he)
     assert saved_hint_he != "Saved" and saved_hint_he.strip()
 
+    # SEC-2: only the co-facilitator section is still a collapsed <details>
+    # now -- the join-link block (checked above) is always shown.
     detail_summaries_he = page.eval_on_selector_all('.session-card details.legend summary', 'els=>els.map(e=>e.textContent)')
-    print("share-link / co-facilitator detail summaries (Hebrew):", detail_summaries_he)
-    assert not any(s in ("Or scan/share a link", "Bring in a co-facilitator") for s in detail_summaries_he)
+    print("co-facilitator detail summary (Hebrew):", detail_summaries_he)
+    assert not any(s in ("Bring in a co-facilitator",) for s in detail_summaries_he)
+    cofac_security_notice_he = page.eval_on_selector('.session-card details.legend .security-notice', 'el=>el.textContent')
+    print("co-facilitate security notice (Hebrew):", cofac_security_notice_he)
+    assert cofac_security_notice_he.strip() and "anyone" not in cofac_security_notice_he.lower()
 
     join_link_label_he = page.eval_on_selector('.join-link-col .field-label', 'el=>el.textContent')
     copy_btn_he = page.eval_on_selector('#copyJoinLinkBtn', 'el=>el.textContent')
