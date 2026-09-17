@@ -3690,3 +3690,39 @@ not just in this repo's own tests.
   preview's skip list and excluded from what actually gets written, not silently kept or dropped
   without a trace). Full suite green: 167/167 unit tests, all 56 Playwright files
   (`tests/run_all.sh`, 65s wall-clock), relay's own suite.
+- 2026-09-17 — Rebased PR #21 (RETRO-1) onto `claude/optimistic-keller-holuql` after PR #20 (REF-1)
+  merged into it: resolved the anticipated `board-export-import.js` conflict (both PRs' own commit
+  messages flagged this as likely, since both touch the same import-apply path for unrelated
+  reasons) by combining REF-1's awaitable-writes/`allSettledOrThrow()` machinery with RETRO-1's
+  `lastRetro`-aware `set()`-vs-`update()` choice -- a squad patch with a `fileLastRetro` now
+  triggers the full-replace `set()` write (REF-1's per-write catch/diagnostic/`writes.push()`
+  wrapping intact) in EITHER ratings mode, same as before the rebase; the JSON-import summary line
+  reports both new-squad/removed counts (REF-1) and last-retro-result counts (RETRO-1) together.
+  Also resolved a `STATUS.md` conflict, purely two adjacent session-log entries with no real
+  overlap. Fixed a real P1 finding from a Codex review of PR #21 (RETRO-1) surfaced right after:
+  `applyRemoteBoardSnapshot()` (`board-sync.js`), the team-sync REPLY side that rewrites local
+  squad docs from a remote board snapshot, rebuilt each squad from a fixed field list --
+  name/order/dimensions/updatedAt -- that never grew to include `lastRetro` once RETRO-1
+  introduced it, even though the PUSH side (`boardSnapshotPayload()`) already sends `state.squads`
+  (lastRetro included) verbatim. The fallout was worse than a lossy relay hop: a device's own live
+  subscription echoes its own push back near-instantly, so this omission struck the ORIGINATING
+  facilitator's own persisted copy first -- a squad's just-finished retro result could vanish from
+  its own facilitator's board within the same round trip, before any teammate's re-push even
+  mattered (confirmed via the new test below, which fails at that exact, earlier point rather than
+  needing a second device's edit to trigger it, an even stronger version of the failure Codex's
+  review described). Fixed by conditionally cloning `lastRetro` onto the write payload
+  (`if(s.lastRetro) payload.lastRetro = plainClone(s.lastRetro);`), mirroring the exact pattern
+  RETRO-1 already applied on the JSON-import side of this same field. New test,
+  `tests/test_board_sync_last_retro_preserved.py` (real relay, two devices): finish a retro on
+  device A (writes `lastRetro`) -- device B, team-synced, must carry `lastRetro` on its OWN local
+  squad doc after receiving it live, not just the ratings; device B then makes an unrelated edit
+  (renames a different squad), re-pushing its whole board; device A, receiving that echo live,
+  must STILL have squad-1's `lastRetro` afterwards; a real page reload on device A confirms it
+  survived in actual persisted storage, not just in-memory state; a real JSON export (via
+  `local-store.js`'s real `window.claude.use("downloads")` shim, a genuine browser download here,
+  not the `window.open()` popup fallback the fake-store-backed export tests exercise -- caught via
+  `page.expect_download()` instead of `expect_popup()`) confirms `lastRetro` is still exportable
+  after the whole round trip. Failed against pre-fix code exactly as expected (missing at the very
+  first check, right after device A's own finish, for the reason above); passed after the fix.
+  Full suite re-verified green: 167/167 unit tests, all 57 Playwright files, relay's own suite.
+  Pushed to the same `retro-1-export-import-results` branch/PR (no new PR).
