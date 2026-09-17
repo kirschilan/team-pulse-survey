@@ -306,25 +306,31 @@ every other device on the same team link.
   larger change, out of scope here). `connect-src` allows the `ws:`/`wss:` schemes rather than a
   specific host, since the relay's origin is deployment-configurable (`SQUAD_PULSE_RELAY_URL`), not
   knowable at build time.
-- **Assessment-content rights (Introduction & help backlog, Story 5/6 "Credits and licenses"), PO
-  decision as of 2026-09-17: Five Dysfunctions is a knowingly accepted risk; Tuckman's own
-  provenance is still unresolved, not yet a similar accepted-risk decision.** The Table Group's own
-  published FAQ states its Five Dysfunctions assessment (online and book/field-guide) is copyrighted
-  and may not be reproduced or transmitted — this app's 15-statement adaptation is exactly that, and
+- **Assessment-content rights (Introduction & help backlog, Story 5/6 "Credits and licenses"): Five
+  Dysfunctions is a knowingly accepted risk (PO decision, 2026-09-17); Tuckman's provenance is
+  RESOLVED (2026-09-17) — original work, not a third-party copy.** The Table Group's own published
+  FAQ states its Five Dysfunctions assessment (online and book/field-guide) is copyrighted and may
+  not be reproduced or transmitted — this app's 15-statement adaptation is exactly that, and
   attribution alone does not establish reuse permission. The PO has reviewed this and is
   **knowingly accepting the risk** rather than removing or re-licensing the content; the credits UI
   already states the adaptation honestly rather than implying permission (`about-credits` in
   `index.html`: "This app is an adaptation, not the official assessment"). Tuckman's 20-statement
-  questionnaire is a **separate, still-open question**, not the same accepted risk: contrary to the
-  PO's recollection that it was developed in this project, the documented record says otherwise —
-  `docs/facilitated-retro-spec.md`'s own session log describes it as "added from a **user-supplied
-  .docx questionnaire**" with "the **source's own** score-interpretation guide" and "per-stage
-  strategies-for-moving-through text" (i.e., an external document with its own pre-existing scoring
-  scheme, not authored fresh for this app), and the live credits UI already hedges accordingly:
-  "The source of this app's 20-statement assessment and score bands **has not yet been verified**."
-  No `.docx` file or record of who authored it exists in this repo (that exchange predates the
-  repo — it happened in the earlier Claude Artifact session, before the 2026-09-10 migration) — this
-  needs the PO's own memory or records to resolve, not something verifiable from the codebase alone.
+  questionnaire was a **separate, initially-unresolved question** — contrary to an earlier guess in
+  this doc that the documented record contradicted the PO's recollection of it being developed in
+  this project, the PO located and supplied the actual source conversation, which settles it fully
+  in the PO's favor: a **shared Claude.ai chat** (`https://claude.ai/share/b4751645-1989-45db-8015-1e16cc2eceee`,
+  ~2026-09-03/04) shows the PO asking Claude to "find or create" a Tuckman questionnaire; Claude
+  found two existing published instruments (a 40-item one and a 32-item one) and explicitly
+  **declined to use either**, instead offering to build a new 15–20 item version "closer to the
+  Lencioni format" — the PO asked for "3-5 items per stage," and Claude wrote fresh statement text
+  and built the 20-item/4-per-stage structure itself, delivered as the `.docx` the PO then supplied
+  to this project. Full transcript excerpts and reasoning: `docs/credits-and-terms-review.md`'s
+  "Tuckman 20-statement questionnaire — provenance" section. Conclusion: original content, not a
+  copy of either instrument Claude found and declined to use — only the assessment *format* (3-point
+  scale, summed bands) deliberately mirrors the Lencioni structure, by explicit design choice, not
+  content copying. The "has not yet been verified" hedge is removed from the credits UI
+  (`about.creditTuckman` in `public/js/locales/en.js`/`he.js` and `public/index.html`), replaced
+  with the attribution above.
 
 ## Board sync (major change, DONE — default-on as of 2026-09-13)
 
@@ -879,7 +885,7 @@ and outside-click dismissal merged through PR #3 (`codex/about-guides`) and PR #
 | 3 | 2 — Participant guide | As a participant, understand code/link entry and answering; open the existing join flow or return to an active retro without losing answers. | **DONE** — merged via PR #3 (`codex/about-guides`) |
 | 4 | 3 — Facilitator guide | As a facilitator, follow setup, template and squad selection, start, invite, discuss, and finish/apply; distinguish team and session links. | **DONE** — merged via PR #3 (`codex/about-guides`) |
 | 5 | 4 — Reading results | As a viewer, understand colors, trends, Squad/Tribe views, and hotspots through expandable guidance matching actual behavior. | **DONE** — merged via PR #3 (`codex/about-guides`) |
-| 6 | 5 — Credits and licenses | As a user, inspect verified model sources, Dr. Agile contributions, application license, and third-party notices; preserve contextual board credits. Verify the source of Tuckman assessment scoring. | **UI DONE** — merged via PR #5. Source/rights questions are a separate, still-open PO decision — see `docs/credits-and-terms-review.md` and "Decisions locked in" below (Five Dysfunctions reuse risk knowingly accepted; Tuckman's 20-statement questionnaire's provenance remains unverified, the shipped credits text says so honestly). |
+| 6 | 5 — Credits and licenses | As a user, inspect verified model sources, Dr. Agile contributions, application license, and third-party notices; preserve contextual board credits. Verify the source of Tuckman assessment scoring. | **DONE** — merged via PR #5. Five Dysfunctions reuse risk knowingly accepted (PO decision); Tuckman's 20-statement questionnaire's provenance is now fully resolved (original work, not a third-party copy) — see `docs/credits-and-terms-review.md` and "Decisions locked in" below. |
 | 7 | 7 — Terms and conditions of use | As a user, read terms before choosing to use the app and reopen them from About & help. Publish owner-approved English/Hebrew terms covering permitted use, responsibilities, data/sharing behavior, and limitations; show effective date/version and accessible links. Explicitly decide whether acceptance tracking is needed before implementation; do not imply consent through mere dismissal. | **UI DONE, content approval OUTSTANDING** (corrected, Codex review on PR #17 — a prior version of this row said DONE, which overstated it). Informational/no-tracking model confirmed by owner; the mechanism (panel, reopen access, EN/HE, no implied consent) is fully built and live. But the acceptance criteria calls for *owner-approved* terms with a real effective date, and the shipped text is explicitly a draft awaiting that: `index.html`'s own `about.termsVersion` string reads "Draft v0.1 • 2026-09-15 • **Pending owner approval; no effective date yet**." Content sign-off is a separate, still-open step for the owner — same shape as Story 5/6's rights question above, not a code task. |
 
 Stories are small independently testable UI increments; stories 2–5 and 7 can
@@ -3463,3 +3469,16 @@ not just in this repo's own tests.
   content approval OUTSTANDING," matching the same split already used for Story 5/6's rights
   question. Full suite re-verified green: 157/157 unit tests, all 55 Playwright files, relay's own
   suite.
+- 2026-09-17 — Resolved the Tuckman 20-statement questionnaire's provenance, previously flagged
+  unresolved. The PO located the actual source conversation (a shared Claude.ai chat) and supplied
+  transcript excerpts: Claude was asked to find or create a Tuckman assessment, found two existing
+  published instruments, explicitly declined to use either, and wrote fresh 20-item statement
+  content itself at the PO's direction — original work, not a copy of a third-party instrument.
+  Documentation-only: full evidence and reasoning recorded in `docs/credits-and-terms-review.md`'s
+  new "Tuckman 20-statement questionnaire — provenance" section; removed the "has not yet been
+  verified" hedge from the credits UI (`about.creditTuckman` in `public/js/locales/en.js`/`he.js`
+  and `public/index.html`, both languages) and replaced it with the resolved attribution. Updated
+  the "Assessment-content rights" decision and the Introduction & help backlog's Story 5/6 row to
+  match. No code/behavior change; no new test needed (no existing test asserts this string's
+  content). Full suite still green: 157/157 unit tests, all 55 Playwright files, relay's own suite
+  (re-run to confirm the locale-file edits introduced no regressions).
