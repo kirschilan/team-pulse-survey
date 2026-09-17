@@ -9,7 +9,17 @@ global.sortedDimensions = helpers.sortedDimensions;
 global.sortedSquads = helpers.sortedSquads;
 global.nowIso = function(){ return new Date().toISOString(); };
 
-const boardIO = require(path.join(__dirname, "..", "..", "public", "js", "board-export-import.js"));
+// REF-4 (STATUS.md's "Code quality & refactoring backlog"): buildBoardExport()
+// lives in board-export.js, parseBoardImportFile() in
+// board-import-validate.js, buildSquadImportPlan()/planHasChanges() in
+// board-import-plan.js -- all split out of the former
+// board-export-import.js. None of the three functions this file actually
+// calls need any cross-file global beyond sortedDimensions/sortedSquads/
+// nowIso/state, already wired above.
+const boardExport = require(path.join(__dirname, "..", "..", "public", "js", "board-export.js"));
+const boardImportValidate = require(path.join(__dirname, "..", "..", "public", "js", "board-import-validate.js"));
+const boardImportPlan = require(path.join(__dirname, "..", "..", "public", "js", "board-import-plan.js"));
+const boardIO = Object.assign({}, boardExport, boardImportValidate, boardImportPlan);
 
 // RETRO-1 (STATUS.md's "Facilitated retro backlog"): carry the latest
 // finished retro's per-dimension result (consolidated or overridden),

@@ -3,7 +3,7 @@
 REF-2 (STATUS.md's "Code quality & refactoring backlog"): `public/local-store.js` and
 `public/js/relay-client.js` are two independent implementations of the same Firestore-shaped
 surface `db.js` and every feature module (`squads.js`, `dimensions.js`, `templates.js`,
-`board-export-import.js`, `retro-facilitator.js`, `retro-join.js`, `board-sync.js`) are written
+`board-export.js`/`board-import-*.js`, `retro-facilitator.js`, `retro-join.js`, `board-sync.js`) are written
 against — the same surface a real Claude Artifact `db` capability would also provide, when this
 app runs inside one. Neither file has ever named that shared contract in one place; this document
 is that place. It doesn't change either implementation's behavior — see each file's own session-log

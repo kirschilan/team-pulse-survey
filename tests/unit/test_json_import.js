@@ -9,7 +9,20 @@ global.sortedDimensions = helpers.sortedDimensions;
 global.sortedSquads = helpers.sortedSquads;
 global.nowIso = function(){ return new Date().toISOString(); };
 
-const boardIO = require(path.join(__dirname, "..", "..", "public", "js", "board-export-import.js"));
+// REF-4 (STATUS.md's "Code quality & refactoring backlog"): parseBoardImportFile()
+// now lives in board-import-validate.js, the planning functions in
+// board-import-plan.js -- both split out of the former
+// board-export-import.js. buildConfigImportPlan() (plan.js) calls
+// isPlainObject()/CONFIG_IMPORT_FIELDS as bare globals (same convention
+// every cross-file reference in this app already uses -- see
+// board-export.js's own header comment), so those two need wiring onto
+// `global` before plan.js loads, exactly like sortedDimensions/sortedSquads
+// above.
+const boardImportValidate = require(path.join(__dirname, "..", "..", "public", "js", "board-import-validate.js"));
+global.isPlainObject = boardImportValidate.isPlainObject;
+global.CONFIG_IMPORT_FIELDS = boardImportValidate.CONFIG_IMPORT_FIELDS;
+const boardImportPlan = require(path.join(__dirname, "..", "..", "public", "js", "board-import-plan.js"));
+const boardIO = Object.assign({}, boardImportValidate, boardImportPlan);
 
 function withBoard(board, fn) {
   global.state = Object.assign(
@@ -423,7 +436,7 @@ test("mergeSquadDimensions() in REPLACE mode drops a squad's existing ratings th
 // marker (pendingDimensionKey()) instead of being silently skipped --
 // resolvePendingDimensionKeys() turns that marker into the dimension's
 // real key once it actually exists, called right after the dimension
-// import runs (see board-export-import.js's Apply-button handler). ----
+// import runs (see board-import-preview.js's Apply-button handler). ----
 
 test("buildSquadImportPlan() resolves a rating via label when an EXISTING board dimension has a different key than the file", () => {
   withBoard({
@@ -590,7 +603,7 @@ test("parseBoardImportFile() accepts a file with no dimensions/templates/config 
 });
 
 // ---------- buildDimensionImportPlan() ----------
-// Matches by LABEL, not key -- see board-export-import.js's own comment on why: a custom
+// Matches by LABEL, not key -- see board-import-plan.js's own comment on why: a custom
 // dimension's key is exactly as device-local/random as a template's id, so
 // key-matching would import every admin-created dimension as "new" every
 // time, defeating cross-tribe reuse. Only 3a's separate rating-to-dimension
@@ -692,7 +705,7 @@ test("buildTemplateImportPlan() with no templates field at all touches nothing, 
 
 // ---------- buildConfigImportPlan() ----------
 // Board settings are 4 named fields, not a collection -- no mode parameter,
-// no removal concept, same in Merge or Replace (see board-export-import.js's own comment).
+// no removal concept, same in Merge or Replace (see board-import-plan.js's own comment).
 
 test("buildConfigImportPlan() reports only known fields that actually differ", () => {
   withBoard({ config: { unit: "Squad", unitPlural: "Squads", activeTemplateName: "Spotify", attribution: "orig" } }, () => {

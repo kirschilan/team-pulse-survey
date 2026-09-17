@@ -5,8 +5,9 @@ the mechanics of this one tier.
 
 Plain Node tests (`node:test` + `node:assert/strict` -- ships with Node,
 nothing to install) for the app's pure logic: consolidation/scoring math
-(`helpers.js`), JSON board export/import plan-building and validation
-(`board-export-import.js`), and `i18n.js`'s `t()` lookup/fallback/interpolation
+(`helpers.js`), JSON board export serialization (`board-export.js`), import
+shape validation (`board-import-validate.js`), and import plan-building
+(`board-import-plan.js`), and `i18n.js`'s `t()` lookup/fallback/interpolation
 plus the English/Hebrew
 key-parity check (`test_i18n.js`) that mechanically enforces the product
 owner's "every future change supports every supported language" DOD (see
@@ -36,7 +37,8 @@ screens of UI, and read the result back out of the DOM -- correct, but slow
 and indirect. These pure functions have no DOM dependency at all, so they
 don't need a browser to test.
 
-`helpers.js` and `board-export-import.js` each end with a small, guarded block:
+`helpers.js`, `board-export.js`, `board-import-validate.js`, and
+`board-import-plan.js` each end with a small, guarded block:
 
 ```js
 if (typeof module !== "undefined" && module.exports) {
@@ -54,10 +56,26 @@ identifier -- exactly how they'd resolve in a browser sharing one `window`
 scope. `fake_dom.js` provides a minimal, deliberately permissive
 `document`/`window` stand-in (every element access returns a harmless fake
 that accepts any call) so `require()`-ing a file that also does real DOM
-wiring at its top level (e.g. `board-export-import.js`'s
-`document.getElementById(...).addEventListener(...)` calls) doesn't crash
+wiring at its top level (e.g. `board-export.js`'s
+`document.getElementById(...).addEventListener(...)` call) doesn't crash
 on load; each test file sets `global.state` itself for whatever board shape
 that test needs.
+
+REF-4 (STATUS.md's "Code quality & refactoring backlog") split the former
+board-export-import.js into six files (board-export.js,
+board-import-validate.js, board-import-plan.js, board-import-preview.js,
+board-import-apply.js, board-import-ui.js) -- only the first three are
+directly unit-tested; the other three are DOM/persistence-heavy and stay
+covered by the Playwright suite instead, same distinction this file already
+draws for helpers.js's own pure-vs-DOM functions. This made the
+"bare identifier" convention above apply BETWEEN split files too, not just
+within one: `board-import-plan.js`'s `buildConfigImportPlan()` calls
+`isPlainObject()`/`CONFIG_IMPORT_FIELDS`, both declared in
+`board-import-validate.js` -- a test needing `buildConfigImportPlan()` must
+`require()` `board-import-validate.js` too and copy those two names onto
+`global` first, exactly like `global.sortedDimensions = helpers.sortedDimensions`
+already does for the helpers.js/board-*.js boundary. See
+`tests/unit/test_json_import.js`'s own preamble for a worked example.
 
 This layer covers computation. Real DOM rendering, user interaction, and
 anything touching a real WebSocket or `crypto.subtle` stay covered by the

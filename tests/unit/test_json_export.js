@@ -15,7 +15,11 @@ global.sortedSquads = helpers.sortedSquads;
 // rather than widening that exports list for a single caller.
 global.nowIso = function(){ return new Date().toISOString(); };
 
-const boardIO = require(path.join(__dirname, "..", "..", "public", "js", "board-export-import.js"));
+// REF-4 (STATUS.md's "Code quality & refactoring backlog"): buildBoardExport()/
+// toJSON() now live in board-export.js, split out of the former
+// board-export-import.js -- self-contained (no cross-file globals needed
+// beyond sortedDimensions/sortedSquads/nowIso/state, already wired above).
+const boardIO = require(path.join(__dirname, "..", "..", "public", "js", "board-export.js"));
 
 function withBoard(board, fn) {
   global.state = Object.assign(

@@ -36,9 +36,10 @@ this decision right first, since it decides where the test even goes.
 No DOM, no `localStorage`, no network, no `crypto.subtle`. Examples
 already in this repo: `helpers.js`'s consolidation/scoring math
 (`consolidateBand`, `bandForScore`, `effectiveDimResult`),
-`board-export-import.js`'s JSON import plan-building and validation
-(`buildSquadImportPlan`, `buildDimensionImportPlan`,
-`parseBoardImportFile`), `board-sync.js`'s `parseTeamSecretInput`/`teamLinkFor`.
+`board-import-plan.js`'s JSON import plan-building
+(`buildSquadImportPlan`, `buildDimensionImportPlan`) and
+`board-import-validate.js`'s validation (`parseBoardImportFile`),
+`board-sync.js`'s `parseTeamSecretInput`/`teamLinkFor`.
 If what you're building is "a function that transforms data," it almost
 certainly belongs here, even if the function is *called from* UI code —
 see `tests/unit/README.md` for the `require()`-the-real-file +

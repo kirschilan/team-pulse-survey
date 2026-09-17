@@ -47,7 +47,9 @@ public/            The app itself -- static site, deploys as-is
                    for why and for the file-by-file map)
     state.js, helpers.js, render.js, modals.js, squads.js,
     retro-facilitator.js, retro-join.js, dimensions.js, templates.js,
-    board-export-import.js, db.js, crypto.js, relay-client.js, board-sync.js
+    board-export.js, board-import-validate.js, board-import-plan.js,
+    board-import-preview.js, board-import-apply.js, board-import-ui.js,
+    db.js, crypto.js, relay-client.js, board-sync.js
   styles.css
   vendor/
     qrcode.js      Bundled QR generator (kazuhikoarase/qrcode-generator, MIT)

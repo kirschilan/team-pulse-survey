@@ -291,7 +291,7 @@ with sync_playwright() as p:
     # ---- Story 13, item 3b: dimensions/templates/board-settings import,
     # extending the same file/preview/Merge-Replace toggle above to the rest
     # of what buildBoardExport() puts in the file. Matches by LABEL/NAME, not
-    # key/id -- see board-export-import.js's buildDimensionImportPlan()/buildTemplateImportPlan()
+    # key/id -- see board-import-plan.js's buildDimensionImportPlan()/buildTemplateImportPlan()
     # comment for why (a custom dimension's key and a custom template's id are
     # both device-local "local-*-"+Date.now() storage artifacts, no more
     # portable across boards than a squad's own id already wasn't). The pure
