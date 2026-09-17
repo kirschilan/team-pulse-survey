@@ -21,6 +21,107 @@
 // hash of that secret (crypto.js's roomIdFor()) for routing -- knowing the
 // room id buys an attacker nothing, since it doesn't run backward to the
 // secret. With no secret set (the default), this whole file stays inert.
+//
+// REF-3 (STATUS.md's "Code quality & refactoring backlog"): the module-level
+// flags below are an implicit state machine this file's own comments
+// already reason about correctly, piece by piece, but never named as a
+// whole -- this block is that map, not a behavior change.
+//
+// STATE (module-level, one device -- see "Not scoped per team" below):
+//   localBoardReady        -- {squads, dimensions, config} readiness of the
+//                              LOCAL board itself, independent of team sync.
+//                              A push is refused until all three are true
+//                              (db.js's markLocalBoardPieceReady()) -- pushing
+//                              from a still-loading local board would push a
+//                              genuinely inconsistent snapshot (see
+//                              pushBoardSnapshotIfConnected()'s own comment).
+//   hydrateAttemptedForSecret -- which secret this device has run at least
+//                              one hydrate ATTEMPT for (success, not-found, or
+//                              give-up all count). A push is refused until
+//                              this matches the CURRENT secret -- otherwise a
+//                              device joining an existing team could push its
+//                              own stale pre-hydrate board and race a
+//                              teammate's real edit purely on timestamp.
+//   lastPushedBoardContent  -- content signature (not the raw payload -- see
+//                              boardContentSignature()) of the last board this
+//                              device is known to share with the team,
+//                              whether it got there by THIS device pushing it
+//                              or by applying a remote snapshot. Used purely
+//                              to dedupe a no-op push (PERF-1); reset to null
+//                              whenever hydrateAttemptedForSecret changes, so
+//                              a genuinely different team's board is never
+//                              skipped just because its content happens to
+//                              coincide with a previous team's.
+//   hydrating               -- true for the duration of ONE applyRemoteBoardSnapshot()
+//                              call (a boot hydrate or a live update).
+//                              pushBoardSnapshotIfConnected() and db.js's own
+//                              listeners both refuse to act while this is set,
+//                              so a multi-doc remote apply can't echo a
+//                              partially-applied snapshot back out mid-flight,
+//                              and renders exactly once when it's done (PERF-2).
+//   pendingRemoteApply      -- at most one queued {roomId, remote}, set only
+//                              when a second maybeApplyRemote() call arrives
+//                              while `hydrating` is still true for an earlier
+//                              one (boot hydrate and the live subscription's
+//                              own first delivery can genuinely race). Only
+//                              the NEWEST (by remote.updatedAt) is kept; it
+//                              runs once the in-flight apply finishes --
+//                              serializes applies without needing a real
+//                              per-room mutex.
+//   teamBoardUnsubscribe   -- the live subscription's own unsubscribe
+//                              function, or null when not subscribed. Always
+//                              stopped before a new one starts
+//                              (subscribeToTeamBoardIfConnected()'s own first
+//                              line) -- see the fix below for why
+//                              connectWithSecret() must also stop it BEFORE
+//                              switching teams, not only after.
+//
+// TRANSITIONS (the ones a contributor actually needs to reason about):
+//   boot            -> hydrateFromTeamIfConnected() (not awaited -- db.js's
+//                      listeners keep loading the LOCAL board in parallel)
+//                      -> hydrateAttemptedForSecret set -> pushBoardSnapshotIfConnected()
+//                      (a no-op if nothing local actually changed) ->
+//                      subscribeToTeamBoardIfConnected() is wired up separately,
+//                      at initDb() time, not chained off hydrate.
+//   local edit      -> db.js's squads/dimensions/config listener fires ->
+//                      pushBoardSnapshotIfConnected() (refused until
+//                      localBoardReady + hydrateAttemptedForSecret both hold).
+//   remote update   -> live subscription snapshot -> maybeApplyRemote() ->
+//                      (queued in pendingRemoteApply if `hydrating` already)
+//                      -> applyRemoteBoardSnapshot() rewrites local squads/
+//                      dimensions/config -> hydrating cleared -> one renderAll().
+//   team switch     -> connectWithSecret(newSecret): stops the OLD live
+//                      subscription FIRST (fixed below -- see "A real race
+//                      this section's own writing found"), THEN sets the new
+//                      secret, hydrates, pushes, and subscribes fresh.
+//   disconnect      -> setTeamSecret("") + stopTeamBoardSubscription(); no
+//                      hydrate/push bookkeeping is reset -- reconnecting to
+//                      the SAME team later (Create generates a fresh secret;
+//                      only Join can return to the same one) re-runs hydrate
+//                      from scratch, same as any other secret change.
+//
+// NOT SCOPED PER TEAM/ROOM: every flag above is one device's global state,
+// not keyed by team/room id. Confirmed harmless TODAY only because a device
+// holds exactly one active team secret at a time (getTeamSecret() returns a
+// single value) -- an implicit product constraint, not an enforced one. If
+// multi-team-per-device ever becomes a real requirement, every flag here
+// needs to become team-scoped, not just documented better.
+//
+// A REAL RACE THIS SECTION'S OWN WRITING FOUND (fixed alongside this
+// documentation, not left as a known gap): switching teams while a hydrate
+// for the PREVIOUS team was still in flight (a slow relay response,
+// followed quickly by the SM switching to a different team link) could
+// apply the old team's stale board onto the newly-switched-to team's local
+// board once that slow hydrate finally resolved -- maybeApplyRemote() had no
+// "is this still the currently connected team" check of its own, and
+// connectWithSecret() didn't stop the OLD team's live subscription until
+// AFTER the new hydrate finished, leaving a window where the team being left
+// could still push stray updates into the local board. hydrateFromTeamIfConnected()
+// now re-checks getTeamSecret() === the secret it was actually invoked for,
+// both right before applying a remote snapshot and right before its own
+// end-of-call bookkeeping; connectWithSecret() now stops the old subscription
+// as its very first step, not its last. See
+// tests/test_board_sync_team_switch_during_hydrate.py.
 
 var TEAM_SECRET_KEY = "squadpulse:teamSecret";
 // Step 7 of STATUS.md's "Board sync" plan: promoted from opt-in to
@@ -431,11 +532,24 @@ function hydrateFromTeamIfConnected(){
   return SquadPulseCrypto.roomIdFor(secret).then(function(roomId){
     return state.db.doc(teamBoardPath(roomId), secret).get().then(function(snap){
       if(!snap.exists) return; // no device has pushed this team's board yet
+      // REF-3: this GET can resolve after the device has already switched to
+      // a DIFFERENT team (connectWithSecret() called again while this was
+      // still in flight) -- applying it now would clobber the newly-switched
+      // team's board with the team just left. Only apply if `secret` (the
+      // one THIS call was invoked for) is still the current one.
+      if(getTeamSecret() !== secret) return;
       return maybeApplyRemote(roomId, snap.data());
     });
   }).catch(function(err){
     diag("Team sync hydrate failed: " + (err && err.code ? err.code : String(err)));
   }).then(function(){
+    // Same staleness check as above, for this call's own bookkeeping: a
+    // stale call setting hydrateAttemptedForSecret/lastPushedBoardContent
+    // back to ITS secret after a newer call already set them for the
+    // CURRENT team would corrupt pushBoardSnapshotIfConnected()'s own guard
+    // for that current team (it requires hydrateAttemptedForSecret to match
+    // getTeamSecret() before pushing anything).
+    if(getTeamSecret() !== secret) return;
     hydrateAttemptedForSecret = secret;
     lastPushedBoardContent = null;
     // If hydrate found nothing to apply (a genuinely new team -- the
@@ -478,6 +592,12 @@ function stopTeamBoardSubscription(){
 }
 
 function connectWithSecret(secret){
+  // REF-3: stop the OLD team's live subscription FIRST, before anything else
+  // -- previously this only happened as subscribeToTeamBoardIfConnected()'s
+  // own first line, at the very END of this function's chain, leaving a
+  // window (for however long hydrate below takes) where the team being LEFT
+  // could still push a live update straight into this device's local board.
+  stopTeamBoardSubscription();
   setTeamSecret(secret);
   renderTeamSyncStatus();
   diag("Team sync: connected");
