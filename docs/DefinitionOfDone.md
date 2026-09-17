@@ -28,6 +28,17 @@ duplicated or contradicted elsewhere:
   (`node --test tests/unit/test_*.js` and `tests/run_all.sh`), not just
   whatever test you added or touched — zero regressions, zero JavaScript
   errors.
+- **Before opening a PR, run the `code-review` skill against your own diff
+  and address what it finds** (fix a real one; for a finding you disagree
+  with, say why in the PR rather than silently dropping it). This is a
+  self-review pass, not a replacement for external review — its job is to
+  catch what a second pass over your own diff would catch (a
+  `Promise.all` that should be `allSettled`, a fixed-timer wait where a
+  causal one was available, a documentation claim that isn't actually
+  tested) before an external reviewer has to. (Adopted 2026-09-17 after a
+  run of PRs each drew at least one real finding from external review —
+  see STATUS.md's session log — none of them needing anything a self-review
+  pass wasn't equipped to catch.)
 - **When the full suite's total serial wall-clock time is measured and has
   moved meaningfully since the last figure recorded in STATUS.md, log the
   new number there.** This isn't a gate — no change is blocked on it — but

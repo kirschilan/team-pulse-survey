@@ -17,6 +17,8 @@ repo — read these before making a change, not this file's own prose:
 - **`tests/README.md`** / **`tests/unit/README.md`** — how the two test
   tiers are organized, named, and run.
 - **`README.md`** — project overview, running locally, deploying.
+- **`ETHICS.md`** — secrets handling, attribution honesty, and other
+  standing ethical/security-hygiene rules for anyone working in this repo.
 
 This file intentionally stays a short index rather than a growing summary of
 the codebase — the docs above are the source of truth, and duplicating them
