@@ -212,16 +212,24 @@ every other device on the same team link.
   on every single doc. Measured at two documented sizes with a real Playwright profiling
   harness: the app's own real default board (3 squads, 12 dimensions) cost **31** full
   `renderAll()` passes for one remote snapshot apply; a generous stress board (40 squads, 25
-  dimensions) cost **132** — scaling linearly with board size, not a fixed cost. One
-  `renderAll()` pass at the stress size measured **~32ms** on its own (fast in isolation, but
-  132 of them back-to-back would have blocked the main thread for 4+ seconds). Fixed by having
-  `db.js`'s three listeners skip `renderAll()` while `hydrating` (a remote apply) or
-  `suppressingLocalRewrite` (a local multi-doc rewrite) is set — `state` still updates on every
-  fire either way, so nothing goes stale — and rendering exactly once when each of those windows
-  closes (`board-sync.js`'s `maybeApplyRemote()` and `suppressBoardPushDuring()`), the same
-  "coalesce, don't drop" pattern already used there for `pushBoardSnapshotIfConnected()`.
-  Post-fix, both sizes measured **1–2** renders for the same batch — a small constant, not
-  proportional to board size. Deliberately did NOT attempt per-view conditional rendering (skip
+  dimensions) cost **66** — scaling with board size, not a fixed cost. (**Correction, Codex
+  review on PR #17**: the first published version of this measurement reported 132 for the
+  stress case — the profiling harness re-wrapped `window.renderAll` on every measurement instead
+  of once, so the 2nd and later measurements in a run double-counted; re-verified directly
+  against the pre-fix code with the harness fixed to install its counter exactly once: 66, not
+  132. The small-board figure (31) was the FIRST measurement in the run, so it was never
+  affected — unchanged.) One `renderAll()` pass at the stress size measured in the tens of
+  milliseconds on its own (fast in isolation, but 66 of them back-to-back would still have
+  blocked the main thread for over a second of real jank). Fixed by having `db.js`'s three
+  listeners skip `renderAll()` while `hydrating` (a remote apply) or `suppressingLocalRewrite`
+  (a local multi-doc rewrite) is set — `state` still updates on every fire either way, so nothing
+  goes stale — and rendering exactly once when each of those windows closes (`board-sync.js`'s
+  `maybeApplyRemote()` and `suppressBoardPushDuring()`), the same "coalesce, don't drop" pattern
+  already used there for `pushBoardSnapshotIfConnected()`. Post-fix, both documented sizes
+  measured **exactly 1** render for the same batch (re-verified with the corrected harness — the
+  1/2 split in the original write-up was the same double-counting artifact), and an ordinary
+  single edit measured **4** renders (not 12, same artifact) — a small constant, not proportional
+  to board size. Deliberately did NOT attempt per-view conditional rendering (skip
   hidden-view sub-renders entirely) — riskier, and this exact class of bug (a view showing stale
   data after switching to it) has bitten this app before (see `test_view_switch_refreshes_stale_state.py`);
   the call-count fix alone addresses the measured amplification without touching that surface.
@@ -872,7 +880,7 @@ and outside-click dismissal merged through PR #3 (`codex/about-guides`) and PR #
 | 4 | 3 — Facilitator guide | As a facilitator, follow setup, template and squad selection, start, invite, discuss, and finish/apply; distinguish team and session links. | **DONE** — merged via PR #3 (`codex/about-guides`) |
 | 5 | 4 — Reading results | As a viewer, understand colors, trends, Squad/Tribe views, and hotspots through expandable guidance matching actual behavior. | **DONE** — merged via PR #3 (`codex/about-guides`) |
 | 6 | 5 — Credits and licenses | As a user, inspect verified model sources, Dr. Agile contributions, application license, and third-party notices; preserve contextual board credits. Verify the source of Tuckman assessment scoring. | **UI DONE** — merged via PR #5. Source/rights questions are a separate, still-open PO decision — see `docs/credits-and-terms-review.md` and "Decisions locked in" below (Five Dysfunctions reuse risk knowingly accepted; Tuckman's 20-statement questionnaire's provenance remains unverified, the shipped credits text says so honestly). |
-| 7 | 7 — Terms and conditions of use | As a user, read terms before choosing to use the app and reopen them from About & help. Publish owner-approved English/Hebrew terms covering permitted use, responsibilities, data/sharing behavior, and limitations; show effective date/version and accessible links. Explicitly decide whether acceptance tracking is needed before implementation; do not imply consent through mere dismissal. | **DONE** — informational/no tracking confirmed by owner; draft wording (v0.1, no effective date) shipped and live in the About & help panel |
+| 7 | 7 — Terms and conditions of use | As a user, read terms before choosing to use the app and reopen them from About & help. Publish owner-approved English/Hebrew terms covering permitted use, responsibilities, data/sharing behavior, and limitations; show effective date/version and accessible links. Explicitly decide whether acceptance tracking is needed before implementation; do not imply consent through mere dismissal. | **UI DONE, content approval OUTSTANDING** (corrected, Codex review on PR #17 — a prior version of this row said DONE, which overstated it). Informational/no-tracking model confirmed by owner; the mechanism (panel, reopen access, EN/HE, no implied consent) is fully built and live. But the acceptance criteria calls for *owner-approved* terms with a real effective date, and the shipped text is explicitly a draft awaiting that: `index.html`'s own `about.termsVersion` string reads "Draft v0.1 • 2026-09-15 • **Pending owner approval; no effective date yet**." Content sign-off is a separate, still-open step for the owner — same shape as Story 5/6's rights question above, not a code task. |
 
 Stories are small independently testable UI increments; stories 2–5 and 7 can
 be ordered independently once the common panel is available. Story 6 was moved
@@ -3422,19 +3430,36 @@ not just in this repo's own tests.
   all 54 Playwright files (the new one included), and relay's own suite.
 - 2026-09-17 — Closed out the two remaining backlog items from the branch audit: PERF-2 and
   SEC-5, plus fixed the "Introduction and help backlog" table, which still showed stories 2–7 as
-  "review pending" well after their PRs (#3, #5) merged — verified all of it (participant guide,
-  facilitator guide, reading-results guide, credits, terms) is actually live in current trunk.
-  Also recorded a PO decision on the two rights questions that table's Story 5/6 flags: Five
-  Dysfunctions' copyright risk is knowingly accepted; Tuckman's 20-statement questionnaire
-  provenance is a separate, still-open question — the documented record (this doc's own earlier
-  session log, and the live credits UI's own hedge) says it came from an external user-supplied
-  document with its own scoring scheme, not something authored fresh in this project, contradicting
-  the PO's own recollection — flagged for the PO to resolve from their own records, not something
-  this session could verify further. PERF-2: profiled real render amplification on a multi-doc
-  write (31 renders for a 3-squad/12-dimension remote apply, 132 for 40/25 — scales with board
-  size) and fixed it with the same batching pattern PERF-1 already used for pushes, test-first
-  (`tests/test_render_batching_on_multi_doc_apply.py`, confirmed failing on the pre-fix code at
-  both documented sizes). SEC-5: confirmed live (`curl -I` against the deployed Vercel preview)
-  that the wildcard CORS header is Vercel's own static-hosting default, not app-set, and documented
-  why no restriction is warranted — no code change. Full suite green: 157/157 unit tests, all 55
-  Playwright files, relay's own suite.
+  "review pending" well after their PRs (#3, #5) merged — verified the UI for all of it
+  (participant guide, facilitator guide, reading-results guide, credits, terms) is actually live
+  in current trunk. Also recorded a PO decision on the two rights questions that table's Story
+  5/6 flags: Five Dysfunctions' copyright risk is knowingly accepted; Tuckman's 20-statement
+  questionnaire provenance is a separate, still-open question — the documented record (this doc's
+  own earlier session log, and the live credits UI's own hedge) says it came from an external
+  user-supplied document with its own scoring scheme, not something authored fresh in this
+  project, contradicting the PO's own recollection — flagged for the PO to resolve from their own
+  records, not something this session could verify further. PERF-2: profiled real render
+  amplification on a multi-doc write (31 renders for a 3-squad/12-dimension remote apply, 66 for
+  40/25 — scales with board size) and fixed it with the same batching pattern PERF-1 already used
+  for pushes, test-first (`tests/test_render_batching_on_multi_doc_apply.py`, confirmed failing
+  on the pre-fix code at both documented sizes). SEC-5: confirmed live (`curl -I` against the
+  deployed Vercel preview) that the wildcard CORS header is Vercel's own static-hosting default,
+  not app-set, and documented why no restriction is warranted — no code change. Full suite green:
+  157/157 unit tests, all 55 Playwright files, relay's own suite.
+- 2026-09-17 — Fixed two real findings from a Codex review of PR #17 (`2bc132b`). (1) The PERF-2
+  profiling harness re-installed its `renderAll()`-counting wrapper before EVERY measurement
+  instead of once, so each measurement after the first double-, triple-counted (each re-install
+  wrapped the previous wrapper instead of replacing it). Re-verified directly against both the
+  pre-fix and post-fix code with the harness fixed to install exactly once and reset a counter
+  between measurements: the pre-fix stress-board figure was **66**, not 132 (the small-board
+  figure, 31, was the first measurement in the run and was never affected); post-fix, both sizes
+  now measure **exactly 1** render, and an ordinary single edit measures **4**, not 12. The
+  batching fix itself needed no change — the amplification and the fix were both real, only the
+  measurement tooling was wrong. Corrected every number this affected in `STATUS.md` and
+  `tests/README.md`. (2) The "Introduction and help backlog" table's Story 7 (terms) row was
+  marked DONE, but the shipped terms text itself says "Pending owner approval; no effective date
+  yet" (`index.html`'s `about.termsVersion` string) — the acceptance criteria calls for
+  *owner-approved* terms with a real effective date, so DONE overstated it. Corrected to "UI DONE,
+  content approval OUTSTANDING," matching the same split already used for Story 5/6's rights
+  question. Full suite re-verified green: 157/157 unit tests, all 55 Playwright files, relay's own
+  suite.

@@ -33,13 +33,22 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 INDEX = write_plain_index(out_name="_test_render_batching_index.html")
 INDEX_URL = "file://" + str(INDEX.resolve())
 
+# Codex review fix on PR #17: this used to be called fresh before EVERY
+# measurement, which re-wrapped whatever window.renderAll currently was --
+# each call added another counting layer on top of the previous one instead
+# of replacing it, so the 2nd measurement in a run double-counted every real
+# call, the 3rd triple-counted, and so on. Installed exactly ONCE per page
+# now (idempotent: a second call is a no-op); RESET_COUNTER_JS below is what
+# each individual measurement uses to zero the counter, not this.
 INSTALL_COUNTER_JS = """
 () => {
+  if (window.__RENDER_COUNT__ !== undefined) return; // already installed -- don't wrap twice
   window.__RENDER_COUNT__ = 0;
   var _renderAll = window.renderAll;
   window.renderAll = function(){ window.__RENDER_COUNT__++; return _renderAll.apply(this, arguments); };
 }
 """
+RESET_COUNTER_JS = "() => { window.__RENDER_COUNT__ = 0; }"
 
 # Builds a synthetic remote board snapshot with N squads and M dimensions --
 # the exact shape applyRemoteBoardSnapshot()/board-sync.js's own boards/
@@ -69,14 +78,14 @@ APPLY_REMOTE_JS = """
 
 
 def measure_batch_apply(page, squads, dims):
-    page.evaluate(INSTALL_COUNTER_JS)
+    page.evaluate(RESET_COUNTER_JS)
     remote = page.evaluate(BUILD_REMOTE_JS, {"squads": squads, "dims": dims})
     page.evaluate(APPLY_REMOTE_JS, remote)
     return page.evaluate("() => window.__RENDER_COUNT__")
 
 
 def measure_single_edit_render_count(page):
-    page.evaluate(INSTALL_COUNTER_JS)
+    page.evaluate(RESET_COUNTER_JS)
     # Not "squad-1" specifically -- the batch measurements above already
     # replaced the board's squads with synthetic stress-squad-* ones (a real
     # remote snapshot apply removes whatever the remote doesn't list), so
@@ -96,6 +105,7 @@ with sync_playwright() as p:
     page.goto(INDEX_URL, wait_until="domcontentloaded")
     page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
     page.click('.view-btn[data-view="admin"]')
+    page.evaluate(INSTALL_COUNTER_JS)  # exactly once for the whole page lifetime -- see its own comment
 
     print("=== documented size 1: the app's own real default board (3 squads, 12 dimensions) ===")
     default_batch_count = measure_batch_apply(page, squads=3, dims=12)
