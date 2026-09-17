@@ -190,7 +190,12 @@ var hydrating = false;
 var suppressingLocalRewrite = false;
 function suppressBoardPushDuring(work){
   suppressingLocalRewrite = true;
-  function done(){ suppressingLocalRewrite = false; pushBoardSnapshotIfConnected(); }
+  // PERF-2: db.js's squads/dimensions/config listeners skip renderAll()
+  // while suppressingLocalRewrite is set (same batch this flag already
+  // protects pushBoardSnapshotIfConnected() from) -- render exactly once
+  // here, after the whole multi-doc rewrite has landed, instead of once per
+  // doc it touched.
+  function done(){ suppressingLocalRewrite = false; renderAll(); pushBoardSnapshotIfConnected(); }
   return work().then(function(result){ done(); return result; }, function(err){ done(); throw err; });
 }
 
@@ -363,9 +368,23 @@ function maybeApplyRemote(roomId, remote){
     // shared by both).
     lastPushedBoardContent = boardContentSignature(remote);
     hydrating = false;
+    // PERF-2 (STATUS.md's "Runtime performance backlog"): db.js's squads/
+    // dimensions/config listeners skip renderAll() while `hydrating` is set
+    // -- render exactly once here, now that the whole remote snapshot has
+    // landed, instead of once per doc it touched (confirmed: this collapsed
+    // 31 renders for a 3-squad/12-dimension apply, 132 for 40/25, down to
+    // 1 in both cases). `state` was already kept current by each listener
+    // as it fired either way, so this render reflects the real final board,
+    // not a partial one.
+    renderAll();
     return runPendingRemoteApply();
   }, function(err){
     hydrating = false;
+    // A partial failure (Promise.all rejects, but some docs may have
+    // already landed and updated `state` before the rejecting one) must
+    // still surface whatever DID land -- otherwise the UI can go stale
+    // silently until some unrelated later render happens to cover for it.
+    renderAll();
     runPendingRemoteApply();
     throw err;
   });
