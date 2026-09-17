@@ -15,6 +15,14 @@
 // plaintext once unwrapped, exactly mirroring what fake_store.html's STORE
 // and local-store.js's STORE hold, just kept in memory per room instead of
 // in one flat localStorage blob.
+//
+// REF-2: this file and local-store.js are two independent implementations
+// of that same `db` contract -- see docs/backend-contract.md for the one
+// place it's actually named (including this file's own path-shape
+// requirement -- codeFromPath() below always reads a path's SECOND segment
+// as the room code, unlike local-store.js's flat indifference to path
+// shape) and tests/test_backend_contract_parity.py for the shared test
+// coverage.
 var SquadPulseRelay = (function(){
 
   // index.html owns the "default to a local relay only when this page
