@@ -8,8 +8,13 @@ import pathlib, subprocess, os, time, socket
 # get/set/update/delete/add/onSnapshot operations against an isolated
 # harness for each backend (no fake store, no mock WebSocket -- a real
 # relay/server.js subprocess for the relay side), asserting identical
-# shapes for everything the contract calls shared, and that the documented
-# difference (the `unavailable` field) is exactly what's described there.
+# shapes for everything the contract calls shared, that the documented
+# difference (the `unavailable` field) is exactly what's described there,
+# that an earlier get() reference is affected by a later update() but NOT
+# a later set(), and that the `secret` argument on a top-level
+# collection()/doc() call is forwarded through a child ref rather than
+# needing to be repeated on it -- both corrections from a Codex review of
+# this file's first version (PR #22).
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PUBLIC_DIR = REPO_ROOT / "public"
@@ -81,6 +86,21 @@ async () => {
   await db.doc("contract-test/room1/items/doc1").update({ nested: { b:2 } });
   var afterUpdate = await db.doc("contract-test/room1/items/doc1").get();
   out.afterUpdateData = JSON.parse(JSON.stringify(afterUpdate.data()));
+
+  // Codex review on PR #22 (P2): set() and update() do NOT do the same
+  // thing to an earlier-captured get() reference -- update() mutates the
+  // existing stored object in place (so an earlier reference DOES reflect
+  // it), set() replaces the stored value outright (so an earlier
+  // reference is UNCHANGED, still showing whatever it looked like at
+  // capture time). Both captured immediately before the write they're
+  // testing, exactly the case a real caller would be in.
+  var refBeforeSet = (await db.doc("contract-test/room1/items/doc1").get()).data();
+  await db.doc("contract-test/room1/items/doc1").set({ name:"Gamma", nested:{ z:9 } });
+  out.setLeavesEarlierReferenceUnchanged = JSON.stringify(refBeforeSet) === JSON.stringify({ name:"Alpha", nested:{ a:1, b:2 } });
+
+  var refBeforeUpdate = (await db.doc("contract-test/room1/items/doc1").get()).data();
+  await db.doc("contract-test/room1/items/doc1").update({ nested: { w:1 } });
+  out.updateMutatesEarlierReference = JSON.stringify(refBeforeUpdate) === JSON.stringify({ name:"Gamma", nested:{ z:9, w:1 } });
 
   // add() generates an id; collection().get() reflects it.
   var added = await db.collection("contract-test/room1/items").add({ name:"Beta" });
@@ -212,6 +232,11 @@ try:
             assert r["onSnapshotFrozen"] is True
             # update() deep-merges: nested.a survives untouched, nested.b is added
             assert r["afterUpdateData"] == {"name": "Alpha", "nested": {"a": 1, "b": 2}}
+            # set() replaces the stored value -- an earlier get() reference is
+            # unaffected by it; update() mutates the stored value in place --
+            # an earlier get() reference DOES reflect it (docs/backend-contract.md).
+            assert r["setLeavesEarlierReferenceUnchanged"] is True
+            assert r["updateMutatesEarlierReference"] is True
             assert r["addedIdIsString"] is True
             assert r["collectionSize"] == 2
             assert r["collectionEmpty"] is False
@@ -223,6 +248,35 @@ try:
         assert local_result["freshHasUnavailableKey"] is False, "local-store.js snapshots never carry `unavailable` at all"
         assert relay_result["freshHasUnavailableKey"] is True, "relay-client.js snapshots always carry `unavailable`, even when false"
         assert relay_result["freshUnavailableValue"] is False, "a connected, reachable relay room is not unavailable"
+
+        print("=== documented `secret` argument: forwarded through child refs, never repeated on them (docs/backend-contract.md) ===")
+        # Codex review on PR #22 (P2): every call above uses db.doc()/
+        # db.collection() with no second argument at all, so the documented
+        # `secret` argument was never actually exercised. A FRESH room path
+        # (never touched above -- getRoom()'s own cache means a later call
+        # for an already-created room ignores whatever secret it's given,
+        # so reusing "contract-test/room1" here would prove nothing) whose
+        # ONLY top-level call is db.collection(path, secret) -- the
+        # returned collRef's own .doc(id) below deliberately does NOT
+        # repeat the secret, since it can't: only the top-level call takes
+        # one. This is only meaningful for relay-client.js -- local-store.js
+        # accepts the same second argument (routedCollRef forwards it) but
+        # never uses it for a non-relay path, and "contract-test/..." is
+        # never relay-routed in the local-store.js harness either.
+        secret_forwarding_js = """
+        async () => {
+          var db = window.__contractDb__;
+          var secret = "contract-test-secret-xyz789";
+          var child = db.collection("contract-test/secretroom1/items", secret).doc("child1");
+          await child.set({ via: "child ref, secret never repeated on it" });
+          var read = await child.get();
+          return { childExists: read.exists, childData: read.data() };
+        }
+        """
+        relay_secret_result = relay_page.evaluate(secret_forwarding_js)
+        print("relay-client.js secret-forwarding result:", relay_secret_result)
+        assert relay_secret_result["childExists"] is True
+        assert relay_secret_result["childData"] == {"via": "child ref, secret never repeated on it"}
 
         print("errors (local-store harness):", errors_local)
         print("errors (relay-client harness):", errors_relay)

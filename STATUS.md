@@ -3753,3 +3753,32 @@ not just in this repo's own tests.
   routing rather than accidentally hitting that fallback. Full suite green: 157/157 unit tests,
   all 57 Playwright files (`tests/run_all.sh`, 63s wall-clock, including the new contract test),
   relay's own suite.
+- 2026-09-17 — Rebased PR #22 (REF-2) onto `claude/optimistic-keller-holuql` after PR #21 (RETRO-1)
+  also merged into it: only a trivial `STATUS.md` conflict (two adjacent session-log entries, no
+  real overlap) -- REF-2 doesn't touch `board-export-import.js`, so none of REF-1/RETRO-1's own
+  merge complexity applied here. Fixed two real P2 findings from a Codex review of PR #22, both
+  corrections to `docs/backend-contract.md` itself (no runtime behavior changed by either): (1) the
+  doc's captured-reference section claimed BOTH `set()` and `update()` mutate an earlier-captured
+  `get()` reference in place -- confirmed against both implementations' own source that only
+  `update()` does (`deepMerge()`s the patch INTO the existing stored object); `set()` REASSIGNS the
+  stored value outright (`STORE[path]=data` / `room.docs[path]=data`), leaving an earlier reference
+  pointing at the old, unaffected object -- corrected the doc to distinguish the two, and added two
+  new assertions to `tests/test_backend_contract_parity.py` that capture a reference immediately
+  before each kind of write and check which one it reflects afterward, in both backends. (2) the
+  doc's `collection()`/`doc()` surface table omitted their optional `secret` argument entirely --
+  `relay-client.js` derives a room's real encryption key from `secret || code` (`getRoom()`);
+  omitting it when a caller legitimately has the real secret means the key derives from the ROUTING
+  code instead, a value the relay itself and any join link already carry -- not a weaker guarantee,
+  no real guarantee at all. Documented that every real production caller (`board-sync.js`,
+  `retro-facilitator.js`, `retro-join.js`) always supplies it, that it's only ever accepted at the
+  TOP-level `collection()`/`doc()` call (never on a ref already returned by one), and that it's
+  forwarded to a child `.collection()`/`.doc()` call automatically via closure, not re-passed. New
+  test scenario: a secret passed only once, at `db.collection(path, secret)`, on a FRESH room path
+  untouched elsewhere in the file (`getRoom()`'s own cache means reusing an already-created room
+  would prove nothing, whichever secret a later call supplies) -- its own `.doc(id)` child, which
+  can't repeat the secret since only the top-level call takes one, still round-trips real data
+  through a real relay room. (Proving a WRONG secret materially fails to decrypt is
+  `tests/test_encryption_no_plaintext_on_wire.py`'s job, already covered there -- this only proves
+  the contract's forwarding is real, not that the crypto is strong.) Full suite re-verified green:
+  167/167 unit tests, all 58 Playwright files, relay's own suite. Pushed to the same
+  `ref-2-backend-contract-docs` branch/PR (no new PR).

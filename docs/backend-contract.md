@@ -46,6 +46,30 @@ three-segment path (`contract-test/room1/items`) for both harnesses precisely to
 
 ## The shared surface
 
+Both `collection()` and `doc()`, at the TOP level only (`db.collection(path, secret?)` /
+`db.doc(path, secret?)` — never on a ref already returned by one of these calls; see below), accept
+an optional second `secret` argument. `local-store.js`'s router (`routedDocRef`/`routedCollRef`)
+forwards it straight through to `SquadPulseRelay.doc`/`.collection` when the path is relay-routed,
+and it's simply unused for a `squads`/`dimensions`/`templates`/`meta`-rooted path (nothing there is
+encrypted, so there's nothing for it to drive). Inside `relay-client.js`, `secret` is what a room's
+own encryption key derives from (`SquadPulseCrypto.deriveKey(secret || code)` — see `getRoom()`):
+board-sync.js, retro-facilitator.js, and retro-join.js all supply the real, high-entropy per-room
+secret (shared only via a join link/QR, never sent to the relay) on every real session/board path
+they touch. **Omitting it derives the key from the routing code instead** — the very value the
+relay itself already has to route the message, and that any join link necessarily carries — so a
+caller that legitimately holds the real secret but forgets to pass it silently gets no real
+encryption guarantee at all, not a slightly-weaker one. A `collection(sub)`/`doc(id)` call made on a
+ref that ITSELF came from one of these top-level calls does NOT take a `secret` parameter — it's
+forwarded automatically, closed over from the parent call (`collection: function(sub){ return
+collRef(path + "/" + sub, secret); }`, and identically for a collection ref's own `doc()` — see
+`relay-client.js`'s `docRef()`/`collRef()`), so a caller only ever supplies it once, at whichever
+top-level call first names the room's path. `tests/test_backend_contract_parity.py` exercises this
+directly: a secret passed only at `db.collection(path, secret)` and never repeated on the `.doc(id)`
+call chained off of it still round-trips real data through a real relay room. (Proving the derived
+key materially differs when the secret is wrong — not just that omitting it is well-documented — is
+`tests/test_encryption_no_plaintext_on_wire.py`'s job, not this contract test's; that file already
+covers "a device with the wrong secret can't read the room" at the application level.)
+
 A `collection(path)` call returns:
 
 | Member | Shape | Notes |
@@ -75,11 +99,18 @@ from, identically in both implementations** — a real, previously-undocumented 
 document's own contract test (`tests/test_backend_contract_parity.py`) found by asserting it
 directly, not by reading either file's comments:
 - A snapshot from `docRef.get()` returns a **live, mutable reference** to the backend's own
-  internal storage — NOT frozen, NOT cloned. Calling `.data()` twice returns the exact same object;
-  a later `set()`/`update()` on that same doc mutates it in place, retroactively changing what an
-  EARLIER-captured `.data()` result looks like, since nothing ever copied it. A caller needing a
-  stable point-in-time value from a `get()` must clone it immediately (e.g.
-  `JSON.parse(JSON.stringify(...))`) rather than holding onto the reference.
+  internal storage — NOT frozen, NOT cloned. Calling `.data()` twice returns the exact same object.
+  What a LATER write on that same doc does to an EARLIER-captured `.data()` result depends on which
+  write it is, identically in both implementations: `update(patch)` deep-merges the patch INTO the
+  existing stored object (`deepMerge(STORE[path], patch)` / `deepMerge(room.docs[path], patch)`) —
+  it mutates that object in place, so an earlier-captured reference DOES retroactively reflect it,
+  since nothing ever copied it. `set(data)` REPLACES the stored value outright
+  (`STORE[path]=data` / `room.docs[path]=data`) — it's a reassignment, not a mutation, so an
+  earlier-captured reference keeps pointing at the OLD object and is unaffected by it. A caller
+  needing a stable point-in-time value from a `get()` — regardless of which kind of write might
+  follow — must still clone it immediately (e.g. `JSON.parse(JSON.stringify(...))`) rather than
+  holding onto the reference, since relying on "the next write happens to be a `set()`" is fragile
+  and not something either implementation promises going forward.
 - A snapshot from `onSnapshot()`'s delivery, or a `collectionSnapshot`'s own `docs[].data()`,
   returns a **fresh, recursively `Object.freeze()`d clone** on every call (`deepFreezeClone()` —
   independently implemented, near-identically, in each file; see "What's duplicated, on purpose"
