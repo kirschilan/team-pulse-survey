@@ -71,3 +71,37 @@ test("teamLinkFor() builds a link carrying the secret in the URL FRAGMENT, not t
   // round-trips through parseTeamSecretInput() the same way a pasted link would
   assert.equal(boardSync.parseTeamSecretInput(link), "mySecret123");
 });
+
+// ---------- boardContentSignature() ----------
+// PERF-1 (STATUS.md's "Runtime performance backlog"): pushBoardSnapshotIfConnected()
+// used to push unconditionally on every call, always stamping a fresh
+// nowIso() updatedAt -- so a no-op call (nothing about the board actually
+// changed) still produced a "newer" remote snapshot, which every live
+// subscriber (including tabs sharing this device's own localStorage) then
+// re-applied, re-triggering the exact listeners that call
+// pushBoardSnapshotIfConnected() again, forever. boardContentSignature()
+// is the pure piece that makes deduping possible: a string that only
+// changes when the board's MEANINGFUL content (squads/dimensions/config)
+// does, deliberately excluding boardSnapshotPayload()'s own updatedAt
+// field, which always differs by construction and would defeat the whole
+// point of comparing two payloads for sameness.
+
+test("boardContentSignature() is identical for two payloads that differ only in updatedAt", () => {
+  var a = { squads: [{ name: "Squad 1", order: 1, dimensions: {} }], dimensions: [], config: { unit: "Squad" }, updatedAt: "2026-01-01T00:00:00.000Z" };
+  var b = Object.assign({}, a, { updatedAt: "2026-01-02T00:00:00.000Z" });
+  assert.equal(boardSync.boardContentSignature(a), boardSync.boardContentSignature(b));
+});
+
+test("boardContentSignature() differs when a squad's rating genuinely changes", () => {
+  var a = { squads: [{ name: "Squad 1", order: 1, dimensions: { release: { color: "good" } } }], dimensions: [], config: {}, updatedAt: "t1" };
+  var b = { squads: [{ name: "Squad 1", order: 1, dimensions: { release: { color: "crit" } } }], dimensions: [], config: {}, updatedAt: "t1" };
+  assert.notEqual(boardSync.boardContentSignature(a), boardSync.boardContentSignature(b));
+});
+
+test("boardContentSignature() differs when a dimension or config field genuinely changes", () => {
+  var base = { squads: [], dimensions: [{ key: "release", label: "Easy to release" }], config: { unit: "Squad" }, updatedAt: "t1" };
+  var dimChanged = Object.assign({}, base, { dimensions: [{ key: "release", label: "Renamed" }] });
+  var cfgChanged = Object.assign({}, base, { config: { unit: "Team" } });
+  assert.notEqual(boardSync.boardContentSignature(base), boardSync.boardContentSignature(dimChanged));
+  assert.notEqual(boardSync.boardContentSignature(base), boardSync.boardContentSignature(cfgChanged));
+});

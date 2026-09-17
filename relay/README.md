@@ -177,6 +177,39 @@ whole point of the adapter shape: moving off Render, or forking this repo
 onto infrastructure that offers its own storage, is a small, isolated
 change instead of a rewrite.
 
+## Abuse bounds (SEC-1)
+
+Beyond the always-on total-count caps (`MAX_ROOMS`, `MAX_DOCS_PER_ROOM`,
+`MAX_ENVELOPE_BYTES`), `server.js` enforces five configurable bounds so a
+single abusive source can't exhaust capacity for everyone else: a transport
+payload ceiling (`ws`'s own `maxPayload`, rejecting an oversized frame
+before this file's `JSON.parse` ever runs on it), a per-room concurrent-
+client cap, a per-address concurrent-connection cap, a global new-
+connection rate limit, a global room-*creation* rate limit (existing rooms
+are never subject to this, however exhausted the window is), and a per-
+connection write-rate limit. Every one of these is a throttle a client
+recovers from — a fresh connection gets a fresh budget — not a ban.
+
+Defaults live in `server.js`'s `DEFAULT_LIMITS` and are generous enough
+that normal multi-device retro/team-sync usage (including a full-board
+JSON import or loading a many-dimension starter template, both of which
+can fire a real burst of writes) never trips them. Override any subset via
+`startServer({ limits: {...} })` — see `DEFAULT_LIMITS` for the exact keys.
+
+The per-address cap/limit reads the connecting socket's own address by
+default. A deployment that actually sits behind a reverse proxy can opt
+into trusting a proxy-supplied header instead via
+`startServer({ trustProxyHeader: "x-forwarded-for" })` (or whatever header
+that specific proxy sets) — this is **off by default and must be an
+explicit, deployment-specific choice**: trusting a client-settable header
+by default would let a client simply claim a new address on every
+connection and bypass the cap entirely.
+
+This is the *application*-level floor underneath whatever the hosting
+layer also provides (a CDN/proxy's own connection limits, DDoS mitigation,
+TLS termination) — it doesn't replace hosting-layer protections, and CORS/
+Origin checks are a browser-only courtesy, not authentication either way.
+
 ## Testing
 
 ```
@@ -186,7 +219,10 @@ npm test
 `test/relay.test.js` is a small dependency-free smoke test of the wire
 protocol itself (storage, broadcast, late-joiner snapshot, room isolation,
 the empty-room grace period) — no encryption involved, since that's
-exercised client-side. The real end-to-end proof lives in
+exercised client-side. `test/rate-limits.test.js` covers every bound in
+"Abuse bounds" above: each one throttling, a client recovering from it (a
+fresh connection getting a fresh budget), and normal usage under the bound
+being completely unaffected. The real end-to-end proof lives in
 `tests/test_relay_cross_device_sync.py` at the repo root: it starts this
 server as a subprocess and drives two independent Playwright browser
 contexts through a full retro over a real WebSocket with real encryption.

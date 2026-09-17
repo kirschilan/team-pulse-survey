@@ -151,6 +151,57 @@ every other device on the same team link.
 - **Retro-session feature behavior** (consolidation rule, anonymity model, per-template scoring)
   is specified and versioned in `docs/facilitated-retro-spec.md` — that file has its own session
   log for that feature's history; don't duplicate it here.
+- **SEC-1 (STATUS.md's "Security hardening backlog"), DONE as of 2026-09-17: bound relay
+  abuse with configurable connection/message limits.** `relay/server.js` had only total-count
+  caps (`MAX_ROOMS`/`MAX_DOCS_PER_ROOM`) and a per-envelope size check made *after*
+  `JSON.parse` — no rate limiting, no cap on clients per room, no cap on connections per
+  address, so one abusive source could exhaust capacity for everyone else. Added five
+  independent, `DEFAULT_LIMITS`-configurable bounds, each a throttle a client recovers from
+  rather than a ban: a transport payload ceiling (`ws`'s own `maxPayload`, enforced before this
+  file's `JSON.parse` ever runs), a per-room concurrent-client cap, a per-address
+  concurrent-connection cap, a global new-connection rate limit, a global room-creation rate
+  limit (existing rooms are never subject to it), and a per-connection write-rate limit sized
+  for real UI bursts (a full-board JSON import, a many-dimension starter template). Deployment-
+  layer protection (hosting provider DDoS mitigation, CORS/Origin checks) is explicitly out of
+  scope — this closes the application-layer gap only, per the backlog item's own acceptance
+  criteria. Covered by six new tests in `relay/test/rate-limits.test.js`. This was implemented
+  once already on an orphaned branch (`sec-1-relay-abuse-bounds`) that never got a PR opened
+  against trunk and sat undiscovered until a full branch audit surfaced it — ported into trunk
+  as-is (cherry-picked, verified against the current full suite) rather than redone, then the
+  orphan branch deleted. See the session log entry below for the audit that found it.
+- **PERF-1 (STATUS.md's "Runtime performance backlog"), DONE as of 2026-09-17: idle cross-tab
+  sync feedback loop.** Two tabs of the same browser sharing `localStorage`, both team-synced
+  and sitting idle, fell into a self-sustaining loop: `local-store.js`'s native `storage` event
+  handler re-fired every listener on every event regardless of whether that path's data
+  actually changed, and each of `db.js`'s listeners unconditionally re-pushes a board snapshot —
+  so a pure echo still produced a fresh push, which the live subscription echoed back as a
+  "newer" remote snapshot, applied locally, re-firing another `storage` event in the other tab,
+  forever (reproduced independently: pinned a renderer badly enough that a trivial
+  `evaluate("1+1")` took 21+ seconds). Two-part fix: (1) `local-store.js` only notifies
+  listeners whose path genuinely changed since the last load, instead of blindly notifying
+  everyone; (2) `board-sync.js` skips a board push when the board's actual content
+  (squads/dimensions/config) hasn't changed since the last push, since
+  `applyRemoteBoardSnapshot()` bakes a fresh `updatedAt` into each local doc on every apply,
+  which defeated fix 1 alone. Covered by a new `tests/test_idle_tab_sync_loop.py` plus a unit
+  test on `boardContentSignature()`. Same story as SEC-1 above: implemented once on an orphaned
+  branch (`perf-1-idle-tab-sync-loop`), never merged, found by the same audit, ported as-is, and
+  that branch deleted.
+  - **Codex review fix on PR #15 (2026-09-17): the dedup baseline this fix introduced
+    (`lastPushedBoardContent`) was only ever updated by THIS device's own pushes, never by a
+    remote snapshot applied via `maybeApplyRemote()`** — shared by both the boot-time hydrate and
+    the live subscription. A real cross-device repro found it: device A sets a squad name to
+    "Original," device B changes it to "Remote change" and A receives it live, A reverts to
+    "Original" — that revert was silently skipped, because A's baseline still read "Original"
+    from ITS OWN earlier push, never having been told the board had since moved to "Remote
+    change" and back. Fixed by updating `lastPushedBoardContent` to the just-applied remote
+    content's signature inside `maybeApplyRemote()` itself, so the baseline always tracks the
+    board's actual last-known-shared content, not just this device's own push history. New
+    `tests/test_board_sync_revert_after_remote_change.py` proves the exact repro across two real
+    devices sharing only the relay; `test_idle_tab_sync_loop.py` re-verified unaffected (the fix
+    only corrects a stale baseline, it doesn't force extra pushes). Also fixed, found while
+    working in this area: `test_idle_tab_sync_loop.py`'s `RELAY_PORT` (8799) collided with
+    `test_relay_legacy_known_codes.py`'s, introduced by the same port not being re-checked when
+    the orphaned PERF-1 branch was cut against an older trunk — moved to 8801.
 - **SEC-2 (split from SEC-1), PO decision, DONE as of 2026-09-16: dropped the typed
   6-character join code, QR/link only.** Product owner call: the "type this code in" join path
   (the join-code modal, and the code front-and-center on the session card — see Story 3 in
@@ -645,7 +696,7 @@ Chrome warning occurred while idle; the user's exact tab count was not confirmed
 
 | Priority | Story | User value and acceptance criteria | Status |
 |---|---|---|---|
-| P1 — next runtime fix | PERF-1 — Stop idle cross-tab sync feedback | As a facilitator with two app tabs open in the same browser, keep an idle board responsive without repeated uploads. Reproduce with two same-origin pages in ONE browser context and a real relay; distinguish storage/remote notifications from new local edits so they cannot circulate as fresh changes. After boot and after an edit has converged, render/upload/remote-apply counters stop increasing during a bounded idle observation window. A real edit in either tab still reaches the other tab and a separate browser context; reload and reconnect preserve convergence and data. Add a regression that fails on the current implementation and run the full unit, browser (`tests/run_all.sh`), and relay suites. | Confirmed; implementation pending |
+| P1 — next runtime fix | PERF-1 — Stop idle cross-tab sync feedback | As a facilitator with two app tabs open in the same browser, keep an idle board responsive without repeated uploads. Reproduce with two same-origin pages in ONE browser context and a real relay; distinguish storage/remote notifications from new local edits so they cannot circulate as fresh changes. After boot and after an edit has converged, render/upload/remote-apply counters stop increasing during a bounded idle observation window. A real edit in either tab still reaches the other tab and a separate browser context; reload and reconnect preserve convergence and data. Add a regression that fails on the current implementation and run the full unit, browser (`tests/run_all.sh`), and relay suites. | **DONE (2026-09-17)** — see "Decisions locked in" above. |
 | P2 — after PERF-1 | PERF-2 — Measure render amplification during sync | As a facilitator receiving board updates, keep the UI responsive as the board grows. Profile a single edit and a remote snapshot at documented squad/dimension counts; record render counts, main-thread work, and any long tasks, including work on hidden views. Use measurements to decide whether batching writes/renders or skipping unchanged sections is warranted; preserve immediate visible updates, view-switch freshness, and live-sync correctness. | Profiling follow-up; no independent idle cause established |
 
 ### PERF-1 evidence and implementation guidance
@@ -676,6 +727,9 @@ Chrome warning occurred while idle; the user's exact tab count was not confirmed
   only one app tab remains unconfirmed and needs a separate trace if it recurs.
 - No runtime fix or stored-data shape change is included in this backlog update;
   no migration is required.
+- **Fixed (2026-09-17)** — see "Decisions locked in" above for the shipped fix
+  (`local-store.js` change-detection + `board-sync.js` content-signature dedup) and
+  `tests/test_idle_tab_sync_loop.py` for the regression this row asked for.
 
 ## Security hardening backlog (2026-09-16)
 
@@ -687,11 +741,11 @@ users' data was performed.
 
 | Priority | Story | User value and acceptance criteria | Status |
 |---|---|---|---|
-| P1 | SEC-1 — Bound relay abuse | As a facilitator, keep sessions available despite abusive connections or writes. Add configurable connection, concurrent-client, room-creation and message/write budgets, plus a transport payload ceiling before JSON parsing. Define per-client, per-room and global bounds; account for trusted proxy/IP handling and shared-office NAT. Test throttling, oversized frames, cleanup and recovery on a local relay, while normal participant bursts/reconnects work. Verify hosting-layer protections separately; CORS and Origin checks are not authentication. | Application-layer gap confirmed; deployment-layer limits unknown |
-| P2 | SEC-2 — Harden retro join credentials | As a participant, retain usable code/link entry with explicit confidentiality and write-access guarantees. Replace `Math.random()` session-code generation with unbiased Web Crypto randomness. Document the roughly 29.7-bit code space and that the room code also derives the encryption key. Evaluate guessing resistance and room-enumeration exposure with SEC-1; review any separation of routing ID, encryption secret and write capability with the product owner before changing the locked typed-code flow. Cover code/link/QR compatibility and define existing-session migration if the protocol changes. | Source confirmed; protocol/UX redesign requires review |
-| P2 | SEC-3 — Define and enforce browser hardening policy | As a user, avoid unauthorized framing and reduce the impact of future injection mistakes. Decide the permitted embedding origins before enforcing `frame-ancestors` (embedding remains an open product decision), with compatible X-Frame-Options where appropriate. Add a tested CSP covering actual scripts, styles, fonts and relay connections; explicitly set nosniff, Referrer-Policy and required Permissions-Policy directives. Verify deployed headers, EN/HE flows, QR/downloads and relay use; test a disallowed cross-origin parent with browser frame/navigation evidence, plus an allowed parent if embedding is supported. | Missing headers confirmed; clickjacking exploit not demonstrated |
-| P2 | SEC-4 — Reduce team-link secret exposure | As a facilitator, share a sensitive team link without sending its secret in the initial HTTP query. Plan fragment-based team links and QR codes, retaining legacy query-link compatibility; scrub a consumed secret even when it already matches localStorage. Verify initial requests contain no secret for new links, URL cleanup for new and returning users, reload/paste/join flows, and no secret-bearing diagnostics. Explain that possession grants board access and that localStorage remains readable by same-origin scripts; do not claim fragment links prevent XSS or accidental sharing. | Query-link and repeat-link cleanup gap confirmed; no secret theft demonstrated |
-| P3 | SEC-5 — Document static CORS requirements | As a maintainer, distinguish public asset sharing from access to sensitive endpoints. Identify which hosting layer adds wildcard ACAO, document whether consumers need it, and remove/restrict it only where appropriate. Verify headers and legitimate integrations after any change; require a separate explicit CORS/auth policy for future sensitive endpoints. | Wildcard header confirmed; no sensitive CORS exposure demonstrated |
+| P1 | SEC-1 — Bound relay abuse | As a facilitator, keep sessions available despite abusive connections or writes. Add configurable connection, concurrent-client, room-creation and message/write budgets, plus a transport payload ceiling before JSON parsing. Define per-client, per-room and global bounds; account for trusted proxy/IP handling and shared-office NAT. Test throttling, oversized frames, cleanup and recovery on a local relay, while normal participant bursts/reconnects work. Verify hosting-layer protections separately; CORS and Origin checks are not authentication. | **DONE (2026-09-17)** — see "Decisions locked in" above. Deployment-layer limits (hosting provider DDoS mitigation) remain out of scope, as written. |
+| P2 | SEC-2 — Harden retro join credentials | As a participant, retain usable code/link entry with explicit confidentiality and write-access guarantees. Replace `Math.random()` session-code generation with unbiased Web Crypto randomness. Document the roughly 29.7-bit code space and that the room code also derives the encryption key. Evaluate guessing resistance and room-enumeration exposure with SEC-1; review any separation of routing ID, encryption secret and write capability with the product owner before changing the locked typed-code flow. Cover code/link/QR compatibility and define existing-session migration if the protocol changes. | **DONE (2026-09-16)**, via a full redesign rather than the narrower fix this row describes — see "Decisions locked in" above. The typed code is gone entirely (QR/link only); the session key now derives from a separate `crypto.getRandomValues()` secret, not the code, so the `Math.random()`/29.7-bit-code-space concerns this row raised no longer apply to the shipped design. |
+| P2 | SEC-3 — Define and enforce browser hardening policy | As a user, avoid unauthorized framing and reduce the impact of future injection mistakes. Decide the permitted embedding origins before enforcing `frame-ancestors` (embedding remains an open product decision), with compatible X-Frame-Options where appropriate. Add a tested CSP covering actual scripts, styles, fonts and relay connections; explicitly set nosniff, Referrer-Policy and required Permissions-Policy directives. Verify deployed headers, EN/HE flows, QR/downloads and relay use; test a disallowed cross-origin parent with browser frame/navigation evidence, plus an allowed parent if embedding is supported. | **DONE (2026-09-16)**, except `frame-ancestors`/`X-Frame-Options` — left OPEN on purpose pending a PO decision on permitted embedding origins. See "Decisions locked in" above. |
+| P2 | SEC-4 — Reduce team-link secret exposure | As a facilitator, share a sensitive team link without sending its secret in the initial HTTP query. Plan fragment-based team links and QR codes, retaining legacy query-link compatibility; scrub a consumed secret even when it already matches localStorage. Verify initial requests contain no secret for new links, URL cleanup for new and returning users, reload/paste/join flows, and no secret-bearing diagnostics. Explain that possession grants board access and that localStorage remains readable by same-origin scripts; do not claim fragment links prevent XSS or accidental sharing. | **DONE (2026-09-16)** — see the "SEC-4" section below "Board sync" for the fragment-move writeup, and the "Codex review fixes on PR #14" section for two follow-up leaks (session/co-facilitate links, a legacy localStorage shape) fixed before merge. |
+| P3 | SEC-5 — Document static CORS requirements | As a maintainer, distinguish public asset sharing from access to sensitive endpoints. Identify which hosting layer adds wildcard ACAO, document whether consumers need it, and remove/restrict it only where appropriate. Verify headers and legitimate integrations after any change; require a separate explicit CORS/auth policy for future sensitive endpoints. | Not started. Wildcard header confirmed; no sensitive CORS exposure demonstrated. |
 
 ### Review evidence and qualifications
 
@@ -3266,3 +3320,38 @@ not just in this repo's own tests.
   protocol + storage suites passing (reliable at this repo's documented default `TEST_JOBS`; noted
   but did not chase pure-timeout flakiness in two relay-heavy files specifically at `TEST_JOBS=4`,
   consistent with `run_all.sh`'s own documented caution about parallelism above a runner's headroom).
+- 2026-09-17 — Full branch audit, prompted by the PO reporting that this session, another Claude
+  Code session, Codex, and VSCode each had a different view of what was done. Fetched and compared
+  all 18 remote branches against trunk and `main`. Findings: (1) every feature-branch PR was
+  correctly based against trunk, not `main` — no work was ever merged into `main` bypassing trunk;
+  (2) `main` was simply 2 merged trunk PRs (#13 docs, #14 security-hardening) plus one direct
+  STATUS.md commit behind trunk, nothing more sinister; (3) three branches —
+  `sec-1-relay-abuse-bounds`, `perf-1-idle-tab-sync-loop`, `sec-2-crypto-session-codes` — were
+  pushed to origin with real, tested, complete fixes but never had a PR opened at all, so they sat
+  undiscovered while a parallel effort (the "SEC-2 full redesign" + SEC-3 + SEC-4, merged as PR
+  #14) moved on without them. `sec-2-crypto-session-codes` (swap `Math.random()` for
+  `crypto.getRandomValues()` in the old typed-code generator) turned out to be moot — the merged
+  SEC-2 redesign already generates its secret via `crypto.getRandomValues()` and the typed code it
+  was patching no longer exists — so deleted without porting. The other two were real, undiscovered
+  fixes for backlog items still marked open; ported into a new `sec-1-perf-1-port` branch off
+  trunk (cherry-picked as-is from `805975e`/`5b0ae70`, only STATUS.md's own diff dropped and
+  rewritten fresh since that file had moved on substantially) and opened as a PR against
+  **trunk**, not `main` — the trunk→main sync PR is deliberately postponed until Codex, VSCode,
+  and the PO have reviewed this port, per explicit instruction. Also fixed the "Security hardening
+  backlog" and "Runtime performance backlog" tables' Status columns, which still showed SEC-2/3/4
+  and PERF-1's pre-implementation status text well after "Decisions locked in" recorded them DONE
+  — a real, separate documentation inconsistency likely contributing to the cross-session
+  confusion in its own right. Full suite re-verified green on the port branch: 157/157 unit tests,
+  all 53 Playwright files, and relay's own suite including the 6 new SEC-1 rate-limit tests. The
+  three orphaned branches are deleted once this PR is open (their content lives on in the PR).
+- 2026-09-17 — Fixed a real P1 finding from a Codex review of PR #15: the just-ported PERF-1
+  fix's dedup baseline (`lastPushedBoardContent`) was never updated when a remote snapshot was
+  applied via the live subscription (only on this device's own pushes and at boot), so a device
+  that received a teammate's live change and then reverted a value back to what IT had pushed
+  earlier had that revert silently swallowed. Confirmed with the exact two-device repro Codex
+  described, fixed in `maybeApplyRemote()` (shared by hydrate and live-subscribe), and covered
+  by a new test-first regression (`tests/test_board_sync_revert_after_remote_change.py`) that
+  fails on the pre-fix code and passes after. Also fixed a `RELAY_PORT` collision this port's own
+  earlier branch introduced (`test_idle_tab_sync_loop.py` vs. `test_relay_legacy_known_codes.py`,
+  both 8799) found while working in this area. Full suite re-verified green: 157/157 unit tests,
+  all 54 Playwright files (the new one included), and relay's own suite.
