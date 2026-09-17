@@ -163,8 +163,93 @@ with sync_playwright() as p:
     assert stored_b["squads/squad-1"]["dimensions"].get("release", {}).get("color") != "crit"
     ctx_b.close()
 
-    print("errors:", errors_a + errors_b)
+    # ---- Scenario C (Codex review finding on PR #20): a REJECTED write and
+    # a genuinely DELAYED write in the same import -- Promise.all() rejects
+    # the instant the FIRST one settles (the rejection), without waiting for
+    # the delayed one, so the modal closed and "did not fully complete" was
+    # reported while the delayed write was still in flight in the
+    # background -- and that write then landed AFTER the user had already
+    # been told the import was done. Fixed with Promise.allSettled(): the
+    # whole operation now waits for every issued write, however slow,
+    # before reporting anything. ----
+    ctx_c = browser.new_context(viewport={"width": 1280, "height": 1000})
+    page_c = ctx_c.new_page()
+    errors_c = []
+    page_c.on("pageerror", lambda e: errors_c.append(str(e)))
+    goto_admin_import(page_c)
+
+    page_c.evaluate("""() => {
+      var origCollection = state.db.collection.bind(state.db);
+      state.db.collection = function(name){
+        var ref = origCollection(name);
+        if (name !== "squads") return ref;
+        var origDoc = ref.doc.bind(ref);
+        ref.doc = function(id){
+          var docRef = origDoc(id);
+          if (id === "squad-1") {
+            // Rejects IMMEDIATELY -- the write Promise.all() would have
+            // settled on first, wrongly ending the whole operation before
+            // squad-2's write below ever gets a chance to land.
+            docRef.update = function(){ return Promise.reject({code:"test-forced-failure", message:"forced for test"}); };
+          }
+          if (id === "squad-2") {
+            var realUpdate = docRef.update.bind(docRef);
+            docRef.update = function(patch){
+              return new Promise(function(resolve){
+                setTimeout(function(){ resolve(realUpdate(patch)); }, 300);
+              });
+            };
+          }
+          return docRef;
+        };
+        return ref;
+      };
+    }""")
+
+    mixed_file = {
+        "formatVersion": 1,
+        "squads": [
+            {"name": "Squad 1", "dimensions": {"release": {"color": "crit"}}},
+            {"name": "Squad 2", "dimensions": {"release": {"color": "warn"}}}
+        ]
+    }
+    open_with_file(page_c, json.dumps(mixed_file), "mixed_failure_and_delay.json")
+    page_c.wait_for_selector('#importJsonApplyBtn:not([disabled])')
+    page_c.click('#importJsonApplyBtn')
+
+    # Proving an absence (no positive signal can exist for "hasn't finished
+    # yet") -- see docs/DefinitionOfDone.md's own carve-out for exactly this
+    # case. squad-2's delayed write resolves after 300ms; checking well
+    # before that must show the operation still genuinely in flight, not
+    # already reported done.
+    page_c.wait_for_timeout(80)
+    still_busy = not page_c.eval_on_selector('#busyOverlay', 'el => el.hidden')
+    modal_still_open = not page_c.eval_on_selector('#importJsonBackdrop', 'el => el.hidden')
+    print("=== Scenario C: 80ms in (well before squad-2's 300ms delayed write resolves) ===")
+    print("busy overlay still shown:", still_busy, "-- import modal still open:", modal_still_open)
+    assert still_busy, "must still be waiting on squad-2's pending write, not already done"
+    assert modal_still_open, "must not report completion while a write is still in flight"
+
+    page_c.wait_for_selector('#importJsonBackdrop[hidden]', state="attached")
+    diag_c = page_c.eval_on_selector("#diagLog", "el=>el.textContent")
+    print("=== Scenario C: diag once everything has genuinely settled ===")
+    print(diag_c)
+    assert "did not fully complete" in diag_c
+    assert "JSON import applied (" not in diag_c
+
+    stored_c = page_c.evaluate("JSON.parse(localStorage.getItem('squadpulse:db:v1'))")
+    assert stored_c["squads/squad-1"]["dimensions"].get("release", {}).get("color") != "crit", (
+        "squad-1's write rejected -- its rating must not have landed"
+    )
+    assert stored_c["squads/squad-2"]["dimensions"].get("release", {}).get("color") == "warn", (
+        "squad-2's DELAYED write must have been waited for and landed before completion was reported -- "
+        "not abandoned in the background after the modal already closed"
+    )
+    ctx_c.close()
+
+    print("errors:", errors_a + errors_b + errors_c)
     assert errors_a == []
     assert errors_b == []
+    assert errors_c == []
     print("PASS")
     browser.close()

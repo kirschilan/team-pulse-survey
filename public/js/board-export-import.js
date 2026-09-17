@@ -707,6 +707,25 @@ function importDeleteSquad(id){
   return state.db.collection("squads").doc(id).delete();
 }
 
+// Codex review finding on PR #20 (P2): Promise.all() rejects the instant
+// the FIRST promise in the array rejects -- any OTHER still-pending promise
+// keeps running in the background, unobserved. Confirmed against the real
+// local store: one write rejected immediately while a second, genuinely
+// delayed write was still in flight -- the modal closed and "did not fully
+// complete" was reported before that second write had even settled, which
+// then landed on the board after the user had already been told the import
+// was done. Promise.allSettled() waits for every issued write, however
+// slow, before this function's own promise resolves OR rejects -- used at
+// every batch below (creation batches included, not just the ratings/
+// dimensions/templates/config write batches) so "the operation is done" is
+// never reported while anything it started is still pending.
+function allSettledOrThrow(promises){
+  return Promise.allSettled(promises).then(function(results){
+    var rejected = results.filter(function(r){ return r.status === "rejected"; });
+    if(rejected.length) throw rejected[0].reason;
+  });
+}
+
 function applySquadImportPlan(plan){
   if(!plan) return Promise.resolve();
   var mode = plan.mode;
@@ -750,7 +769,7 @@ function applySquadImportPlan(plan){
     if(mode === "replace"){
       plan.squadsToRemove.forEach(function(s){ writes.push(importDeleteSquad(s.id)); });
     }
-    return Promise.all(writes).then(function(){
+    return allSettledOrThrow(writes).then(function(){
       renderAll();
       diag("JSON import applied (" + mode + "): " + plan.ratingCount + " rating(s), " + newOnes.length + " new " + unitPluralLower() +
         (mode==="replace" ? ", " + plan.squadsToRemove.length + " removed" : "") + ".");
@@ -767,7 +786,7 @@ function applySquadImportPlan(plan){
   if(newOnes.length===0){ return applyAll(); }
   var maxOrder = state.squads.reduce(function(m,s){ return Math.max(m, s.order||0); }, 0);
   if(state.live && state.db){
-    return Promise.all(newOnes.map(function(p, i){
+    return allSettledOrThrow(newOnes.map(function(p, i){
       return state.db.collection("squads").add({ name:p.name, order:maxOrder+1+i, dimensions:p.fileDims, updatedAt: nowIso() })
         .then(function(ref){ p.existing = { id: ref.id, name:p.name, order:maxOrder+1+i, dimensions:p.fileDims }; });
     })).then(function(){ return applyAll(); }, function(err){
@@ -905,7 +924,7 @@ function applyDimensionTemplateConfigImportPlan(dimPlan, tplPlan, configChanges,
         );
       }
     }
-    return Promise.all(writes).then(function(){
+    return allSettledOrThrow(writes).then(function(){
       renderAll();
       if(!dimBackdrop.hidden) renderDimList();
       if(!templatesBackdrop.hidden) renderTemplateList();
@@ -942,7 +961,7 @@ function applyDimensionTemplateConfigImportPlan(dimPlan, tplPlan, configChanges,
       var payload = Object.assign({ createdAt: nowIso() }, templateImportFields(p.file));
       return state.db.collection("templates").add(payload).then(function(ref){ p.existing = Object.assign({ id: ref.id }, payload); });
     }));
-    return Promise.all(writes).then(function(){ return applyMatchedAndConfig(); }, function(err){
+    return allSettledOrThrow(writes).then(function(){ return applyMatchedAndConfig(); }, function(err){
       diag("JSON import: creating new dimensions/templates failed: " + (err && err.code ? err.code : String(err)));
       throw err;
     });

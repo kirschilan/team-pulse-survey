@@ -3631,3 +3631,22 @@ not just in this repo's own tests.
   (Scenario B; failed against the pre-fix code for exactly the reason expected, before the fix
   made it pass). Full suite verified green: 157/157 unit tests, all 56 Playwright files
   (`tests/run_all.sh`, 63s wall-clock), relay's own suite (protocol + storage + rate-limits).
+- 2026-09-17 — Fixed a real P2 finding from a Codex review of PR #20 (REF-1): all four
+  `Promise.all(...)` call sites in `board-export-import.js`'s import-apply path (the ratings write
+  batch, the new-squad creation batch, the dimensions/templates/config write batch, and the
+  new-dimension/template creation batch) reject the instant the FIRST promise in the array rejects
+  -- any OTHER still-pending promise in that same batch keeps running in the background,
+  unobserved. Confirmed against the real local store: one write rejected immediately while a
+  second, genuinely delayed write was still in flight -- the modal closed and "did not fully
+  complete" was reported before the second write had even settled, which then landed on the board
+  after the user had already been told the import was done -- a residual version of the exact bug
+  REF-1 was meant to close. Fixed with a new small helper, `allSettledOrThrow()` (wraps
+  `Promise.allSettled()`, throws the first rejection's reason only once every promise has
+  genuinely settled), used at all four sites. New regression, Scenario C in
+  `tests/test_json_import_write_completion.py`: a rejected write and a real 300ms-delayed write in
+  the same import; confirmed failing against the pre-fix code first (checking 80ms in still showed
+  the modal already closed/busy overlay already hidden, well before the delayed write's own 300ms
+  elapsed), passing after the fix (both the busy overlay and the modal stay visibly open until the
+  delayed write genuinely settles, and its effect is confirmed to have landed before completion is
+  reported). Full suite re-verified green: 157/157 unit tests, all 56 Playwright files, relay's own
+  suite. Pushed to the same `ref-1-json-import-await` branch/PR (no new PR).
