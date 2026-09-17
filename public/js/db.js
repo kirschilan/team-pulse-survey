@@ -62,7 +62,18 @@ async function initDb(){
       });
       diag("Squad snapshot #" + squadSnapCount + ": " + docs.length + " doc(s) [" + docs.map(function(d){return d.id;}).join(",") + "]" + (snap.metadata && snap.metadata.fromCache ? " (from cache)" : ""));
       state.squads = docs;
-      renderAll();
+      // PERF-2 (STATUS.md's "Runtime performance backlog"): board-sync.js's
+      // `hydrating`/`suppressingLocalRewrite` mark a KNOWN multi-doc batch
+      // in flight (a remote snapshot apply, or a local starter-template
+      // load) -- local-store.js's set() fires this listener once PER DOC
+      // written, so rendering unconditionally here turned one N-squad
+      // remote apply into N full renderAll() passes (confirmed: 31 passes
+      // for a 3-squad/12-dimension board, 132 for 40/25 -- scales with
+      // board size, not a fixed cost). `state` above still updates on
+      // EVERY fire either way, so nothing goes stale; only the wasted
+      // intermediate renders are skipped. board-sync.js renders exactly
+      // once itself right after each such batch completes.
+      if(!hydrating && !suppressingLocalRewrite) renderAll();
       markLocalBoardPieceReady("squads");
       pushBoardSnapshotIfConnected();
     }, function(err){ diag("Squad snapshot listener error: " + (err && err.code ? err.code : String(err))); setSyncStatus(false); });
@@ -95,7 +106,9 @@ async function initDb(){
       });
       diag("Dimension snapshot #" + dimSnapCount + ": " + docs.length + " doc(s)");
       state.dimensions = docs;
-      renderAll();
+      // PERF-2: see the squads listener's own comment above -- same fix,
+      // same reason.
+      if(!hydrating && !suppressingLocalRewrite) renderAll();
       if(!dimBackdrop.hidden) renderDimList();
       markLocalBoardPieceReady("dimensions");
       pushBoardSnapshotIfConnected();
@@ -137,7 +150,9 @@ async function initDb(){
         attribution: data.attribution || ""
       };
       diag("Config snapshot: unit=" + state.config.unit + " template=" + state.config.activeTemplateName);
-      renderAll();
+      // PERF-2: see the squads listener's own comment above -- same fix,
+      // same reason.
+      if(!hydrating && !suppressingLocalRewrite) renderAll();
       markLocalBoardPieceReady("config");
       pushBoardSnapshotIfConnected();
     }, function(err){ diag("Config snapshot listener error: " + (err && err.code ? err.code : String(err))); });

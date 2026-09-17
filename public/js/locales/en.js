@@ -20,7 +20,7 @@ var LOCALE_EN = {
   "about.creditProduct": "Squad Pulse is built by Dr. Agile. The app’s aggregation, weighting, investment ranking, and facilitator workflow are adaptations for this tool.",
   "about.creditSpotify": "Spotify Squad Health Check: Henrik Kniberg and Spotify. This project also credits Ben Linders’ agile self-assessment resources.",
   "about.creditFive": "The Five Dysfunctions of a Team: Patrick Lencioni / The Table Group. This app is an adaptation, not the official assessment.",
-  "about.creditTuckman": "Team development stages: Bruce W. Tuckman (1965), with Mary Ann C. Jensen (1977). The source of this app’s 20-statement assessment and score bands has not yet been verified.",
+  "about.creditTuckman": "Team development stages: Bruce W. Tuckman (1965), with Mary Ann C. Jensen (1977), for the underlying model. This app’s 20-statement assessment itself was authored by Claude at the product owner’s request, deliberately following the same 3-point scale and summed-band format as this app’s Five Dysfunctions adaptation — not copied from any third-party instrument.",
   "about.creditRights": "Model names and assessment materials belong to their respective rights holders. Attribution does not grant permission to reproduce them or imply endorsement. The app’s Apache license does not relicense third-party assessment content.",
   "about.creditQr": "QR generation: qrcode-generator, copyright © 2009 Kazuhiko Arase, MIT License.",
   "about.appLicense": "Application license — Apache 2.0",

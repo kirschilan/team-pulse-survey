@@ -202,6 +202,58 @@ every other device on the same team link.
     working in this area: `test_idle_tab_sync_loop.py`'s `RELAY_PORT` (8799) collided with
     `test_relay_legacy_known_codes.py`'s, introduced by the same port not being re-checked when
     the orphaned PERF-1 branch was cut against an older trunk — moved to 8801.
+- **PERF-2 (STATUS.md's "Runtime performance backlog"), DONE as of 2026-09-17: render
+  amplification on a multi-doc write.** Separate from PERF-1's unbounded idle LOOP: profiling a
+  single multi-doc write (a remote board snapshot applying N squads + M dimensions, or a local
+  starter-template load) found `renderAll()` firing once per INDIVIDUAL doc written, not once for
+  the whole batch. Root cause: `local-store.js`'s `set()` calls `notify(collectionPath)`
+  synchronously per doc, and `db.js`'s squads/dimensions/config listeners each called
+  `renderAll()` unconditionally on every notify — all 8 sub-renders, including every hidden view,
+  on every single doc. Measured at two documented sizes with a real Playwright profiling
+  harness: the app's own real default board (3 squads, 12 dimensions) cost **31** full
+  `renderAll()` passes for one remote snapshot apply; a generous stress board (40 squads, 25
+  dimensions) cost **66** — scaling with board size, not a fixed cost. (**Correction, Codex
+  review on PR #17**: the first published version of this measurement reported 132 for the
+  stress case — the profiling harness re-wrapped `window.renderAll` on every measurement instead
+  of once, so the 2nd and later measurements in a run double-counted; re-verified directly
+  against the pre-fix code with the harness fixed to install its counter exactly once: 66, not
+  132. The small-board figure (31) was the FIRST measurement in the run, so it was never
+  affected — unchanged.) One `renderAll()` pass at the stress size measured in the tens of
+  milliseconds on its own (fast in isolation, but 66 of them back-to-back would still have
+  blocked the main thread for over a second of real jank). Fixed by having `db.js`'s three
+  listeners skip `renderAll()` while `hydrating` (a remote apply) or `suppressingLocalRewrite`
+  (a local multi-doc rewrite) is set — `state` still updates on every fire either way, so nothing
+  goes stale — and rendering exactly once when each of those windows closes (`board-sync.js`'s
+  `maybeApplyRemote()` and `suppressBoardPushDuring()`), the same "coalesce, don't drop" pattern
+  already used there for `pushBoardSnapshotIfConnected()`. Post-fix, both documented sizes
+  measured **exactly 1** render for the same batch (re-verified with the corrected harness — the
+  1/2 split in the original write-up was the same double-counting artifact), and an ordinary
+  single edit measured **4** renders (not 12, same artifact) — a small constant, not proportional
+  to board size. Deliberately did NOT attempt per-view conditional rendering (skip
+  hidden-view sub-renders entirely) — riskier, and this exact class of bug (a view showing stale
+  data after switching to it) has bitten this app before (see `test_view_switch_refreshes_stale_state.py`);
+  the call-count fix alone addresses the measured amplification without touching that surface.
+  New `tests/test_render_batching_on_multi_doc_apply.py` proves both documented sizes, confirms
+  an ordinary single edit still renders normally (batching only targets the known-multi-doc
+  windows), and records the per-call timing claim above.
+- **SEC-5 (STATUS.md's "Security hardening backlog"), DONE as of 2026-09-17: documented the
+  static-hosting wildcard CORS header — no code change.** Confirmed live against the deployed
+  Vercel preview (`curl -I`, both an HTML page and a `.js` asset): `access-control-allow-origin: *`
+  is present on every static asset, injected by Vercel's own static-hosting layer — neither
+  `vercel.json` nor any app code sets it. Determined this needs no restriction: every asset this
+  origin serves over HTTP is public application code (HTML/CSS/JS/fonts/the bundled QR library),
+  never anything served with cookies or session credentials, and a permissive wildcard on public
+  static assets is standard practice (the same as any CDN-hosted library) — restricting it would
+  only break the app's own explicitly-supported embedding/self-host deployment shapes without
+  protecting anything real. The one component that actually handles session/board data — the
+  relay (`relay/server.js`) — speaks WebSocket only, which CORS doesn't govern at all (a browser's
+  same-origin policy for `fetch`/`XHR` is a different mechanism than the WebSocket handshake); the
+  relay does no `Origin` checking today, by the same already-locked-in design as the CSP
+  `frame-ancestors` question ("CORS/Origin checks are not authentication" — see the SEC-1 comment
+  in `relay/server.js`). Forward-looking guidance, per the backlog item's own acceptance criteria:
+  any FUTURE sensitive HTTP endpoint (none exist today — the relay has no HTTP routes at all, only
+  a WebSocket upgrade) must NOT inherit this static-asset default; it needs its own explicit,
+  restrictive CORS and auth policy from day one.
 - **SEC-2 (split from SEC-1), PO decision, DONE as of 2026-09-16: dropped the typed
   6-character join code, QR/link only.** Product owner call: the "type this code in" join path
   (the join-code modal, and the code front-and-center on the session card — see Story 3 in
@@ -254,6 +306,31 @@ every other device on the same team link.
   larger change, out of scope here). `connect-src` allows the `ws:`/`wss:` schemes rather than a
   specific host, since the relay's origin is deployment-configurable (`SQUAD_PULSE_RELAY_URL`), not
   knowable at build time.
+- **Assessment-content rights (Introduction & help backlog, Story 5/6 "Credits and licenses"): Five
+  Dysfunctions is a knowingly accepted risk (PO decision, 2026-09-17); Tuckman's provenance is
+  RESOLVED (2026-09-17) — original work, not a third-party copy.** The Table Group's own published
+  FAQ states its Five Dysfunctions assessment (online and book/field-guide) is copyrighted and may
+  not be reproduced or transmitted — this app's 15-statement adaptation is exactly that, and
+  attribution alone does not establish reuse permission. The PO has reviewed this and is
+  **knowingly accepting the risk** rather than removing or re-licensing the content; the credits UI
+  already states the adaptation honestly rather than implying permission (`about-credits` in
+  `index.html`: "This app is an adaptation, not the official assessment"). Tuckman's 20-statement
+  questionnaire was a **separate, initially-unresolved question** — contrary to an earlier guess in
+  this doc that the documented record contradicted the PO's recollection of it being developed in
+  this project, the PO located and supplied the actual source conversation, which settles it fully
+  in the PO's favor: a **shared Claude.ai chat** (`https://claude.ai/share/b4751645-1989-45db-8015-1e16cc2eceee`,
+  ~2026-09-03/04) shows the PO asking Claude to "find or create" a Tuckman questionnaire; Claude
+  found two existing published instruments (a 40-item one and a 32-item one) and explicitly
+  **declined to use either**, instead offering to build a new 15–20 item version "closer to the
+  Lencioni format" — the PO asked for "3-5 items per stage," and Claude wrote fresh statement text
+  and built the 20-item/4-per-stage structure itself, delivered as the `.docx` the PO then supplied
+  to this project. Full transcript excerpts and reasoning: `docs/credits-and-terms-review.md`'s
+  "Tuckman 20-statement questionnaire — provenance" section. Conclusion: original content, not a
+  copy of either instrument Claude found and declined to use — only the assessment *format* (3-point
+  scale, summed bands) deliberately mirrors the Lencioni structure, by explicit design choice, not
+  content copying. The "has not yet been verified" hedge is removed from the credits UI
+  (`about.creditTuckman` in `public/js/locales/en.js`/`he.js` and `public/index.html`), replaced
+  with the attribution above.
 
 ## Board sync (major change, DONE — default-on as of 2026-09-13)
 
@@ -697,7 +774,7 @@ Chrome warning occurred while idle; the user's exact tab count was not confirmed
 | Priority | Story | User value and acceptance criteria | Status |
 |---|---|---|---|
 | P1 — next runtime fix | PERF-1 — Stop idle cross-tab sync feedback | As a facilitator with two app tabs open in the same browser, keep an idle board responsive without repeated uploads. Reproduce with two same-origin pages in ONE browser context and a real relay; distinguish storage/remote notifications from new local edits so they cannot circulate as fresh changes. After boot and after an edit has converged, render/upload/remote-apply counters stop increasing during a bounded idle observation window. A real edit in either tab still reaches the other tab and a separate browser context; reload and reconnect preserve convergence and data. Add a regression that fails on the current implementation and run the full unit, browser (`tests/run_all.sh`), and relay suites. | **DONE (2026-09-17)** — see "Decisions locked in" above. |
-| P2 — after PERF-1 | PERF-2 — Measure render amplification during sync | As a facilitator receiving board updates, keep the UI responsive as the board grows. Profile a single edit and a remote snapshot at documented squad/dimension counts; record render counts, main-thread work, and any long tasks, including work on hidden views. Use measurements to decide whether batching writes/renders or skipping unchanged sections is warranted; preserve immediate visible updates, view-switch freshness, and live-sync correctness. | Profiling follow-up; no independent idle cause established |
+| P2 — after PERF-1 | PERF-2 — Measure render amplification during sync | As a facilitator receiving board updates, keep the UI responsive as the board grows. Profile a single edit and a remote snapshot at documented squad/dimension counts; record render counts, main-thread work, and any long tasks, including work on hidden views. Use measurements to decide whether batching writes/renders or skipping unchanged sections is warranted; preserve immediate visible updates, view-switch freshness, and live-sync correctness. | **DONE (2026-09-17)** — see "Decisions locked in" above. Real amplification found and fixed (batching, not per-view skipping); measurements and reasoning recorded there. |
 
 ### PERF-1 evidence and implementation guidance
 
@@ -746,7 +823,7 @@ users' data was performed.
 | P2 | SEC-3 — Define and enforce browser hardening policy | As a user, avoid unauthorized framing and reduce the impact of future injection mistakes. Decide the permitted embedding origins before enforcing `frame-ancestors` (embedding remains an open product decision), with compatible X-Frame-Options where appropriate. Add a tested CSP covering actual scripts, styles, fonts and relay connections; explicitly set nosniff, Referrer-Policy and required Permissions-Policy directives. Verify deployed headers, EN/HE flows, QR/downloads and relay use; test a disallowed cross-origin parent with browser frame/navigation evidence, plus an allowed parent if embedding is supported. | **DONE (2026-09-16)**, except `frame-ancestors`/`X-Frame-Options` — left OPEN on purpose pending a PO decision on permitted embedding origins. See "Decisions locked in" above. |
 | P2 | SEC-3a — Approved-embedding requirement (YAGNI until a real embed path exists) | As a maintainer, if this app is ever embedded in another site, only approved parent origins may frame it. Requirement: the app must deny all origins by default and allow only explicitly approved domains (for example, the Dr. Agile site and any approved subdomains) via a browser-enforced `Content-Security-Policy: frame-ancestors <approved-origins>` plus a compatible `X-Frame-Options` header. This requirement is not active until the product decides to ship an embedding deployment; until then, it is intentionally YAGNI and no public embed route is in scope. | **YAGNI for now** — no embed deployment is active today; implement only when an actual embedding contract is approved. |
 | P2 | SEC-4 — Reduce team-link secret exposure | As a facilitator, share a sensitive team link without sending its secret in the initial HTTP query. Plan fragment-based team links and QR codes, retaining legacy query-link compatibility; scrub a consumed secret even when it already matches localStorage. Verify initial requests contain no secret for new links, URL cleanup for new and returning users, reload/paste/join flows, and no secret-bearing diagnostics. Explain that possession grants board access and that localStorage remains readable by same-origin scripts; do not claim fragment links prevent XSS or accidental sharing. | **DONE (2026-09-16)** — see the "SEC-4" section below "Board sync" for the fragment-move writeup, and the "Codex review fixes on PR #14" section for two follow-up leaks (session/co-facilitate links, a legacy localStorage shape) fixed before merge. |
-| P3 | SEC-5 — Document static CORS requirements | As a maintainer, distinguish public asset sharing from access to sensitive endpoints. Identify which hosting layer adds wildcard ACAO, document whether consumers need it, and remove/restrict it only where appropriate. Verify headers and legitimate integrations after any change; require a separate explicit CORS/auth policy for future sensitive endpoints. | Not started. Wildcard header confirmed; no sensitive CORS exposure demonstrated. |
+| P3 | SEC-5 — Document static CORS requirements | As a maintainer, distinguish public asset sharing from access to sensitive endpoints. Identify which hosting layer adds wildcard ACAO, document whether consumers need it, and remove/restrict it only where appropriate. Verify headers and legitimate integrations after any change; require a separate explicit CORS/auth policy for future sensitive endpoints. | **DONE (2026-09-17)** — see "Decisions locked in" above. Documentation only, by design: no restriction is appropriate today. |
 
 ### Review evidence and qualifications
 
@@ -797,18 +874,19 @@ users' data was performed.
 ## Introduction and help backlog (2026-09-15)
 
 Priority is separate from the stable story ID. Each story ships English/Hebrew,
-RTL, keyboard support, and focused regression coverage. Story 1 was merged through PR #2. Stories 2–4 and outside-click dismissal
-are on `codex/about-guides` for review before integration.
+RTL, keyboard support, and focused regression coverage. Story 1 merged through PR #2; stories 2–6
+and outside-click dismissal merged through PR #3 (`codex/about-guides`) and PR #5
+(`codex/welcome-credits-terms`) — all verified present in current trunk (2026-09-17).
 
 | Priority | Story | User value and acceptance criteria | Status |
 |---|---|---|---|
-| 1 | 1 — On-demand introduction | As a visitor, open About & help from every view, including participant mode, understand the app's purpose, and close back to the same context without changing data or drafts. | Merged via PR #2 (2026-09-15) |
-| 2 | 6 — First-visit introduction | As a first-time visitor, see an introduction on an ordinary visit. Remember dismissal locally; bypass it for participant/co-facilitator/team links; retain manual access; storage failure never blocks entry. | Implemented on `codex/welcome-credits-terms`; review pending |
-| 3 | 2 — Participant guide | As a participant, understand code/link entry and answering; open the existing join flow or return to an active retro without losing answers. | Implemented on `codex/about-guides`; PR review pending |
-| 4 | 3 — Facilitator guide | As a facilitator, follow setup, template and squad selection, start, invite, discuss, and finish/apply; distinguish team and session links. | Implemented on `codex/about-guides`; PR review pending |
-| 5 | 4 — Reading results | As a viewer, understand colors, trends, Squad/Tribe views, and hotspots through expandable guidance matching actual behavior. | Implemented on `codex/about-guides`; PR review pending |
-| 6 | 5 — Credits and licenses | As a user, inspect verified model sources, Dr. Agile contributions, application license, and third-party notices; preserve contextual board credits. Verify the source of Tuckman assessment scoring. | Credits UI implemented; source/rights questions remain in `docs/credits-and-terms-review.md` |
-| 7 | 7 — Terms and conditions of use | As a user, read terms before choosing to use the app and reopen them from About & help. Publish owner-approved English/Hebrew terms covering permitted use, responsibilities, data/sharing behavior, and limitations; show effective date/version and accessible links. Explicitly decide whether acceptance tracking is needed before implementation; do not imply consent through mere dismissal. | Informational/no tracking confirmed by owner; draft wording implemented for review |
+| 1 | 1 — On-demand introduction | As a visitor, open About & help from every view, including participant mode, understand the app's purpose, and close back to the same context without changing data or drafts. | **DONE** — merged via PR #2 (2026-09-15) |
+| 2 | 6 — First-visit introduction | As a first-time visitor, see an introduction on an ordinary visit. Remember dismissal locally; bypass it for participant/co-facilitator/team links; retain manual access; storage failure never blocks entry. | **DONE** — merged via PR #5 (`codex/welcome-credits-terms`) |
+| 3 | 2 — Participant guide | As a participant, understand code/link entry and answering; open the existing join flow or return to an active retro without losing answers. | **DONE** — merged via PR #3 (`codex/about-guides`) |
+| 4 | 3 — Facilitator guide | As a facilitator, follow setup, template and squad selection, start, invite, discuss, and finish/apply; distinguish team and session links. | **DONE** — merged via PR #3 (`codex/about-guides`) |
+| 5 | 4 — Reading results | As a viewer, understand colors, trends, Squad/Tribe views, and hotspots through expandable guidance matching actual behavior. | **DONE** — merged via PR #3 (`codex/about-guides`) |
+| 6 | 5 — Credits and licenses | As a user, inspect verified model sources, Dr. Agile contributions, application license, and third-party notices; preserve contextual board credits. Verify the source of Tuckman assessment scoring. | **DONE** — merged via PR #5. Five Dysfunctions reuse risk knowingly accepted (PO decision); Tuckman's 20-statement questionnaire's provenance is now fully resolved (original work, not a third-party copy) — see `docs/credits-and-terms-review.md` and "Decisions locked in" below. |
+| 7 | 7 — Terms and conditions of use | As a user, read terms before choosing to use the app and reopen them from About & help. Publish owner-approved English/Hebrew terms covering permitted use, responsibilities, data/sharing behavior, and limitations; show effective date/version and accessible links. Explicitly decide whether acceptance tracking is needed before implementation; do not imply consent through mere dismissal. | **UI DONE, content approval OUTSTANDING** (corrected, Codex review on PR #17 — a prior version of this row said DONE, which overstated it). Informational/no-tracking model confirmed by owner; the mechanism (panel, reopen access, EN/HE, no implied consent) is fully built and live. But the acceptance criteria calls for *owner-approved* terms with a real effective date, and the shipped text is explicitly a draft awaiting that: `index.html`'s own `about.termsVersion` string reads "Draft v0.1 • 2026-09-15 • **Pending owner approval; no effective date yet**." Content sign-off is a separate, still-open step for the owner — same shape as Story 5/6's rights question above, not a code task. |
 
 Stories are small independently testable UI increments; stories 2–5 and 7 can
 be ordered independently once the common panel is available. Story 6 was moved
@@ -3356,3 +3434,51 @@ not just in this repo's own tests.
   earlier branch introduced (`test_idle_tab_sync_loop.py` vs. `test_relay_legacy_known_codes.py`,
   both 8799) found while working in this area. Full suite re-verified green: 157/157 unit tests,
   all 54 Playwright files (the new one included), and relay's own suite.
+- 2026-09-17 — Closed out the two remaining backlog items from the branch audit: PERF-2 and
+  SEC-5, plus fixed the "Introduction and help backlog" table, which still showed stories 2–7 as
+  "review pending" well after their PRs (#3, #5) merged — verified the UI for all of it
+  (participant guide, facilitator guide, reading-results guide, credits, terms) is actually live
+  in current trunk. Also recorded a PO decision on the two rights questions that table's Story
+  5/6 flags: Five Dysfunctions' copyright risk is knowingly accepted; Tuckman's 20-statement
+  questionnaire provenance is a separate, still-open question — the documented record (this doc's
+  own earlier session log, and the live credits UI's own hedge) says it came from an external
+  user-supplied document with its own scoring scheme, not something authored fresh in this
+  project, contradicting the PO's own recollection — flagged for the PO to resolve from their own
+  records, not something this session could verify further. PERF-2: profiled real render
+  amplification on a multi-doc write (31 renders for a 3-squad/12-dimension remote apply, 66 for
+  40/25 — scales with board size) and fixed it with the same batching pattern PERF-1 already used
+  for pushes, test-first (`tests/test_render_batching_on_multi_doc_apply.py`, confirmed failing
+  on the pre-fix code at both documented sizes). SEC-5: confirmed live (`curl -I` against the
+  deployed Vercel preview) that the wildcard CORS header is Vercel's own static-hosting default,
+  not app-set, and documented why no restriction is warranted — no code change. Full suite green:
+  157/157 unit tests, all 55 Playwright files, relay's own suite.
+- 2026-09-17 — Fixed two real findings from a Codex review of PR #17 (`2bc132b`). (1) The PERF-2
+  profiling harness re-installed its `renderAll()`-counting wrapper before EVERY measurement
+  instead of once, so each measurement after the first double-, triple-counted (each re-install
+  wrapped the previous wrapper instead of replacing it). Re-verified directly against both the
+  pre-fix and post-fix code with the harness fixed to install exactly once and reset a counter
+  between measurements: the pre-fix stress-board figure was **66**, not 132 (the small-board
+  figure, 31, was the first measurement in the run and was never affected); post-fix, both sizes
+  now measure **exactly 1** render, and an ordinary single edit measures **4**, not 12. The
+  batching fix itself needed no change — the amplification and the fix were both real, only the
+  measurement tooling was wrong. Corrected every number this affected in `STATUS.md` and
+  `tests/README.md`. (2) The "Introduction and help backlog" table's Story 7 (terms) row was
+  marked DONE, but the shipped terms text itself says "Pending owner approval; no effective date
+  yet" (`index.html`'s `about.termsVersion` string) — the acceptance criteria calls for
+  *owner-approved* terms with a real effective date, so DONE overstated it. Corrected to "UI DONE,
+  content approval OUTSTANDING," matching the same split already used for Story 5/6's rights
+  question. Full suite re-verified green: 157/157 unit tests, all 55 Playwright files, relay's own
+  suite.
+- 2026-09-17 — Resolved the Tuckman 20-statement questionnaire's provenance, previously flagged
+  unresolved. The PO located the actual source conversation (a shared Claude.ai chat) and supplied
+  transcript excerpts: Claude was asked to find or create a Tuckman assessment, found two existing
+  published instruments, explicitly declined to use either, and wrote fresh 20-item statement
+  content itself at the PO's direction — original work, not a copy of a third-party instrument.
+  Documentation-only: full evidence and reasoning recorded in `docs/credits-and-terms-review.md`'s
+  new "Tuckman 20-statement questionnaire — provenance" section; removed the "has not yet been
+  verified" hedge from the credits UI (`about.creditTuckman` in `public/js/locales/en.js`/`he.js`
+  and `public/index.html`, both languages) and replaced it with the resolved attribution. Updated
+  the "Assessment-content rights" decision and the Introduction & help backlog's Story 5/6 row to
+  match. No code/behavior change; no new test needed (no existing test asserts this string's
+  content). Full suite still green: 157/157 unit tests, all 55 Playwright files, relay's own suite
+  (re-run to confirm the locale-file edits introduced no regressions).
