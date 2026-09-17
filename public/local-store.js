@@ -6,6 +6,13 @@
    own guards (`window.claude && window.claude.use`) fall through to
    local-only preview mode with nothing persisted.
 
+   REF-2: this file and relay-client.js are two independent implementations
+   of that same `db` contract -- see docs/backend-contract.md for the one
+   place it's actually named, including where the two intentionally differ
+   (the `unavailable` field, readiness timing, get() vs. onSnapshot()'s
+   freezing behavior) and tests/test_backend_contract_parity.py for the
+   shared test coverage.
+
    This file only installs a shim when no real `window.claude` is present
    (Claude Artifact previews, and the Playwright test harness's own
    fake_store.html, both set `window.claude` themselves and take priority --
