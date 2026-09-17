@@ -631,7 +631,7 @@ function renderJsonImportPreview(fileData){
     // gone.
     var scope = pendingImportScope, squadPlan = pendingSquadImportPlan;
     function applySquadsNow(){
-      if(!scope.squads || !squadPlan) return;
+      if(!scope.squads || !squadPlan) return Promise.resolve();
       // PR #12 review finding: a rating for a dimension this SAME import
       // is about to create was tracked as a pendingDimensionKey() marker
       // (see buildSquadImportPlan()) rather than a real key, precisely
@@ -639,14 +639,22 @@ function renderJsonImportPreview(fileData){
       // has actually run -- resolve it now, using the board's dimensions
       // as they stand after that.
       squadPlan.patches.forEach(function(p){ p.fileDims = resolvePendingDimensionKeys(p.fileDims); });
-      applySquadImportPlan(squadPlan);
+      return applySquadImportPlan(squadPlan);
     }
-    if(scope.templates){
-      applyDimensionTemplateConfigImportPlan(pendingDimensionImportPlan, pendingTemplateImportPlan, pendingConfigImportChanges, pendingSquadImportMode, applySquadsNow);
-    } else {
-      applySquadsNow();
-    }
-    closeSquadImport();
+    // REF-1 (STATUS.md's "Code quality & refactoring backlog"): both apply
+    // functions below now return a promise that resolves only once every
+    // write they issued has actually settled -- previously this handler
+    // fired closeSquadImport() (and, inside those functions, the "JSON
+    // import applied" diagnostic) synchronously, right after ISSUING the
+    // writes, never after they landed. showBusy()/hideBusy() now covers the
+    // WHOLE apply operation, not just the new-entity-creation sub-step that
+    // already used it -- so the modal visibly stays open (busy) for exactly
+    // as long as the real work is still in flight, success or failure.
+    showBusy();
+    var whole = scope.templates
+      ? applyDimensionTemplateConfigImportPlan(pendingDimensionImportPlan, pendingTemplateImportPlan, pendingConfigImportChanges, pendingSquadImportMode, applySquadsNow)
+      : applySquadsNow();
+    whole.then(hideBusy, hideBusy).then(closeSquadImport);
   });
   var backupBtn = document.getElementById("importJsonBackupBtn");
   if(backupBtn){
@@ -685,63 +693,94 @@ function closeSquadImport(){
 }
 importJsonBackdrop.addEventListener("click", function(e){ if(e.target===importJsonBackdrop) closeSquadImport(); });
 
+// REF-1 (STATUS.md's "Code quality & refactoring backlog"): a scoped,
+// awaitable stand-in for removeSquad() (squads.js), used only by
+// applySquadImportPlan()'s REPLACE-mode removals below. removeSquad()
+// itself stays fire-and-forget (syncLiveIfConnected) -- it's shared by
+// Admin's own delete button and changing its widely-used contract is out
+// of scope here (see the backlog entry's own blast-radius note). This
+// mirrors its exact local-state mutation but returns the real delete
+// promise so the whole import can be awaited as one operation.
+function importDeleteSquad(id){
+  state.squads = state.squads.filter(function(s){ return s.id!==id; });
+  if(!(state.live && state.db)) return Promise.resolve();
+  return state.db.collection("squads").doc(id).delete();
+}
+
 function applySquadImportPlan(plan){
-  if(!plan) return;
+  if(!plan) return Promise.resolve();
   var mode = plan.mode;
   var newOnes = plan.patches.filter(function(p){ return !p.existing; });
   function applyAll(){
+    var writes = [];
     plan.patches.forEach(function(p){
       if(!p.existing) return;
       p.existing.dimensions = mergeSquadDimensions(p.existing.dimensions || {}, p.fileDims, mode);
-      syncLiveIfConnected(function(){
-        // update() deep-MERGES a patch into the stored doc (see local-store.js's
-        // deepMerge()/relay-client.js's matching update()) -- additive only, it
-        // never drops a key absent from the patch. That's exactly right for
-        // MERGE mode (send only the file's own keys, existing ones survive
-        // untouched), but wrong for REPLACE: sending the already-clipped
-        // p.existing.dimensions through update() would silently leave the
-        // "removed" keys sitting in the persisted doc, merged right back in.
-        // set() fully replaces the doc's stored value instead, so REPLACE
-        // writes the whole doc (not just a dimensions patch) to actually make
-        // the clipped keys disappear from what's persisted, not just from
-        // this tab's in-memory copy.
-        if(mode === "replace"){
-          return state.db.collection("squads").doc(p.existing.id).set({
+      if(!(state.live && state.db)) return;
+      // update() deep-MERGES a patch into the stored doc (see local-store.js's
+      // deepMerge()/relay-client.js's matching update()) -- additive only, it
+      // never drops a key absent from the patch. That's exactly right for
+      // MERGE mode (send only the file's own keys, existing ones survive
+      // untouched), but wrong for REPLACE: sending the already-clipped
+      // p.existing.dimensions through update() would silently leave the
+      // "removed" keys sitting in the persisted doc, merged right back in.
+      // set() fully replaces the doc's stored value instead, so REPLACE
+      // writes the whole doc (not just a dimensions patch) to actually make
+      // the clipped keys disappear from what's persisted, not just from
+      // this tab's in-memory copy.
+      var write = mode === "replace"
+        ? state.db.collection("squads").doc(p.existing.id).set({
             name: p.existing.name, order: p.existing.order,
             dimensions: p.existing.dimensions, updatedAt: nowIso()
-          });
-        }
-        var patch = { dimensions:{}, updatedAt: nowIso() };
-        Object.keys(p.fileDims).forEach(function(k){ patch.dimensions[k] = p.fileDims[k]; });
-        return state.db.collection("squads").doc(p.existing.id).update(patch);
-      }, "JSON import write for squads/" + p.existing.id);
+          })
+        : (function(){
+            var patch = { dimensions:{}, updatedAt: nowIso() };
+            Object.keys(p.fileDims).forEach(function(k){ patch.dimensions[k] = p.fileDims[k]; });
+            return state.db.collection("squads").doc(p.existing.id).update(patch);
+          })();
+      // REF-1: awaited below via Promise.all, not fire-and-forget -- but
+      // still routed through the same per-write diagnostic on failure this
+      // app is otherwise disciplined about, and re-thrown so a genuine
+      // failure here is what makes the whole operation's promise reject.
+      writes.push(write.catch(function(err){
+        diag("JSON import write for squads/" + p.existing.id + " failed: " + (err && err.code ? err.code : String(err)));
+        throw err;
+      }));
     });
     if(mode === "replace"){
-      plan.squadsToRemove.forEach(function(s){ removeSquad(s.id); });
+      plan.squadsToRemove.forEach(function(s){ writes.push(importDeleteSquad(s.id)); });
     }
-    renderAll();
-    diag("JSON import applied (" + mode + "): " + plan.ratingCount + " rating(s), " + newOnes.length + " new " + unitPluralLower() +
-      (mode==="replace" ? ", " + plan.squadsToRemove.length + " removed" : "") + ".");
+    return Promise.all(writes).then(function(){
+      renderAll();
+      diag("JSON import applied (" + mode + "): " + plan.ratingCount + " rating(s), " + newOnes.length + " new " + unitPluralLower() +
+        (mode==="replace" ? ", " + plan.squadsToRemove.length + " removed" : "") + ".");
+    }, function(err){
+      // A partial failure can leave a mixed board (this app doesn't promise
+      // import atomicity -- see the backlog entry) -- still render whatever
+      // DID land, and report a distinct, honest summary rather than the
+      // same "applied" line a real success gets.
+      renderAll();
+      diag("JSON import (squads/ratings) did not fully complete -- see the write failure(s) above; the board may reflect a partial import.");
+      throw err;
+    });
   }
-  if(newOnes.length===0){ applyAll(); return; }
+  if(newOnes.length===0){ return applyAll(); }
   var maxOrder = state.squads.reduce(function(m,s){ return Math.max(m, s.order||0); }, 0);
   if(state.live && state.db){
-    showBusy("Importing " + newOnes.length + " new " + (newOnes.length===1?unitLower():unitPluralLower()) + "…");
-    Promise.all(newOnes.map(function(p, i){
+    return Promise.all(newOnes.map(function(p, i){
       return state.db.collection("squads").add({ name:p.name, order:maxOrder+1+i, dimensions:p.fileDims, updatedAt: nowIso() })
         .then(function(ref){ p.existing = { id: ref.id, name:p.name, order:maxOrder+1+i, dimensions:p.fileDims }; });
-    })).then(function(){ hideBusy(); applyAll(); }).catch(function(err){
-      hideBusy();
+    })).then(function(){ return applyAll(); }, function(err){
       diag("JSON import: creating new " + unitPluralLower() + " failed: " + (err && err.code ? err.code : String(err)));
+      throw err;
     });
-  } else {
-    newOnes.forEach(function(p, i){
-      var sq = { id:"local-"+Date.now()+"-"+i, name:p.name, order:maxOrder+1+i, dimensions:p.fileDims };
-      state.squads.push(sq);
-      p.existing = sq;
-    });
-    applyAll();
   }
+  newOnes.forEach(function(p, i){
+    var sq = { id:"local-"+Date.now()+"-"+i, name:p.name, order:maxOrder+1+i, dimensions:p.fileDims };
+    state.squads.push(sq);
+    p.existing = sq;
+  });
+  return applyAll();
 }
 
 // A matched dimension's file fields, excluding `order` -- same rule
@@ -797,19 +836,39 @@ function templateImportFields(ft){
 // separate plan/apply pair) uses this to resolve a rating for a
 // dimension THIS call just created before writing that rating out (see
 // the Apply-button handler and resolvePendingDimensionKeys()).
+// REF-1: scoped, awaitable stands-in for removeDimension()/deleteTemplate()
+// (dimensions.js/templates.js), used only by this import path's REPLACE-mode
+// removals -- same reasoning as importDeleteSquad() above.
+function importDeleteDimension(key){
+  state.dimensions = state.dimensions.filter(function(d){ return d.key!==key; });
+  if(!(state.live && state.db)) return Promise.resolve();
+  return state.db.collection("dimensions").doc(key).delete();
+}
+function importDeleteTemplate(id){
+  state.templates = state.templates.filter(function(tpl){ return tpl.id!==id; });
+  if(!(state.live && state.db)) return Promise.resolve();
+  return state.db.collection("templates").doc(id).delete();
+}
+
 function applyDimensionTemplateConfigImportPlan(dimPlan, tplPlan, configChanges, mode, onDone){
-  if(!dimPlan || !tplPlan) return;
+  if(!dimPlan || !tplPlan) return Promise.resolve();
   function applyMatchedAndConfig(){
+    var writes = [];
+    function trackedWrite(write, describe){
+      writes.push(write.catch(function(err){
+        diag(describe + " failed: " + (err && err.code ? err.code : String(err)));
+        throw err;
+      }));
+    }
     dimPlan.patches.forEach(function(p){
       if(!p.existing) return;
       var fields = dimensionImportFields(p.file);
       Object.assign(p.existing, fields);
-      syncLiveIfConnected(function(){
-        if(mode === "replace"){
-          return state.db.collection("dimensions").doc(p.existing.key).set(Object.assign({ order:p.existing.order, updatedAt: nowIso() }, fields));
-        }
-        return state.db.collection("dimensions").doc(p.existing.key).update(Object.assign({ updatedAt: nowIso() }, fields));
-      }, "JSON import write for dimensions/" + p.existing.key);
+      if(!(state.live && state.db)) return;
+      var write = mode === "replace"
+        ? state.db.collection("dimensions").doc(p.existing.key).set(Object.assign({ order:p.existing.order, updatedAt: nowIso() }, fields))
+        : state.db.collection("dimensions").doc(p.existing.key).update(Object.assign({ updatedAt: nowIso() }, fields));
+      trackedWrite(write, "JSON import write for dimensions/" + p.existing.key);
     });
     // Templates always write via update(), even in Replace mode -- unlike
     // squads/dimensions, a saved template's own createdAt (its position in
@@ -825,41 +884,57 @@ function applyDimensionTemplateConfigImportPlan(dimPlan, tplPlan, configChanges,
       if(!p.existing) return;
       var fields = templateImportFields(p.file);
       Object.assign(p.existing, fields);
-      syncLiveIfConnected(function(){
-        return state.db.collection("templates").doc(p.existing.id).update(Object.assign({ updatedAt: nowIso() }, fields));
-      }, "JSON import write for templates/" + p.existing.id);
+      if(!(state.live && state.db)) return;
+      trackedWrite(
+        state.db.collection("templates").doc(p.existing.id).update(Object.assign({ updatedAt: nowIso() }, fields)),
+        "JSON import write for templates/" + p.existing.id
+      );
     });
     if(mode === "replace"){
-      dimPlan.toRemove.forEach(function(d){ removeDimension(d.key); });
-      tplPlan.toRemove.forEach(function(tpl){ deleteTemplate(tpl.id); });
+      dimPlan.toRemove.forEach(function(d){ writes.push(importDeleteDimension(d.key)); });
+      tplPlan.toRemove.forEach(function(tpl){ writes.push(importDeleteTemplate(tpl.id)); });
     }
     if(configChanges && configChanges.length){
       var newConfig = Object.assign({}, state.config);
       configChanges.forEach(function(c){ newConfig[c.field] = c.to; });
       state.config = newConfig;
-      syncLiveIfConnected(function(){
-        return state.db.doc("meta/config").set(Object.assign({}, newConfig, { updatedAt: nowIso() }));
-      }, "JSON import write for meta/config");
+      if(state.live && state.db){
+        trackedWrite(
+          state.db.doc("meta/config").set(Object.assign({}, newConfig, { updatedAt: nowIso() })),
+          "JSON import write for meta/config"
+        );
+      }
     }
-    renderAll();
-    if(!dimBackdrop.hidden) renderDimList();
-    if(!templatesBackdrop.hidden) renderTemplateList();
-    diag("JSON import applied to dimensions/templates/board settings (" + mode + "): " +
-      dimPlan.patches.filter(function(p){ return p.existing; }).length + " dimension(s) updated, " + dimPlan.added.length + " new" +
-      (mode==="replace" ? ", " + dimPlan.toRemove.length + " removed" : "") + "; " +
-      tplPlan.patches.filter(function(p){ return p.existing; }).length + " template(s) updated, " + tplPlan.added.length + " new" +
-      (mode==="replace" ? ", " + tplPlan.toRemove.length + " removed" : "") + "; " +
-      (configChanges ? configChanges.length : 0) + " board setting(s) changed.");
-    if(onDone) onDone();
+    return Promise.all(writes).then(function(){
+      renderAll();
+      if(!dimBackdrop.hidden) renderDimList();
+      if(!templatesBackdrop.hidden) renderTemplateList();
+      diag("JSON import applied to dimensions/templates/board settings (" + mode + "): " +
+        dimPlan.patches.filter(function(p){ return p.existing; }).length + " dimension(s) updated, " + dimPlan.added.length + " new" +
+        (mode==="replace" ? ", " + dimPlan.toRemove.length + " removed" : "") + "; " +
+        tplPlan.patches.filter(function(p){ return p.existing; }).length + " template(s) updated, " + tplPlan.added.length + " new" +
+        (mode==="replace" ? ", " + tplPlan.toRemove.length + " removed" : "") + "; " +
+        (configChanges ? configChanges.length : 0) + " board setting(s) changed.");
+      // Ordering/dependency, made explicit: onDone (the squads/ratings
+      // import) only runs once every dimension/template/config write above
+      // has genuinely settled -- a rating for a dimension THIS call just
+      // created must never be written against a key that doesn't exist yet.
+      return onDone ? onDone() : undefined;
+    }, function(err){
+      renderAll();
+      if(!dimBackdrop.hidden) renderDimList();
+      if(!templatesBackdrop.hidden) renderTemplateList();
+      diag("JSON import (dimensions/templates/board settings) did not fully complete -- see the write failure(s) above; the board may reflect a partial import.");
+      throw err;
+    });
   }
 
   var newDims = dimPlan.patches.filter(function(p){ return !p.existing; });
   var newTpls = tplPlan.patches.filter(function(p){ return !p.existing; });
-  if(newDims.length===0 && newTpls.length===0){ applyMatchedAndConfig(); return; }
+  if(newDims.length===0 && newTpls.length===0){ return applyMatchedAndConfig(); }
 
   var maxDimOrder = state.dimensions.reduce(function(m,d){ return Math.max(m, d.order||0); }, 0);
   if(state.live && state.db){
-    showBusy("Importing " + (newDims.length+newTpls.length) + " new item(s)…");
     var writes = newDims.map(function(p, i){
       var payload = Object.assign({ order: maxDimOrder+1+i, updatedAt: nowIso() }, dimensionImportFields(p.file));
       return state.db.collection("dimensions").add(payload).then(function(ref){ p.existing = Object.assign({ key: ref.id }, payload); });
@@ -867,25 +942,24 @@ function applyDimensionTemplateConfigImportPlan(dimPlan, tplPlan, configChanges,
       var payload = Object.assign({ createdAt: nowIso() }, templateImportFields(p.file));
       return state.db.collection("templates").add(payload).then(function(ref){ p.existing = Object.assign({ id: ref.id }, payload); });
     }));
-    Promise.all(writes).then(function(){ hideBusy(); applyMatchedAndConfig(); }).catch(function(err){
-      hideBusy();
+    return Promise.all(writes).then(function(){ return applyMatchedAndConfig(); }, function(err){
       diag("JSON import: creating new dimensions/templates failed: " + (err && err.code ? err.code : String(err)));
+      throw err;
     });
-  } else {
-    newDims.forEach(function(p, i){
-      var payload = Object.assign({ order: maxDimOrder+1+i }, dimensionImportFields(p.file));
-      var d = Object.assign({ key:"local-dim-"+Date.now()+"-"+i }, payload);
-      state.dimensions.push(d);
-      p.existing = d;
-    });
-    newTpls.forEach(function(p, i){
-      var payload = templateImportFields(p.file);
-      var tpl = Object.assign({ id:"local-tpl-"+Date.now()+"-"+i }, payload);
-      state.templates.push(tpl);
-      p.existing = tpl;
-    });
-    applyMatchedAndConfig();
   }
+  newDims.forEach(function(p, i){
+    var payload = Object.assign({ order: maxDimOrder+1+i }, dimensionImportFields(p.file));
+    var d = Object.assign({ key:"local-dim-"+Date.now()+"-"+i }, payload);
+    state.dimensions.push(d);
+    p.existing = d;
+  });
+  newTpls.forEach(function(p, i){
+    var payload = templateImportFields(p.file);
+    var tpl = Object.assign({ id:"local-tpl-"+Date.now()+"-"+i }, payload);
+    state.templates.push(tpl);
+    p.existing = tpl;
+  });
+  return applyMatchedAndConfig();
 }
 
 // See helpers.js's matching block for why this exists and why it's safe:
