@@ -893,6 +893,17 @@ be ordered independently once the common panel is available. Story 6 was moved
 to priority 2 by the product owner. Terms are a separate content/behavior story,
 not implicit acceptance added to story 1.
 
+## Facilitated retro backlog (2026-09-17)
+
+New feature requests for the facilitated live-retro flow (`docs/facilitated-retro-spec.md` covers
+Stories 1–9, already DONE; these are new, not part of that closed backlog). None started yet.
+
+| Priority | Story | User value and acceptance criteria | Status |
+|---|---|---|---|
+| P1 | RETRO-1 — Carry latest retro results into board export/import | As a facilitator, back up or migrate a board without losing its most recently finished retro. Extend the JSON board export (`board-export-import.js`) to also capture, per squad, the latest finished retro session's per-dimension result (consolidated or overridden), sprint experiment note, and finish timestamp, and restore it on import alongside the existing squads/ratings/dimensions/templates/settings. Define what happens when an imported snapshot's dimensions no longer match the target board (e.g. a renamed/removed dimension) instead of silently dropping or misapplying data. | **NOT STARTED** |
+| P2 | RETRO-2 — Facilitation option: progress one question at a time | As a facilitator running a live session, optionally pace the group through statements one at a time instead of everyone seeing the full survey at once. Add a session-level toggle (default off, preserving today's all-at-once survey) that, when on, shows each participant only the current question and advances everyone together as the facilitator moves forward; revisiting an earlier question doesn't discard that participant's existing answer to it. | **NOT STARTED** |
+| P3 | RETRO-3 — Facilitation option: choose which questions to include | As a facilitator, exclude statements/dimensions from the active template that don't apply to this particular retro. Let the facilitator deselect specific questions/dimensions when starting (or before opening) a session, without altering the saved template itself; excluded ones are omitted from the join survey and from that session's consolidation/results. | **NOT STARTED** |
+
 ## Suggested next step
 
 **Deploy the relay.** No code changes needed — the static site is already live on Vercel; the
