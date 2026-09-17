@@ -4018,3 +4018,26 @@ there are smaller, single-responsibility files to set real size/complexity limit
   to confirm it's genuinely merged rather than closed-unmerged, rather than trusting either list
   command's own state/merged columns for that distinction. Docs-only; no runtime code touched. Full
   suite re-verified green: 167/167 unit tests, all Playwright files.
+- 2026-09-17 — Adopted `ETHICS_AGREEMENT.md` from `dr-agile-standards`, the third of three points
+  raised by a review of PR #25 from another Claude session working on that sister repo, relayed by
+  the PO. That review's own framing was right, but its suggested shape wasn't quite what the
+  canonical source actually asks for: the review (and my own initial question back to the PO)
+  proposed writing a bespoke "team-pulse-survey-scoped equivalent" naming this app's own
+  stakeholders -- but `dr-agile-standards`' actual `ETHICS_AGREEMENT.md` states plainly it's a
+  **canonical template** meant to be copied VERBATIM into each project ("adapt only the Session Log
+  there"), specifically so the Stakeholder Hierarchy (Clients -> Business Partners -> Dr. Agile ->
+  Effectiveness) stays identical and comparable across every Dr. Agile project, not reinterpreted
+  per-repo. Cloned `dr-agile-standards` (read-only) to actually read the source before drafting
+  anything, rather than reconstructing its structure from the PO's paraphrase -- confirmed via its
+  own `EXEMPLARS/ethics-agreement-blocker-generator.md` that "copy verbatim, fill in the Session
+  Log" is the real, already-established pattern, not a guess. Copied it into this repo's root
+  unchanged apart from the Session Log's new team-pulse-survey entry (no `/specification/`
+  directory exists here -- this repo uses `STATUS.md`/`docs/` instead -- so placed at the root
+  only, not duplicated into a directory this repo doesn't have). This is a genuinely different
+  layer than `ETHICS.md` (added earlier this session): that one is security/trust hygiene scoped to
+  this repo (secrets, verified claims, attribution, authorization); this one is company-wide and
+  states whose needs take precedence when they conflict -- confirmed the two don't overlap by
+  re-reading `ETHICS.md` in full before concluding a second document was actually needed, per the
+  review's own explicit ask to check with the PO rather than assume. Cross-referenced from
+  `CLAUDE.md`'s index alongside `ETHICS.md`. Docs-only; no runtime code touched. Full suite
+  re-verified green: 167/167 unit tests, all Playwright files.
