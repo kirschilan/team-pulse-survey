@@ -3815,3 +3815,27 @@ not just in this repo's own tests.
   `test_board_sync_live_subscribe.py`/`test_board_sync_template_switch_race.py`/
   `test_board_sync_revert_after_remote_change.py` — not duplicated. Full suite green: 157/157
   unit tests, all 58 Playwright files (`tests/run_all.sh`, 65s wall-clock), relay's own suite.
+- 2026-09-17 — Rebased PR #23 (REF-3) onto `claude/optimistic-keller-holuql` after PR #21 (RETRO-1)
+  also merged into it: only a trivial `STATUS.md` conflict (two adjacent session-log entries, no
+  real overlap) -- `board-sync.js` itself merged clean, since RETRO-1's P1 fix on PR #21
+  (`applyRemoteBoardSnapshot()`'s `lastRetro` payload) and REF-3's own changes
+  (`hydrateFromTeamIfConnected()`'s staleness guards, `connectWithSecret()`'s reordering) touch
+  different functions in the same file. Fixed a real P2 finding from a Codex review of PR #23:
+  `tests/test_board_sync_team_switch_during_hydrate.py` used two FIXED wall-clock timers -- a
+  300ms delay on Team 1's deliberately-stale hydrate response, and a 150ms wait assumed long
+  enough for Team 2's own (unpatched) hydrate to land -- so a genuinely slower relay response for
+  Team 2 (Codex's own repro: 220ms) would fail this test even though the app was behaving
+  correctly, exactly the kind of flake this repo's own testing conventions exist to rule out.
+  Replaced both timers with a controlled gate, per the review's suggested causal-wait strategy:
+  Team 1's response is now held indefinitely behind a manually-resolved promise (not delayed by a
+  fixed amount) instead of a `setTimeout`, and Team 2's hydrate is awaited via a real completion
+  signal -- polling `state.squads` for Team 2's own marker landing, with a generous 5s failure
+  deadline, not a guess at how long it "should" take -- only once THAT'S confirmed does the test
+  release the held Team 1 response, which is provably stale at that point. Re-verified the
+  rewritten test still catches the original regression: temporarily reverted both of REF-3's own
+  guards in `board-sync.js` (the `getTeamSecret() !== secret` staleness checks in
+  `hydrateFromTeamIfConnected()`, and `connectWithSecret()`'s early `stopTeamBoardSubscription()`
+  call) and confirmed the rewritten test still fails for the exact same reason (`finalName` reverts
+  to `"Team1Marker"`) before restoring the real fix and confirming green again. Full suite
+  re-verified green: 167/167 unit tests, all 60 Playwright files, relay's own suite. Pushed to the
+  same `ref-3-board-sync-state-machine` branch/PR (no new PR).
