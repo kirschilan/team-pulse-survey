@@ -510,15 +510,27 @@ function saveExperimentNote(sessionId, text){
 // Writes the (possibly overridden) consolidated result for each scored
 // dimension into the squad's own rating -- the same field Tribe view
 // already reads -- then closes the session like a normal close.
+// RETRO-1 (STATUS.md's "Facilitated retro backlog"): also snapshots this
+// finish onto the squad itself as `lastRetro` -- finishedAt, the sprint
+// experiment note, and each dimension's result INCLUDING whether it was
+// manually overridden (effectiveDimResult()'s own `overridden` flag,
+// otherwise lost the moment the session closes and its doc eventually
+// expires via the relay's room-empty grace period). This is what makes a
+// finished retro's own context -- not just its resulting ratings --
+// portable through JSON board export/import (board-export-import.js).
 function finishRetroAndApply(sq, sess, results){
   sq.dimensions = Object.assign({}, sq.dimensions);
   var patchedKeys = [];
+  var lastRetroDimensions = {};
   results.forEach(function(x){
     var existing = sq.dimensions[x.dim.key] || {};
     sq.dimensions[x.dim.key] = { color: x.result.color, trend: x.result.trend, note: existing.note || "" };
     patchedKeys.push(x.dim.key);
+    lastRetroDimensions[x.dim.key] = { color: x.result.color, trend: x.result.trend, overridden: !!x.result.overridden };
   });
-  if(patchedKeys.length) persistDimensionRatings(sq, patchedKeys);
+  var lastRetro = { finishedAt: nowIso(), experimentNote: sess.experimentNote || "", dimensions: lastRetroDimensions };
+  sq.lastRetro = lastRetro;
+  if(patchedKeys.length) persistDimensionRatings(sq, patchedKeys, { lastRetro: lastRetro });
   closeSession(sess.id);
   renderAll();
 }

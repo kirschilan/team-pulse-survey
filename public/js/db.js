@@ -58,7 +58,13 @@ async function initDb(){
           var v = rawDims[k] || {};
           dims[k] = { color: v.color, trend: v.trend, note: v.note };
         });
-        return { id: doc.id, name: data.name || "Untitled squad", order: data.order || 0, dimensions: dims };
+        var squad = { id: doc.id, name: data.name || "Untitled squad", order: data.order || 0, dimensions: dims };
+        // RETRO-1: a squad's most recently finished retro (see
+        // finishRetroAndApply(), retro-facilitator.js) -- cloned for the
+        // same reason data.i18n is below (frozen snapshot data would throw
+        // if something later tried to edit it in place).
+        if(data.lastRetro) squad.lastRetro = plainClone(data.lastRetro);
+        return squad;
       });
       diag("Squad snapshot #" + squadSnapCount + ": " + docs.length + " doc(s) [" + docs.map(function(d){return d.id;}).join(",") + "]" + (snap.metadata && snap.metadata.fromCache ? " (from cache)" : ""));
       state.squads = docs;

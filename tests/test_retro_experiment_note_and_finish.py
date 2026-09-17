@@ -197,6 +197,20 @@ with sync_playwright() as p:
     assert final_dims["results"]["color"] == "warn"
     assert final_dims["results"]["trend"] == "up"
 
+    # RETRO-1 (STATUS.md's "Facilitated retro backlog"): finishing also
+    # snapshots this onto the squad as lastRetro -- finishedAt, the sprint
+    # experiment note saved earlier, and each dimension's result INCLUDING
+    # whether it was manually overridden. This is the wiring proof; the
+    # JSON export/import round trip of this same field is covered
+    # separately in tests/test_json_last_retro_round_trip.py.
+    last_retro = page.evaluate("window.__FAKE_STORE__['squads/squad-1'].lastRetro")
+    print("squad-1 lastRetro after finishing:", last_retro)
+    assert last_retro is not None
+    assert last_retro["experimentNote"] == note_text
+    assert last_retro["dimensions"]["results"] == {"color": "warn", "trend": "up", "overridden": True}
+    assert last_retro["dimensions"]["trust"] == {"color": "good", "trend": "flat", "overridden": False}
+    assert isinstance(last_retro["finishedAt"], str) and len(last_retro["finishedAt"]) > 0
+
     # the squad-view cell buttons should visibly reflect this immediately too
     result_cell_class = page.eval_on_selector('.cell-btn[data-dim="results"]', 'el => el.className')
     print("results cell-btn class after finishing (should show 'warn'):", result_cell_class)

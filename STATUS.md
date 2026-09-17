@@ -900,7 +900,7 @@ Stories 1–9, already DONE; these are new, not part of that closed backlog). No
 
 | Priority | Story | User value and acceptance criteria | Status |
 |---|---|---|---|
-| P1 | RETRO-1 — Carry latest retro results into board export/import | As a facilitator, back up or migrate a board without losing its most recently finished retro. Extend the JSON board export (`board-export-import.js`) to also capture, per squad, the latest finished retro session's per-dimension result (consolidated or overridden), sprint experiment note, and finish timestamp, and restore it on import alongside the existing squads/ratings/dimensions/templates/settings. Define what happens when an imported snapshot's dimensions no longer match the target board (e.g. a renamed/removed dimension) instead of silently dropping or misapplying data. | **NOT STARTED** |
+| P1 | RETRO-1 — Carry latest retro results into board export/import | As a facilitator, back up or migrate a board without losing its most recently finished retro. Extend the JSON board export (`board-export-import.js`) to also capture, per squad, the latest finished retro session's per-dimension result (consolidated or overridden), sprint experiment note, and finish timestamp, and restore it on import alongside the existing squads/ratings/dimensions/templates/settings. Define what happens when an imported snapshot's dimensions no longer match the target board (e.g. a renamed/removed dimension) instead of silently dropping or misapplying data. | **PR open (2026-09-17)**, not yet merged — see session log. New squad field `lastRetro` (finishedAt/experimentNote/dimensions incl. `overridden`), written by `finishRetroAndApply()` (retro-facilitator.js) via `persistDimensionRatings()`'s new optional `extraFields` param, carried through `db.js`'s squad listener, and exported/imported by `board-export-import.js` (validated, matched/skipped the same way ratings already are). |
 | P2 | RETRO-2 — Facilitation option: progress one question at a time | As a facilitator running a live session, optionally pace the group through statements one at a time instead of everyone seeing the full survey at once. Add a session-level toggle (default off, preserving today's all-at-once survey) that, when on, shows each participant only the current question and advances everyone together as the facilitator moves forward; revisiting an earlier question doesn't discard that participant's existing answer to it. | **NOT STARTED** |
 | P3 | RETRO-3 — Facilitation option: choose which questions to include | As a facilitator, exclude statements/dimensions from the active template that don't apply to this particular retro. Let the facilitator deselect specific questions/dimensions when starting (or before opening) a session, without altering the saved template itself; excluded ones are omitted from the join survey and from that session's consolidation/results. | **NOT STARTED** |
 
@@ -3650,3 +3650,79 @@ not just in this repo's own tests.
   delayed write genuinely settles, and its effect is confirmed to have landed before completion is
   reported). Full suite re-verified green: 157/157 unit tests, all 56 Playwright files, relay's own
   suite. Pushed to the same `ref-1-json-import-await` branch/PR (no new PR).
+- 2026-09-17 — RETRO-1 (carry a squad's latest finished retro result through JSON board
+  export/import): implemented on branch `retro-1-export-import-results`, PR opened against
+  `claude/optimistic-keller-holuql` (independent of, and based off the same tip as, REF-1's PR --
+  both touch `board-export-import.js`, expect a small merge conflict if both land). A finished
+  retro's context (which the resulting squad ratings alone don't carry -- which dimensions were
+  manually overridden, the sprint experiment note, when it finished) previously lived only on the
+  session doc itself, which the relay eventually expires once its room empties -- never durable,
+  never portable. `finishRetroAndApply()` (retro-facilitator.js) now also snapshots this onto the
+  squad as a new `lastRetro` field (`{finishedAt, experimentNote, dimensions:{<key>:{color,trend,
+  overridden}}}`), written atomically alongside the ratings patch via `persistDimensionRatings()`'s
+  new optional `extraFields` param -- which, when a lastRetro is present, writes the WHOLE squad
+  doc via `set()` rather than `update()`'s patch, deliberately: `update()`'s deepMerge would
+  otherwise splice a stale dimension entry from an OLDER finished retro into this one's map, since
+  both old and new values at that key are plain objects. `db.js`'s squad snapshot listener carries
+  `lastRetro` through (cloned, same reason `i18n` already is). `board-export-import.js`: exports
+  it verbatim per squad when present (omitted, not empty, when a squad never finished one);
+  validates its shape at the parse boundary (`isValidLastRetro`); resolves its own `dimensions`
+  map against the target board using a newly-extracted `resolveFileDimensionMap()` helper --
+  factored out of the matching logic a rating's own dimensions already used, so a lastRetro
+  dimension that no longer exists on the target board is REPORTED into the same `skipped` list a
+  mismatched rating already uses, never silently dropped or misapplied (this task's own explicit
+  ask); applies via the same import-scoped `set()`-not-`update()` rule described above, in EITHER
+  merge/replace mode. Decision, stated explicitly per `docs/DefinitionOfDone.md`'s "new data
+  shape" rule: `lastRetro` is set/preserved purely based on the file's own presence for that
+  squad, independent of the ratings Merge/Replace mode -- it's a single coherent snapshot, not a
+  collection with individually-removable members, so "Replace clears what's unmentioned" doesn't
+  naturally extend to it; a file that omits it leaves whatever a squad already has untouched, in
+  both modes. Import preview shows a new chip ("N squad's/squads' last retro result(s) included")
+  so this isn't a silent side effect of Apply -- new `importJson.chipLastRetro{One,Many}` keys in
+  both `en.js`/`he.js`. Verified: 10 new unit tests
+  (`tests/unit/test_last_retro_export_import.js`) covering `buildBoardExport`/
+  `parseBoardImportFile`/`buildSquadImportPlan`/`planHasChanges`'s new handling, all failing
+  against pre-fix code for the expected reasons first; `tests/test_retro_experiment_note_and_finish.py`
+  extended with the "finishing actually writes lastRetro, including the overridden flag" wiring
+  proof; new `tests/test_json_last_retro_round_trip.py` proving the full export→import round
+  trip end to end, including the "dimension no longer on the board" skip-and-report path (a
+  `ghost-dim` key present in a squad's lastRetro but absent from the board is reported in the
+  preview's skip list and excluded from what actually gets written, not silently kept or dropped
+  without a trace). Full suite green: 167/167 unit tests, all 56 Playwright files
+  (`tests/run_all.sh`, 65s wall-clock), relay's own suite.
+- 2026-09-17 — Rebased PR #21 (RETRO-1) onto `claude/optimistic-keller-holuql` after PR #20 (REF-1)
+  merged into it: resolved the anticipated `board-export-import.js` conflict (both PRs' own commit
+  messages flagged this as likely, since both touch the same import-apply path for unrelated
+  reasons) by combining REF-1's awaitable-writes/`allSettledOrThrow()` machinery with RETRO-1's
+  `lastRetro`-aware `set()`-vs-`update()` choice -- a squad patch with a `fileLastRetro` now
+  triggers the full-replace `set()` write (REF-1's per-write catch/diagnostic/`writes.push()`
+  wrapping intact) in EITHER ratings mode, same as before the rebase; the JSON-import summary line
+  reports both new-squad/removed counts (REF-1) and last-retro-result counts (RETRO-1) together.
+  Also resolved a `STATUS.md` conflict, purely two adjacent session-log entries with no real
+  overlap. Fixed a real P1 finding from a Codex review of PR #21 (RETRO-1) surfaced right after:
+  `applyRemoteBoardSnapshot()` (`board-sync.js`), the team-sync REPLY side that rewrites local
+  squad docs from a remote board snapshot, rebuilt each squad from a fixed field list --
+  name/order/dimensions/updatedAt -- that never grew to include `lastRetro` once RETRO-1
+  introduced it, even though the PUSH side (`boardSnapshotPayload()`) already sends `state.squads`
+  (lastRetro included) verbatim. The fallout was worse than a lossy relay hop: a device's own live
+  subscription echoes its own push back near-instantly, so this omission struck the ORIGINATING
+  facilitator's own persisted copy first -- a squad's just-finished retro result could vanish from
+  its own facilitator's board within the same round trip, before any teammate's re-push even
+  mattered (confirmed via the new test below, which fails at that exact, earlier point rather than
+  needing a second device's edit to trigger it, an even stronger version of the failure Codex's
+  review described). Fixed by conditionally cloning `lastRetro` onto the write payload
+  (`if(s.lastRetro) payload.lastRetro = plainClone(s.lastRetro);`), mirroring the exact pattern
+  RETRO-1 already applied on the JSON-import side of this same field. New test,
+  `tests/test_board_sync_last_retro_preserved.py` (real relay, two devices): finish a retro on
+  device A (writes `lastRetro`) -- device B, team-synced, must carry `lastRetro` on its OWN local
+  squad doc after receiving it live, not just the ratings; device B then makes an unrelated edit
+  (renames a different squad), re-pushing its whole board; device A, receiving that echo live,
+  must STILL have squad-1's `lastRetro` afterwards; a real page reload on device A confirms it
+  survived in actual persisted storage, not just in-memory state; a real JSON export (via
+  `local-store.js`'s real `window.claude.use("downloads")` shim, a genuine browser download here,
+  not the `window.open()` popup fallback the fake-store-backed export tests exercise -- caught via
+  `page.expect_download()` instead of `expect_popup()`) confirms `lastRetro` is still exportable
+  after the whole round trip. Failed against pre-fix code exactly as expected (missing at the very
+  first check, right after device A's own finish, for the reason above); passed after the fix.
+  Full suite re-verified green: 167/167 unit tests, all 57 Playwright files, relay's own suite.
+  Pushed to the same `retro-1-export-import-results` branch/PR (no new PR).

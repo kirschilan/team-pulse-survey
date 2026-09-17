@@ -292,9 +292,21 @@ function applyRemoteBoardSnapshot(remote){
       if(remoteSquadIds.indexOf(id) === -1) ops.push(db.collection("squads").doc(id).delete());
     });
     remoteSquads.forEach(function(s){
-      ops.push(db.collection("squads").doc(s.id).set({
+      var payload = {
         name: s.name || "Untitled squad", order: s.order || 0, dimensions: plainClone(s.dimensions) || {}, updatedAt: remote.updatedAt
-      }));
+      };
+      // Codex review on PR #21 (P1): a squad's lastRetro (RETRO-1) was
+      // omitted here entirely -- boardSnapshotPayload() (the PUSH side)
+      // pushes state.squads verbatim, lastRetro included, but this REPLY
+      // side rebuilt each squad doc from a fixed field list that never
+      // grew to match. Confirmed the fallout is worse than a lossy relay
+      // hop: a device's OWN live subscription echoes its OWN push back
+      // near-instantly, so THIS omission struck the originating device's
+      // own persisted copy first, before any teammate's re-push even
+      // mattered -- a squad's just-finished retro result could vanish
+      // from its own facilitator's board within the same round trip.
+      if(s.lastRetro) payload.lastRetro = plainClone(s.lastRetro);
+      ops.push(db.collection("squads").doc(s.id).set(payload));
     });
     localDimKeys.forEach(function(key){
       if(remoteDimKeys.indexOf(key) === -1) ops.push(db.collection("dimensions").doc(key).delete());
