@@ -346,6 +346,22 @@ function maybeApplyRemote(roomId, remote){
   hydrating = true;
   return applyRemoteBoardSnapshot(remote).then(function(){
     setSyncedAt(roomId, remote.updatedAt);
+    // PERF-1's dedup baseline (lastPushedBoardContent) must track the
+    // board's actual last-known-SHARED content, not just "the last thing
+    // THIS device itself pushed" -- a remote apply (boot hydrate OR, as
+    // here, a live update) changes local content without this device ever
+    // calling pushBoardSnapshotIfConnected(). Leaving the old baseline in
+    // place made a later local edit that happened to match whatever this
+    // device pushed BEFORE this remote apply look like "nothing changed
+    // since my last push" and get silently skipped -- even though the
+    // board had genuinely moved on in between. Found by a real cross-device
+    // repro: A pushes "Original", B pushes "Remote change" and A applies it
+    // live, A reverts to "Original" -- that revert never reached B, because
+    // A's baseline still read "Original" from its OWN earlier push.
+    // Updating it here to the just-applied remote content fixes this for
+    // both the one-shot hydrate and the live subscription (this function is
+    // shared by both).
+    lastPushedBoardContent = boardContentSignature(remote);
     hydrating = false;
     return runPendingRemoteApply();
   }, function(err){

@@ -186,6 +186,22 @@ every other device on the same team link.
   test on `boardContentSignature()`. Same story as SEC-1 above: implemented once on an orphaned
   branch (`perf-1-idle-tab-sync-loop`), never merged, found by the same audit, ported as-is, and
   that branch deleted.
+  - **Codex review fix on PR #15 (2026-09-17): the dedup baseline this fix introduced
+    (`lastPushedBoardContent`) was only ever updated by THIS device's own pushes, never by a
+    remote snapshot applied via `maybeApplyRemote()`** — shared by both the boot-time hydrate and
+    the live subscription. A real cross-device repro found it: device A sets a squad name to
+    "Original," device B changes it to "Remote change" and A receives it live, A reverts to
+    "Original" — that revert was silently skipped, because A's baseline still read "Original"
+    from ITS OWN earlier push, never having been told the board had since moved to "Remote
+    change" and back. Fixed by updating `lastPushedBoardContent` to the just-applied remote
+    content's signature inside `maybeApplyRemote()` itself, so the baseline always tracks the
+    board's actual last-known-shared content, not just this device's own push history. New
+    `tests/test_board_sync_revert_after_remote_change.py` proves the exact repro across two real
+    devices sharing only the relay; `test_idle_tab_sync_loop.py` re-verified unaffected (the fix
+    only corrects a stale baseline, it doesn't force extra pushes). Also fixed, found while
+    working in this area: `test_idle_tab_sync_loop.py`'s `RELAY_PORT` (8799) collided with
+    `test_relay_legacy_known_codes.py`'s, introduced by the same port not being re-checked when
+    the orphaned PERF-1 branch was cut against an older trunk — moved to 8801.
 - **SEC-2 (split from SEC-1), PO decision, DONE as of 2026-09-16: dropped the typed
   6-character join code, QR/link only.** Product owner call: the "type this code in" join path
   (the join-code modal, and the code front-and-center on the session card — see Story 3 in
@@ -3328,3 +3344,14 @@ not just in this repo's own tests.
   confusion in its own right. Full suite re-verified green on the port branch: 157/157 unit tests,
   all 53 Playwright files, and relay's own suite including the 6 new SEC-1 rate-limit tests. The
   three orphaned branches are deleted once this PR is open (their content lives on in the PR).
+- 2026-09-17 — Fixed a real P1 finding from a Codex review of PR #15: the just-ported PERF-1
+  fix's dedup baseline (`lastPushedBoardContent`) was never updated when a remote snapshot was
+  applied via the live subscription (only on this device's own pushes and at boot), so a device
+  that received a teammate's live change and then reverted a value back to what IT had pushed
+  earlier had that revert silently swallowed. Confirmed with the exact two-device repro Codex
+  described, fixed in `maybeApplyRemote()` (shared by hydrate and live-subscribe), and covered
+  by a new test-first regression (`tests/test_board_sync_revert_after_remote_change.py`) that
+  fails on the pre-fix code and passes after. Also fixed a `RELAY_PORT` collision this port's own
+  earlier branch introduced (`test_idle_tab_sync_loop.py` vs. `test_relay_legacy_known_codes.py`,
+  both 8799) found while working in this area. Full suite re-verified green: 157/157 unit tests,
+  all 54 Playwright files (the new one included), and relay's own suite.

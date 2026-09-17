@@ -36,7 +36,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 RELAY_DIR = REPO_ROOT / "relay"
 INDEX = write_plain_index(out_name="_test_idle_tab_sync_loop_index.html")
 INDEX_URL = "file://" + str(INDEX.resolve())
-RELAY_PORT = 8799
+RELAY_PORT = 8801  # was 8799, which collided with test_relay_legacy_known_codes.py -- see run_all.sh's own comment on why each must be unique
 RELAY_URL = "ws://localhost:%d" % RELAY_PORT
 
 # Wraps the three functions this loop actually amplifies -- installed on a
