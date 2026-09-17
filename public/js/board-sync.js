@@ -131,6 +131,16 @@ function setSyncedAt(roomId, iso){
 function boardSnapshotPayload(){
   return { squads: state.squads, dimensions: state.dimensions, config: state.config, updatedAt: nowIso() };
 }
+// PERF-1 (STATUS.md's "Runtime performance backlog"): a signature of a
+// board-snapshot payload's MEANINGFUL content -- squads/dimensions/config
+// -- deliberately excluding its own `updatedAt`, which boardSnapshotPayload()
+// stamps fresh via nowIso() on every single call. pushBoardSnapshotIfConnected()
+// below uses this to skip pushing when nothing about the board actually
+// changed since the last push; comparing the raw payload (updatedAt
+// included) would never dedupe anything, since that field always differs.
+function boardContentSignature(payload){
+  return JSON.stringify({ squads: payload.squads, dimensions: payload.dimensions, config: payload.config });
+}
 function teamBoardPath(roomId){ return "boards/" + roomId; }
 
 // Squads, dimensions, and config are three INDEPENDENT db.js listeners,
@@ -213,12 +223,31 @@ function pushBoardSnapshotIfConnected(){
   // once step 7 made every boot fire a "genesis" push immediately followed
   // by a real edit's push in quick succession).
   var payload = boardSnapshotPayload();
+  // PERF-1: skip pushing when nothing about the board's actual content has
+  // changed since the last push THIS device made -- otherwise every call
+  // (including a no-op one caused by a live subscription echoing back
+  // exactly what this device already knows) stamps a fresh updatedAt and
+  // pushes anyway, which every subscriber (including tabs sharing this
+  // device's own localStorage) then re-applies, re-triggering the very
+  // listeners that call this function -- a self-sustaining loop between
+  // any two same-origin tabs, confirmed pinning both renderer processes at
+  // 100%+ CPU while genuinely idle. A real content change still always
+  // pushes, exactly as before.
+  var contentSignature = boardContentSignature(payload);
+  if(contentSignature === lastPushedBoardContent) return;
+  lastPushedBoardContent = contentSignature;
   SquadPulseCrypto.roomIdFor(secret).then(function(roomId){
     return state.db.doc(teamBoardPath(roomId), secret).set(payload).then(function(){
       setSyncedAt(roomId, payload.updatedAt);
     });
   }).catch(function(err){
     diag("Team sync push failed: " + (err && err.code ? err.code : String(err)));
+    // The write never actually landed -- undo the optimistic dedup mark so
+    // the next real trigger (or the retry a caller may already schedule)
+    // isn't silently skipped as "nothing changed" when nothing was ever
+    // successfully pushed in the first place. Only undo it if nothing else
+    // pushed something newer in the meantime.
+    if(lastPushedBoardContent === contentSignature) lastPushedBoardContent = null;
   });
 }
 
@@ -341,6 +370,14 @@ function runPendingRemoteApply(){
 // it, the same as the very first connection did.
 var hydrateAttemptedForSecret = null;
 
+// The last content signature (see boardContentSignature() above) this
+// device actually pushed -- reset alongside hydrateAttemptedForSecret
+// whenever a hydrate attempt runs (fresh boot, or switching to a
+// different team), so a genuinely different team's board never gets
+// silently skipped just because its content happens to coincide with
+// whatever this device last pushed to a PREVIOUS team.
+var lastPushedBoardContent = null;
+
 function hydrateFromTeamIfConnected(){
   var secret = getTeamSecret();
   if(!secret || !state.db) return Promise.resolve();
@@ -353,6 +390,7 @@ function hydrateFromTeamIfConnected(){
     diag("Team sync hydrate failed: " + (err && err.code ? err.code : String(err)));
   }).then(function(){
     hydrateAttemptedForSecret = secret;
+    lastPushedBoardContent = null;
     // If hydrate found nothing to apply (a genuinely new team -- the
     // common "just created a link" case), no local write happened to
     // naturally re-trigger db.js's listeners, so nothing else would ever
@@ -453,5 +491,5 @@ renderTeamSyncStatus();
 // Lets tests/unit/*.js exercise the pure parseTeamSecretInput() logic
 // directly -- see tests/unit/README.md for why this pattern exists.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { parseTeamSecretInput: parseTeamSecretInput, teamLinkFor: teamLinkFor };
+  module.exports = { parseTeamSecretInput: parseTeamSecretInput, teamLinkFor: teamLinkFor, boardContentSignature: boardContentSignature };
 }

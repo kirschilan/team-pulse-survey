@@ -129,10 +129,55 @@
       l.cb({ id: path.split("/").pop(), exists: !!d, data: function(){ return d ? deepFreezeClone(d) : undefined; } });
     });
   }
-  function notifyEverything(){
+  // PERF-1 (STATUS.md's "Runtime performance backlog"): the native
+  // `storage` event fires once per localStorage WRITE, not once per path
+  // that actually changed -- a bare "reload everything and notify every
+  // listener" response (the old notifyEverything(), now replaced by this)
+  // re-fires every squads/dimensions/config listener even when only ONE of
+  // them genuinely changed. db.js's listeners each unconditionally
+  // re-render AND call pushBoardSnapshotIfConnected() (board-sync.js) on
+  // every fire -- so a no-op echo of data this tab already has still
+  // produces a BRAND NEW board push (a fresh nowIso() timestamp) back to
+  // the relay. With a live subscription open (board sync is default-on),
+  // that push echoes back as a "newer" remote snapshot, gets applied
+  // locally, writes local docs again, fires another `storage` event in the
+  // OTHER tab sharing this origin's localStorage -- and the cycle repeats
+  // forever between any two tabs sharing storage, pinning both renderer
+  // processes at 100%+ CPU while sitting completely idle (confirmed: one
+  // became unresponsive to browser automation entirely). Comparing each
+  // listener's own path against what this tab already had, BEFORE load()
+  // overwrote it, and only notifying paths that actually changed breaks
+  // the loop at its root: an echo of already-known data now produces zero
+  // renders and zero pushes, while a genuine edit (the data really does
+  // differ) still notifies exactly as before.
+  function pathChanged(oldStore, path){
+    // STORE only ever holds plain JSON-shaped data (persist() itself goes
+    // through JSON.stringify) -- comparing serialized form is a correct
+    // deep-equality check here, not just a reference check, and matches
+    // the same JSON-round-trip comparison pattern board-sync.js's own
+    // plainClone() already relies on elsewhere in this app.
+    return JSON.stringify(oldStore[path]) !== JSON.stringify(STORE[path]);
+  }
+  function notifyChangedSince(oldStore){
+    var changedCollections = {};
+    var changedDocs = {};
+    var allPaths = {};
+    Object.keys(oldStore).forEach(function(p){ allPaths[p]=1; });
+    Object.keys(STORE).forEach(function(p){ allPaths[p]=1; });
+    Object.keys(allPaths).forEach(function(path){
+      if (!pathChanged(oldStore, path)) return;
+      changedDocs[path] = true;
+      changedCollections[path.split("/").slice(0,-1).join("/")] = true;
+    });
     var seen = {};
-    LISTENERS.forEach(function(l){ if(!seen["c:"+l.collectionPath]){ seen["c:"+l.collectionPath]=1; notify(l.collectionPath); } });
-    DOC_LISTENERS.forEach(function(l){ if(!seen["d:"+l.docPath]){ seen["d:"+l.docPath]=1; notifyDoc(l.docPath); } });
+    LISTENERS.forEach(function(l){
+      if (seen["c:"+l.collectionPath]) return; seen["c:"+l.collectionPath]=1;
+      if (changedCollections[l.collectionPath]) notify(l.collectionPath);
+    });
+    DOC_LISTENERS.forEach(function(l){
+      if (seen["d:"+l.docPath]) return; seen["d:"+l.docPath]=1;
+      if (changedDocs[l.docPath]) notifyDoc(l.docPath);
+    });
   }
   function buildSnapshot(collectionPath){
     var docs = [];
@@ -212,13 +257,15 @@
   seedIfEmpty();
 
   // Another tab of the same browser wrote a change -- pick it up and
-  // re-fire whatever this tab currently has listeners on. There's no way
-  // to know from a bare `storage` event which paths actually changed, and
-  // this app's data is small, so just re-check everything.
+  // notify only the listeners whose own path genuinely differs from what
+  // this tab already had (see notifyChangedSince()'s own comment above for
+  // why re-firing EVERY listener on every event, regardless of whether its
+  // data actually changed, is a real, previously-shipped bug).
   window.addEventListener("storage", function(e){
     if (e.key !== STORAGE_KEY) return;
+    var before = STORE;
     load();
-    notifyEverything();
+    notifyChangedSince(before);
   });
 
   function triggerBrowserDownload(filename, data){
