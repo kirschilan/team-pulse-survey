@@ -134,6 +134,8 @@ var LOCALE_EN = {
   "importJson.externalTip": "If you're not sure which way you want this, export the current board first and reconcile the two files by hand with a general-purpose open-source diff/merge tool, such as",
   "importJson.chipRatingsOne": "{count} rating to import",
   "importJson.chipRatingsMany": "{count} ratings to import",
+  "importJson.chipLastRetroOne": "{count} squad's last retro result included",
+  "importJson.chipLastRetroMany": "{count} squads' last retro results included",
   "importJson.chipUpdatedOne": "{count} existing {unit} updated",
   "importJson.chipUpdatedMany": "{count} existing {unitPlural} updated",
   "importJson.chipNewOne": "{count} new {unit}: {names}",

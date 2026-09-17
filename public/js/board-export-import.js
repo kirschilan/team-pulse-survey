@@ -45,7 +45,16 @@ function buildBoardExport(){
       return out;
     }),
     squads: sortedSquads().map(function(sq){
-      return { name:sq.name, order:sq.order, dimensions: sq.dimensions||{} };
+      var out = { name:sq.name, order:sq.order, dimensions: sq.dimensions||{} };
+      // RETRO-1 (STATUS.md's "Facilitated retro backlog"): a squad's most
+      // recently FINISHED retro (see finishRetroAndApply(), retro-facilitator.js)
+      // carries context the resulting ratings alone don't -- which dimensions
+      // were manually overridden, the sprint-experiment note, and when it
+      // finished. Omitted entirely (not a present-but-empty object) for a
+      // squad that has never finished one, same "absent means no opinion"
+      // convention formatVersion:1 already uses for dimensions/templates.
+      if(sq.lastRetro) out.lastRetro = sq.lastRetro;
+      return out;
     })
   };
 }
@@ -129,6 +138,32 @@ function isValidRating(r){
   return true;
 }
 
+// RETRO-1: same parse-boundary validation rule as isValidRating() above --
+// a squad's lastRetro.dimensions entries are shaped like a rating PLUS an
+// `overridden` boolean (the same effectiveDimResult() shape retro-facilitator.js
+// already produces), never like a rating's own `note` field.
+function isValidLastRetroDim(v){
+  if(!isPlainObject(v)) return false;
+  if(v.color !== undefined && !isValidEnumWord(v.color, VALID_RATING_COLORS)) return false;
+  if(v.trend !== undefined && !isValidEnumWord(v.trend, VALID_RATING_TRENDS)) return false;
+  if(v.overridden !== undefined && typeof v.overridden !== "boolean") return false;
+  return true;
+}
+function isValidLastRetro(lr){
+  if(lr === undefined) return true;
+  if(!isPlainObject(lr)) return false;
+  if(lr.finishedAt !== undefined && typeof lr.finishedAt !== "string") return false;
+  if(lr.experimentNote !== undefined && typeof lr.experimentNote !== "string") return false;
+  if(lr.dimensions !== undefined){
+    if(!isPlainObject(lr.dimensions)) return false;
+    var keys = Object.keys(lr.dimensions);
+    for(var i=0;i<keys.length;i++){
+      if(!isValidLastRetroDim(lr.dimensions[keys[i]])) return false;
+    }
+  }
+  return true;
+}
+
 // Item 3b's own validation, same parse-boundary rule as the squad/rating
 // checks above -- a malformed dimensions/templates/config section must be
 // rejected here, not thrown from inside buildDimensionImportPlan()/
@@ -193,6 +228,7 @@ function parseBoardImportFile(text){
         if(!isValidRating(fs.dimensions[dimKeys[j]])) return { ok:false, error:"invalid-rating" };
       }
     }
+    if(!isValidLastRetro(fs.lastRetro)) return { ok:false, error:"invalid-last-retro" };
   }
   if(data.dimensions !== undefined){
     if(!Array.isArray(data.dimensions)) return { ok:false, error:"invalid-dimensions" };
@@ -261,6 +297,39 @@ function resolvePendingDimensionKeys(fileDims){
 // genuinely will exist by the time this squad plan is applied. Omitted
 // (e.g. Templates scope unchecked), such a rating still correctly reports
 // "not found" -- nothing will create that dimension this round.
+// Resolves a per-dimension-key map (a squad's own ratings, or -- RETRO-1 --
+// a lastRetro snapshot's own dimensions map, same shape) against the
+// board's real dimensions: by KEY using the file's own top-level
+// `dimensions` section for a label to match on the destination board,
+// falling back to a direct key match when the file carries no such section
+// (or no entry for that specific key). An entry resolving to a dimension
+// THIS SAME import is about to create (extraLabelSet) gets the
+// pendingDimensionKey() marker for later resolution, same as a rating.
+// Anything that resolves to nothing is pushed into `skipped` -- reported,
+// never silently dropped -- with the given `reason` string.
+function resolveFileDimensionMap(rawMap, squadName, fileDimKeyToLabel, dimByKeyMap, dimByLabelMap, extraLabelSet, skipped, reason){
+  var resolved = {};
+  var count = 0;
+  Object.keys(rawMap || {}).forEach(function(key){
+    var label = fileDimKeyToLabel[key];
+    var dim;
+    if(label){
+      dim = dimByLabelMap[label.trim().toLowerCase()];
+      if(!dim && extraLabelSet[label.trim().toLowerCase()]){
+        resolved[pendingDimensionKey(label)] = rawMap[key];
+        count++;
+        return;
+      }
+    } else {
+      dim = dimByKeyMap[key];
+    }
+    if(!dim){ skipped.push({ squad:squadName, dimension:key, reason:reason }); return; }
+    resolved[dim.key] = rawMap[key];
+    count++;
+  });
+  return { resolved: resolved, count: count };
+}
+
 function buildSquadImportPlan(data, mode, extraDimensionLabels){
   var dimByKeyMap = {};
   var dimByLabelMap = {};
@@ -277,32 +346,30 @@ function buildSquadImportPlan(data, mode, extraDimensionLabels){
   var existingByName = {};
   state.squads.forEach(function(s){ existingByName[s.name.trim().toLowerCase()] = s; });
 
-  var patches = [], newSquadNames = [], skipped = [], ratingCount = 0;
+  var patches = [], newSquadNames = [], skipped = [], ratingCount = 0, lastRetroSquadCount = 0;
   var fileNameKeys = {};
   (data.squads || []).forEach(function(fs){
     var name = (fs.name || "").trim();
     if(!name) return;
     fileNameKeys[name.toLowerCase()] = true;
     var existing = existingByName[name.toLowerCase()] || null;
-    var fileDims = {};
-    Object.keys(fs.dimensions || {}).forEach(function(key){
-      var label = fileDimKeyToLabel[key];
-      var dim;
-      if(label){
-        dim = dimByLabelMap[label.trim().toLowerCase()];
-        if(!dim && extraLabelSet[label.trim().toLowerCase()]){
-          fileDims[pendingDimensionKey(label)] = fs.dimensions[key];
-          ratingCount++;
-          return;
-        }
-      } else {
-        dim = dimByKeyMap[key];
-      }
-      if(!dim){ skipped.push({ squad:name, dimension:key, reason:"dimension not found" }); return; }
-      fileDims[dim.key] = fs.dimensions[key];
-      ratingCount++;
-    });
-    patches.push({ name:name, existing:existing, order:fs.order, fileDims:fileDims });
+    var dimsResolved = resolveFileDimensionMap(fs.dimensions, name, fileDimKeyToLabel, dimByKeyMap, dimByLabelMap, extraLabelSet, skipped, "dimension not found");
+    var fileDims = dimsResolved.resolved;
+    ratingCount += dimsResolved.count;
+    // RETRO-1: same matching rules as a rating's own dimensions above, kept
+    // as a SEPARATE resolved map (not merged into fileDims) -- a lastRetro
+    // snapshot is its own coherent unit, not additional ratings.
+    var fileLastRetro;
+    if(fs.lastRetro !== undefined){
+      var lrDimsResolved = resolveFileDimensionMap(fs.lastRetro.dimensions, name, fileDimKeyToLabel, dimByKeyMap, dimByLabelMap, extraLabelSet, skipped, "dimension not found (last retro result)");
+      fileLastRetro = {
+        finishedAt: fs.lastRetro.finishedAt,
+        experimentNote: fs.lastRetro.experimentNote || "",
+        dimensions: lrDimsResolved.resolved
+      };
+      lastRetroSquadCount++;
+    }
+    patches.push({ name:name, existing:existing, order:fs.order, fileDims:fileDims, fileLastRetro:fileLastRetro });
     if(!existing) newSquadNames.push(name);
   });
 
@@ -325,7 +392,8 @@ function buildSquadImportPlan(data, mode, extraDimensionLabels){
 
   return {
     mode:mode, patches:patches, newSquadNames:newSquadNames, skipped:skipped,
-    ratingCount:ratingCount, squadsToRemove:squadsToRemove, clearedRatings:clearedRatings
+    ratingCount:ratingCount, squadsToRemove:squadsToRemove, clearedRatings:clearedRatings,
+    lastRetroSquadCount:lastRetroSquadCount
   };
 }
 
@@ -344,7 +412,8 @@ function mergeSquadDimensions(existingDims, fileDims, mode){
 // file, just with fewer ratings than before) left Apply permanently
 // disabled, with no way to apply it.
 function planHasChanges(plan){
-  return plan.ratingCount>0 || plan.newSquadNames.length>0 || plan.squadsToRemove.length>0 || plan.clearedRatings.length>0;
+  return plan.ratingCount>0 || plan.newSquadNames.length>0 || plan.squadsToRemove.length>0 || plan.clearedRatings.length>0 ||
+    plan.lastRetroSquadCount>0;
 }
 
 // ---------- item 3b: dimensions/templates/board-settings import ----------
@@ -530,6 +599,11 @@ function renderJsonImportPreview(fileData){
       '<span class="chip">'+esc(t(countKey("importJson.chipUpdated", updatedExisting), { count:updatedExisting, unit:unitLower(), unitPlural:unitPluralLower() }))+'</span>' +
       (squadPlan.newSquadNames.length ? '<span class="chip">'+esc(t(countKey("importJson.chipNew", squadPlan.newSquadNames.length), { count:squadPlan.newSquadNames.length, unit:unitLower(), unitPlural:unitPluralLower(), names:squadPlan.newSquadNames.join(", ") }))+'</span>' : '') +
       (squadPlan.mode==="replace" && squadPlan.squadsToRemove.length ? '<span class="chip crit">'+esc(t(countKey("importJson.chipRemoved", squadPlan.squadsToRemove.length), { count:squadPlan.squadsToRemove.length, unit:unitLower(), unitPlural:unitPluralLower(), names:squadPlan.squadsToRemove.map(function(s){return s.name;}).join(", ") }))+'</span>' : '') +
+      // RETRO-1: makes an included retro result visible in the preview,
+      // not just a silent side effect of applying -- the facilitator sees
+      // that this file also carries a finished retro's context before
+      // clicking Apply.
+      (squadPlan.lastRetroSquadCount ? '<span class="chip">'+esc(t(countKey("importJson.chipLastRetro", squadPlan.lastRetroSquadCount), { count:squadPlan.lastRetroSquadCount }))+'</span>' : '') +
     '</div>';
     var skipsHtml = "";
     if(squadPlan.skipped.length){
@@ -638,7 +712,12 @@ function renderJsonImportPreview(fileData){
       // because that key doesn't exist until the dimension import above
       // has actually run -- resolve it now, using the board's dimensions
       // as they stand after that.
-      squadPlan.patches.forEach(function(p){ p.fileDims = resolvePendingDimensionKeys(p.fileDims); });
+      squadPlan.patches.forEach(function(p){
+        p.fileDims = resolvePendingDimensionKeys(p.fileDims);
+        // RETRO-1: a lastRetro snapshot's own dimensions map goes through
+        // the exact same pending-key resolution as a squad's ratings above.
+        if(p.fileLastRetro) p.fileLastRetro.dimensions = resolvePendingDimensionKeys(p.fileLastRetro.dimensions || {});
+      });
       return applySquadImportPlan(squadPlan);
     }
     // REF-1 (STATUS.md's "Code quality & refactoring backlog"): both apply
@@ -735,6 +814,11 @@ function applySquadImportPlan(plan){
     plan.patches.forEach(function(p){
       if(!p.existing) return;
       p.existing.dimensions = mergeSquadDimensions(p.existing.dimensions || {}, p.fileDims, mode);
+      // RETRO-1: a lastRetro snapshot fully REPLACES whatever was stored
+      // before (it's one coherent retro's result, not a set of independent
+      // keys to merge) -- assigning it wholesale here, in JS memory, is what
+      // lets the set()-below branch just write p.existing.lastRetro as-is.
+      if(p.fileLastRetro) p.existing.lastRetro = p.fileLastRetro;
       if(!(state.live && state.db)) return;
       // update() deep-MERGES a patch into the stored doc (see local-store.js's
       // deepMerge()/relay-client.js's matching update()) -- additive only, it
@@ -747,11 +831,23 @@ function applySquadImportPlan(plan){
       // writes the whole doc (not just a dimensions patch) to actually make
       // the clipped keys disappear from what's persisted, not just from
       // this tab's in-memory copy.
-      var write = mode === "replace"
-        ? state.db.collection("squads").doc(p.existing.id).set({
-            name: p.existing.name, order: p.existing.order,
-            dimensions: p.existing.dimensions, updatedAt: nowIso()
-          })
+      // RETRO-1: a lastRetro snapshot needs that exact same full-replace
+      // treatment REGARDLESS of ratings mode -- update()'s deepMerge would
+      // otherwise splice a STALE dimension entry from an older finished
+      // retro into this one's dimensions map, since both old and new
+      // values at that key are plain objects. p.existing already holds
+      // the full, correct post-merge state at this point (dimensions via
+      // mergeSquadDimensions() above, lastRetro assigned wholesale just
+      // above), so writing it whole via set() is safe either way.
+      var write = (mode === "replace" || p.fileLastRetro)
+        ? (function(){
+            var payload = {
+              name: p.existing.name, order: p.existing.order,
+              dimensions: p.existing.dimensions, updatedAt: nowIso()
+            };
+            if(p.existing.lastRetro) payload.lastRetro = p.existing.lastRetro;
+            return state.db.collection("squads").doc(p.existing.id).set(payload);
+          })()
         : (function(){
             var patch = { dimensions:{}, updatedAt: nowIso() };
             Object.keys(p.fileDims).forEach(function(k){ patch.dimensions[k] = p.fileDims[k]; });
@@ -772,7 +868,8 @@ function applySquadImportPlan(plan){
     return allSettledOrThrow(writes).then(function(){
       renderAll();
       diag("JSON import applied (" + mode + "): " + plan.ratingCount + " rating(s), " + newOnes.length + " new " + unitPluralLower() +
-        (mode==="replace" ? ", " + plan.squadsToRemove.length + " removed" : "") + ".");
+        (mode==="replace" ? ", " + plan.squadsToRemove.length + " removed" : "") +
+        (plan.lastRetroSquadCount ? ", " + plan.lastRetroSquadCount + " last-retro result(s)" : "") + ".");
     }, function(err){
       // A partial failure can leave a mixed board (this app doesn't promise
       // import atomicity -- see the backlog entry) -- still render whatever

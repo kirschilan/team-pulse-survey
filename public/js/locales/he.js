@@ -123,6 +123,8 @@ var LOCALE_HE = {
   "importJson.externalTip": "אם אתם לא בטוחים באיזה כיוון אתם רוצים, ייצאו קודם את הלוח הנוכחי ואחדו את שני הקבצים ידנית בעזרת כלי diff/merge כללי בקוד פתוח, כמו",
   "importJson.chipRatingsOne": "דירוג {count} לייבוא",
   "importJson.chipRatingsMany": "{count} דירוגים לייבוא",
+  "importJson.chipLastRetroOne": "כלולה תוצאת הרטרו האחרונה של צוות אחד",
+  "importJson.chipLastRetroMany": "כלולות תוצאות הרטרו האחרונות של {count} צוותים",
   "importJson.chipUpdatedOne": "{unit} קיים אחד עודכן",
   "importJson.chipUpdatedMany": "{count} {unitPlural} קיימים עודכנו",
   "importJson.chipNewOne": "{unit} חדש אחד: {names}",

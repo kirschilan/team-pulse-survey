@@ -168,21 +168,37 @@ function renderSquadView(){
 // -dimension case; persistDimensionRatings(sq, keys) is used when finishing
 // a retro (Story 9) writes several consolidated results at once, so they
 // land together rather than as separate round-trips.
+// extraFields (optional, RETRO-1): additional top-level doc fields to write
+// alongside the dimensions patch -- today only { lastRetro: {...} },
+// passed by finishRetroAndApply() (retro-facilitator.js). When present,
+// this uses set() for the WHOLE doc rather than update() for just a
+// dimensions patch, deliberately: update()'s deepMerge() would otherwise
+// splice a STALE lastRetro.dimensions entry from an older finished retro
+// into this one's, since both old and new values at that key are plain
+// objects -- a lastRetro snapshot must fully replace what was there, not
+// merge with it. sq.dimensions already holds this squad's full, current
+// rating set at this point (not just dimKeys), so writing it whole here
+// is safe and loses nothing.
 function persistDimensionRating(sq, dimKey){ persistDimensionRatings(sq, [dimKey]); }
 
-function persistDimensionRatings(sq, dimKeys){
+function persistDimensionRatings(sq, dimKeys, extraFields){
   if(!(state.live && state.db)) { diag("Persist skipped: not connected to live storage (state.live=" + state.live + ")"); return; }
   try{
-    var patch = { dimensions:{}, updatedAt: nowIso() };
-    dimKeys.forEach(function(k){ patch.dimensions[k] = sq.dimensions[k]; });
     diag("Writing squads/" + sq.id + " (" + dimKeys.length + " dim(s))...");
-    state.db.collection("squads").doc(sq.id).update(patch).then(function(){
+    var write = (extraFields && extraFields.lastRetro)
+      ? state.db.collection("squads").doc(sq.id).set(Object.assign({ name:sq.name, order:sq.order||0, dimensions:sq.dimensions, updatedAt: nowIso() }, extraFields))
+      : state.db.collection("squads").doc(sq.id).update((function(){
+          var patch = { dimensions:{}, updatedAt: nowIso() };
+          dimKeys.forEach(function(k){ patch.dimensions[k] = sq.dimensions[k]; });
+          return patch;
+        })());
+    write.then(function(){
       diag("Write CONFIRMED for squads/" + sq.id);
     }).catch(function(err){
       diag("Write REJECTED for squads/" + sq.id + ": " + (err && err.code ? err.code : String(err)) + (err && err.message ? " - " + err.message : ""));
       if(err && err.code==="invalid_argument"){
         // document might not exist yet (rare race) -- create it whole
-        state.db.collection("squads").doc(sq.id).set(Object.assign({name:sq.name, order:sq.order||0}, {dimensions:sq.dimensions}))
+        state.db.collection("squads").doc(sq.id).set(Object.assign({name:sq.name, order:sq.order||0}, {dimensions:sq.dimensions}, extraFields || {}))
           .then(function(){ diag("Fallback set() succeeded for squads/" + sq.id); })
           .catch(function(err2){ diag("Fallback set() ALSO failed for squads/" + sq.id + ": " + (err2 && err2.code ? err2.code : String(err2))); });
       }
