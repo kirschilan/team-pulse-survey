@@ -3,14 +3,17 @@
 const js = require("@eslint/js");
 
 // See STATUS.md's "ESLint" note for why the three file groups below get
-// different `sourceType`/globals treatment: public/js/*.js are classic
-// <script> files sharing one global scope on purpose (see STATUS.md's "The
-// app's file layout" -- Chromium blocks cross-file `import` over `file://`,
-// which both the Playwright suite and the "open index.html directly"
-// workflow depend on), so ESLint -- which lints one file at a time -- can't
-// see a sibling file's function/var declarations. relay/, scripts/, and
-// tests/unit/ are ordinary Node CommonJS files with no such split, so they
-// keep the full `no-undef` check.
+// different `sourceType`/globals treatment: public/js/**/*.js (including
+// public/js/locales/*.js -- a PR #42 review finding: a plain public/js/*.js
+// glob doesn't cross the locales/ subdirectory boundary, so en.js/he.js were
+// silently never linted at all) are classic <script> files sharing one
+// global scope on purpose (see STATUS.md's "The app's file layout" --
+// Chromium blocks cross-file `import` over `file://`, which both the
+// Playwright suite and the "open index.html directly" workflow depend on),
+// so ESLint -- which lints one file at a time -- can't see a sibling file's
+// function/var declarations. relay/, scripts/, and tests/unit/ are ordinary
+// Node CommonJS files with no such split, so they keep the full `no-undef`
+// check.
 
 const browserGlobals = {
   window: "writable",
@@ -66,10 +69,19 @@ module.exports = [
       "relay/node_modules/**",
       "public/relay-config.js",
       "public/_test_*",
+      // Makefile's `make setup` creates this project-local Python venv,
+      // which vendors Playwright's own JS driver -- discovered without
+      // this ignore because ESLint (confirmed via `--print-config`) still
+      // parses a file that matches no `files` pattern above, applying an
+      // empty ruleset plus its default `reportUnusedDisableDirectives`,
+      // which then errors on that vendored file's own inline
+      // `@typescript-eslint/...` disable comments (a plugin this config
+      // never loads).
+      ".venv/**",
     ],
   },
   {
-    files: ["public/*.js", "public/js/*.js"],
+    files: ["public/*.js", "public/js/**/*.js"],
     languageOptions: {
       ecmaVersion: 2019,
       sourceType: "script",
