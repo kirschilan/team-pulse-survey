@@ -16,6 +16,11 @@ __pycache__/
 # Node (once the relay lands)
 node_modules/
 
+# Root Makefile's `make setup` target (REF-10) creates this project-local
+# virtualenv so pip installs work regardless of the host's Python packaging
+# policy (see the Makefile's own comment) -- never something to commit.
+/.venv/
+
 # relay/storage/file-adapter.js's default RELAY_DATA_DIR -- only exists
 # locally when RELAY_STORAGE=file is opted into; never something to commit.
 relay/data/
