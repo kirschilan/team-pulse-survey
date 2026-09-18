@@ -604,8 +604,16 @@ function bindSessionCardEvents(sq){
     // to be, and never gets papered over with a stale "Saved".
     saveExperimentNote(sess.id, text).then(function(){
       savedExperimentNoteFor[sess.id] = text;
+      // Codex review (PR #35, second pass): a save's own completion doesn't
+      // mean the box still shows what it just saved -- the facilitator can
+      // (and did, in the reported repro) type something newer while this
+      // exact write was still in flight. Only claim "Saved" if the box's
+      // CURRENT value still matches the text this completion actually
+      // persisted; otherwise leave it exactly as the `input` listener
+      // above already left it for the now-newer, unsaved text.
+      var currentBox = document.getElementById("experimentNoteBox");
       var hint = document.getElementById("expNoteSavedHint");
-      if(hint) hint.hidden = false;
+      if(hint) hint.hidden = !currentBox || currentBox.value !== text;
     }).catch(function(){
       noteSaveFailedFor[sess.id] = true;
       var errHint2 = document.getElementById("expNoteSaveErrorHint");

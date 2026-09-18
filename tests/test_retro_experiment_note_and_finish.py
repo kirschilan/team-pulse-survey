@@ -203,6 +203,75 @@ with sync_playwright() as p:
     assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == False
     assert page.eval_on_selector('#expNoteSaveErrorHint', 'el => el.hidden') == True
 
+    print("=== Codex review (PR #35, second pass): 'Saved' must not appear over newer, unsaved edits ===")
+    # Hold the next sessions/<id>.update() call pending (never resolving on
+    # its own) instead of letting it complete immediately, so a real edit can
+    # land in the window between "save clicked" and "save acknowledged" --
+    # exactly the sequence Codex reproduced: save A, edit to B before A's
+    # write completes, then A's write lands. Applies the patch directly to
+    # the fake store on resolution WITHOUT calling notify()/notifyDoc() --
+    # a real notify() would fire the sessions listener and re-render the
+    # whole card, which would (separately, and correctly per this file's
+    # own "Saved" fix) reset the textarea to the just-persisted value and
+    # mask the exact race this scenario exists to isolate: the completion
+    # handler's own check of the box's CURRENT value, independent of
+    # whether a re-render happens to intervene.
+    page.evaluate("""
+      (function(){
+        var origCollection = state.db.collection.bind(state.db);
+        state.db.collection = function(name){
+          var c = origCollection(name);
+          if(name !== "sessions") return c;
+          var origDoc = c.doc.bind(c);
+          c.doc = function(id){
+            var d = origDoc(id);
+            d.update = function(patch){
+              state.db.collection = origCollection; // one-shot control
+              return new Promise(function(resolve){
+                window.__pendingSaveResolve = function(){
+                  Object.assign(window.__FAKE_STORE__[d.path], patch);
+                  resolve();
+                };
+              });
+            };
+            return d;
+          };
+          return c;
+        };
+      })();
+    """)
+    first_text = "First saved text."
+    second_text = "Second unsaved text"
+    page.fill('#experimentNoteBox', first_text)
+    page.click('#saveExperimentNoteBtn')
+    # the write is deliberately stuck pending -- edit again before it lands
+    page.fill('#experimentNoteBox', second_text)
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == True
+    # let the first save actually complete now
+    page.evaluate("window.__pendingSaveResolve()")
+    page.wait_for_function(
+      "([sid, expected]) => window.__FAKE_STORE__['sessions/' + sid] && window.__FAKE_STORE__['sessions/' + sid].experimentNote === expected",
+      arg=[sid, first_text],
+    )
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == True, \
+        "'Saved' must not appear over text that was never itself acknowledged as saved"
+    assert page.eval_on_selector('#experimentNoteBox', 'el => el.value') == second_text
+    # saving the still-unsaved text now must work normally
+    page.click('#saveExperimentNoteBtn')
+    page.wait_for_function(
+      "([sid, expected]) => window.__FAKE_STORE__['sessions/' + sid] && window.__FAKE_STORE__['sessions/' + sid].experimentNote === expected",
+      arg=[sid, second_text],
+    )
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == False
+    # restore the original note_text -- later assertions in this file check
+    # the finished retro's own lastRetro.experimentNote against note_text
+    page.fill('#experimentNoteBox', note_text)
+    page.click('#saveExperimentNoteBtn')
+    page.wait_for_function(
+      "([sid, expected]) => window.__FAKE_STORE__['sessions/' + sid] && window.__FAKE_STORE__['sessions/' + sid].experimentNote === expected",
+      arg=[sid, note_text],
+    )
+
     print("=== Story 9: 'Finish retro' with nothing submitted just closes, no squad changes ===")
     page.click('#finishSessionBtn')
     page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess

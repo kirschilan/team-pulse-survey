@@ -4406,3 +4406,24 @@ there are smaller, single-responsibility files to set real size/complexity limit
   mid-edit content loss. Full suite green: 180/180 unit tests, all 63 Playwright files including
   5 repeated clean runs of the changed test file (state.db monkeypatching is a new pattern in this
   file, checked for flakiness before calling it done).
+- 2026-09-18 — Codex review on PR #35, second pass (P2, fixed): "'Saved' can appear over newer,
+  unsaved edits." Reproduced exactly as reported: save "First saved text.", edit the box to
+  "Second unsaved text" before that write completes, then let the first write land -- the
+  completion handler's `.then()` unconditionally set `hint.hidden = false`, showing "Saved" over
+  text that was never itself acknowledged as persisted. Root cause: the handler recorded
+  `savedExperimentNoteFor[sess.id] = text` (the text it just confirmed saved) but then showed the
+  hint unconditionally, never re-checking whether the textarea's CURRENT value still matched that
+  same `text` by the time the promise resolved. Test-first: extended
+  `tests/test_retro_experiment_note_and_finish.py` with a scenario that holds a save's own
+  `update()` pending via a one-shot monkeypatch, edits the box again before releasing it, then
+  releases it and asserts "Saved" does NOT show over the newer text -- confirmed failing first
+  (reverted the fix locally and re-ran to verify the same assertion fails for the right reason).
+  The monkeypatch deliberately applies the resolved write directly to the fake store WITHOUT
+  calling `notify()`/`notifyDoc()`, unlike the first Codex-review fix's monkeypatch -- a real
+  `notify()` here would fire the sessions listener and re-render the whole card, which separately
+  (and correctly) resets the textarea to the just-persisted value, masking the exact race this
+  scenario exists to isolate. Fixed by checking `document.getElementById("experimentNoteBox").value
+  !== text` before showing "Saved" in the `.then()` handler -- if the box has moved on, the hint
+  stays exactly as the `input` listener already left it for the newer, unsaved text, instead of
+  being overridden by the stale completion. Full suite green: 180/180 unit tests, all 64 Playwright
+  files, 5 repeated clean runs of the changed test file.
