@@ -331,6 +331,7 @@ var LOCALE_EN = {
   "retro.reveal.ariaLabel": "Reveal mode",
   "retro.reveal.hold": "Hold results",
   "retro.reveal.live": "Show live",
+  "retro.pacing.currentQuestionLabel": "Current question",
   "retro.pacing.counter": "Question {current} of {total}",
   "retro.pacing.prevButton": "◀ Previous",
   "retro.pacing.nextButton": "Next ▶",
