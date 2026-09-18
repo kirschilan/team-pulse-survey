@@ -6,7 +6,7 @@
 # with. Not wired into .github/workflows/tests.yml yet (see REF-10's own
 # acceptance criteria in STATUS.md: ship this first, wire CI to it once
 # proven locally, as a separate follow-up).
-.PHONY: help setup check unit relay browser test
+.PHONY: help setup check lint unit relay browser test
 
 # Codex review on PR #33: `python3 -m pip install` straight into whatever
 # python3 happens to be on PATH fails with `externally-managed-environment`
@@ -26,22 +26,31 @@ VENV_BIN := $(VENV)/bin
 
 help:
 	@echo "Targets:"
-	@echo "  make setup    - create a project virtualenv ($(VENV)) and install everything needed (Python/Playwright + relay deps)"
+	@echo "  make setup    - create a project virtualenv ($(VENV)) and install everything needed (Python/Playwright + relay + root lint deps)"
 	@echo "  make check    - fast sanity check that setup actually worked, no tests run"
+	@echo "  make lint     - ESLint over the whole repo (CI runs this too -- see .github/workflows/tests.yml)"
 	@echo "  make unit     - frontend unit tests (tests/unit/*.js)"
 	@echo "  make relay    - the relay's own protocol tests"
 	@echo "  make browser  - the full Playwright suite (tests/run_all.sh), using the venv's python"
-	@echo "  make test     - everything above: unit + relay + browser"
+	@echo "  make test     - everything above: lint + unit + relay + browser"
 
 # Otherwise matches tests/README.md's own "Setup" section -- the pinned
 # tests/requirements.txt is what keeps every environment on the same
 # Chromium build (see that file's own header comment for why this
 # mattered as a real, not hypothetical, incident).
+#
+# Codex review on PR #42: this target (and `test` below) predated ESLint
+# (REF-13) and was never updated when it landed -- `make setup`/`make test`
+# silently gave a false sense of full local validation while missing lint
+# entirely. Root `npm ci` (package.json/package-lock.json, ESLint's own
+# deps) added here; `lint` added as its own target and to `test`'s
+# dependency list below.
 setup:
 	python3 -m venv $(VENV)
 	$(VENV_BIN)/python3 -m pip install -r tests/requirements.txt
 	$(VENV_BIN)/python3 -m playwright install --with-deps chromium
 	cd relay && npm ci
+	npm ci
 
 # Fast (no network, no browser launch) verification that `make setup`
 # actually left this checkout ready -- the same two guard checks
@@ -51,6 +60,10 @@ setup:
 check:
 	@test -x $(VENV_BIN)/python3 && $(VENV_BIN)/python3 -c 'import playwright' >/dev/null 2>&1 && echo "OK: playwright importable" || (echo "MISSING: playwright -- run 'make setup'" >&2; exit 1)
 	@test -f relay/node_modules/ws/package.json && echo "OK: relay dependencies installed" || (echo "MISSING: relay/node_modules -- run 'make setup'" >&2; exit 1)
+	@test -f node_modules/eslint/package.json && echo "OK: lint dependencies installed" || (echo "MISSING: node_modules -- run 'make setup'" >&2; exit 1)
+
+lint:
+	npm run lint
 
 unit:
 	node --test tests/unit/test_*.js
@@ -61,4 +74,4 @@ relay:
 browser:
 	PATH="$(VENV_BIN):$$PATH" tests/run_all.sh
 
-test: unit relay browser
+test: lint unit relay browser
