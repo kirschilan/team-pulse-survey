@@ -68,13 +68,28 @@ function coFacilitateSessionByCode(secret){
   });
 }
 
-function startSession(sq, pacingEnabled){
+function startSession(sq, pacingEnabled, excludedDimKeys){
   // snapshot dimensions the same way saveCurrentAsTemplate()/loadTemplate()
   // do, carrying statements/scoreBands/strategies (and any Hebrew
   // translation the dimension has -- see state.js's localizedDimText())
   // along so the retro flow can render this session correctly translated
   // (Story 11 / the retro-statement-translation follow-up).
-  var dimsSnapshot = sortedDimensions().map(function(d){
+  //
+  // RETRO-3: a facilitator can exclude specific dimensions from THIS retro
+  // only (the "no session" card's checklist below) -- a one-off skip, never
+  // a template edit. Filtering them out of the snapshot right here, before
+  // it's ever written to the session doc, is what makes every downstream
+  // consumer (the join survey in retro-join.js, pacingSequence(), the live
+  // tally, finishRetroAndApply()) correctly skip an excluded dimension with
+  // ZERO changes of their own -- none of them know or care that a
+  // dimension was excluded, they just never see it, because it was never in
+  // sess.dimensions to begin with. Deliberately whole-dimension only, not
+  // per-statement: a statement dimension's scoreBands are calibrated
+  // against summing ALL of its statements, so dropping only some of them
+  // would silently shift what "good"/"warn"/"crit" mean.
+  var excluded = {};
+  (excludedDimKeys||[]).forEach(function(k){ excluded[k] = true; });
+  var dimsSnapshot = sortedDimensions().filter(function(d){ return !excluded[d.key]; }).map(function(d){
     var spec = { key:d.key, label:d.label, green:d.green||"", red:d.red||"", order:d.order||0 };
     if(isStatementDimension(d)) spec.statements = d.statements;
     if(d.scoreBands) spec.scoreBands = d.scoreBands;
@@ -151,6 +166,22 @@ function closeSession(sessionId){
 function renderSessionCardHtml(sq){
   var sess = openSessionForSquad(sq.id);
   if(!sess){
+    // RETRO-3: one checkbox per board dimension, checked (included) by
+    // default -- unchecking one excludes it from THIS session only (see
+    // startSession()'s own comment). No change listener re-renders this
+    // card on toggle (bindSessionCardEvents() below wires a plain `change`
+    // listener that flips #startSessionBtn's disabled attribute and
+    // #dimSelectHint's hidden attribute directly instead) -- a re-render
+    // here would rebuild every checkbox back to its default checked state,
+    // silently discarding whatever the facilitator had just unchecked,
+    // exactly the same reason #pacingToggle above has no listener of its
+    // own either.
+    var dimChecklistHtml = sortedDimensions().map(function(d){
+      return '<label class="check-row" style="display:flex;align-items:center;gap:8px;margin:0 0 6px;">' +
+        '<input type="checkbox" class="dim-include-checkbox" data-dim-key="'+esc(d.key)+'" checked>' +
+        '<span dir="auto">'+esc(localizedDimText(d, "label"))+'</span>' +
+      '</label>';
+    }).join("");
     return '<div class="card session-card">' +
       '<h2>'+esc(t("retro.noSession.heading"))+'</h2>' +
       '<p class="hint">'+esc(t("retro.noSession.hint", {templateName: state.config.activeTemplateName||"Custom"}))+'</p>' +
@@ -159,6 +190,14 @@ function renderSessionCardHtml(sq){
         '<span dir="auto">'+esc(t("retro.startOptions.pacingLabel"))+'</span>' +
       '</label>' +
       '<p class="hint" style="margin:-6px 0 12px;">'+esc(t("retro.startOptions.pacingHint"))+'</p>' +
+      '<details class="legend" style="margin:0 0 12px;">' +
+        '<summary><span>'+esc(t("retro.startOptions.dimensionsSummary"))+'</span> <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>' +
+        '<div style="padding:0 4px 10px;">' +
+          '<p class="hint" style="margin:0 0 8px;">'+esc(t("retro.startOptions.dimensionsHint"))+'</p>' +
+          dimChecklistHtml +
+          '<p class="hint" id="dimSelectHint" style="margin:6px 0 0;" hidden>'+esc(t("retro.startOptions.noDimensionsHint"))+'</p>' +
+        '</div>' +
+      '</details>' +
       '<button class="btn primary" id="startSessionBtn" type="button">'+esc(t("retro.startButton"))+'</button>' +
     '</div>';
   }
@@ -339,13 +378,31 @@ function bindSessionCardEvents(sq){
   var startBtn = document.getElementById("startSessionBtn");
   if(startBtn){
     if(startingSessionFor[sq.id]){ startBtn.disabled = true; startBtn.textContent = "Starting…"; }
+    // RETRO-3: a plain `change` listener per checkbox, not a re-render --
+    // see renderSessionCardHtml()'s own comment on why. Runs once up front
+    // too, so a board with every dimension pre-excluded by some future
+    // caller (none exist today; every checkbox starts checked) doesn't show
+    // a momentarily-enabled Start button before the first toggle.
+    var dimCheckboxes = document.querySelectorAll(".dim-include-checkbox");
+    if(dimCheckboxes.length){
+      var updateDimSelectionValidity = function(){
+        var anyChecked = Array.prototype.some.call(dimCheckboxes, function(cb){ return cb.checked; });
+        startBtn.disabled = !anyChecked || !!startingSessionFor[sq.id];
+        var hint = document.getElementById("dimSelectHint");
+        if(hint) hint.hidden = anyChecked;
+      };
+      dimCheckboxes.forEach(function(cb){ cb.addEventListener("change", updateDimSelectionValidity); });
+      updateDimSelectionValidity();
+    }
     startBtn.addEventListener("click", function(){
-      if(startingSessionFor[sq.id]) return;
+      if(startingSessionFor[sq.id] || startBtn.disabled) return;
       startingSessionFor[sq.id] = true;
       startBtn.disabled = true;
       startBtn.textContent = t("retro.startingButton");
       var pacingToggle = document.getElementById("pacingToggle");
-      startSession(sq, pacingToggle && pacingToggle.checked).then(function(){
+      var excludedDimKeys = Array.prototype.filter.call(dimCheckboxes, function(cb){ return !cb.checked; })
+        .map(function(cb){ return cb.getAttribute("data-dim-key"); });
+      startSession(sq, pacingToggle && pacingToggle.checked, excludedDimKeys).then(function(){
         delete startingSessionFor[sq.id];
       }).catch(function(err){
         delete startingSessionFor[sq.id];
