@@ -4329,3 +4329,38 @@ there are smaller, single-responsibility files to set real size/complexity limit
   shows, plus a plain `input` listener on the textarea that hides it the moment the box's value
   diverges from what's saved. Removed the old timer entirely. Full suite green for both fixes:
   180/180 unit tests, relay's own suite, all 63 Playwright files.
+- 2026-09-18 — Codex review on PR #35 (P2, fixed): "'Saved' remains visible even when saving
+  fails." The sprint-experiment note's Save button called `saveExperimentNote()` and immediately
+  marked the note "saved" (`savedExperimentNoteFor[sess.id] = text`, hint shown) without ever
+  awaiting the write's own promise -- reproduced by Codex with a rejected write: "Saved" showed,
+  and the new text was recorded as saved, while the persisted note stayed empty. Root cause was
+  two-fold: (1) the click handler didn't return/await anything from `saveExperimentNote()`, and
+  (2) `saveExperimentNote()` itself swallowed the error (`diag()`-logged it, then let the `.catch()`
+  resolve normally) so even an awaiting caller couldn't have told success from failure. Test-first,
+  on `retro-2-followup-po-review` (same branch/PR as the fix above, per the "one PR per backlog
+  item" convention -- this is a review finding on that PR's own diff, not a new backlog item):
+  extended `tests/test_retro_experiment_note_and_finish.py` with a failing scenario that
+  monkeypatches `state.db.collection("sessions").doc(id).update` to reject exactly once (not by
+  deleting the doc from the fake store, which would also drop the session from the sessions
+  listener's own snapshot and conflate "the write failed" with "the session disappeared") and
+  asserts the failure is never shown as "Saved". Fixed by (1) having `saveExperimentNote()` return
+  `liveOr(...)`'s result and `throw err` inside the live branch's `.catch()` instead of swallowing
+  it (matching `startSession()`'s existing return-both-branches shape), and (2) having the click
+  handler `.then()`/`.catch()` the returned promise -- only recording `savedExperimentNoteFor` and
+  showing "Saved" on success, and adding a new failure hint (`#expNoteSaveErrorHint`,
+  `retro.experiment.saveFailed` in en.js/he.js, styled via a new `.hint.error` class using the
+  existing `--crit` token) on rejection. The failure hint's visibility is driven by a new
+  `noteSaveFailedFor` (session-keyed, read at render time) rather than hardcoded `hidden` in the
+  markup, for the same reason `savedExperimentNoteFor` already is -- otherwise it would vanish on
+  the next unrelated re-render, the exact bug class this same file's "Saved" fix (above) exists to
+  prevent. Deliberately NOT fixed here: an unrelated re-render while the textarea holds unsaved,
+  un-persisted text (e.g. after a failed save, before a successful retry) still resets the
+  textarea's displayed value to the last-persisted server value, since the whole card is rebuilt
+  from `sess.experimentNote` on every re-render -- a separate, pre-existing "state lost on
+  re-render" gap (the same one this session earlier declined to fix while addressing the PO's
+  original "Saved" complaint) that would need the textarea's live, in-progress value tracked
+  outside the DOM the same way `savedExperimentNoteFor`/`noteSaveFailedFor` already track the hint
+  state; out of scope for this specific Codex finding, which is about the save outcome, not
+  mid-edit content loss. Full suite green: 180/180 unit tests, all 63 Playwright files including
+  5 repeated clean runs of the changed test file (state.db monkeypatching is a new pattern in this
+  file, checked for flakiness before calling it done).

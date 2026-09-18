@@ -307,12 +307,14 @@ function renderSessionCardHtml(sq){
   // differs from what's actually saved.
   if(!(sess.id in savedExperimentNoteFor)) savedExperimentNoteFor[sess.id] = noteVal;
   var noteIsSaved = noteVal !== "" && savedExperimentNoteFor[sess.id] === noteVal;
+  var noteSaveFailed = !!noteSaveFailedFor[sess.id];
   var experimentHtml =
     '<div class="field-label" style="margin-top:14px;">'+esc(t("retro.experiment.heading"))+'</div>' +
     '<p class="hint" style="margin:0 0 8px;">'+esc(t("retro.experiment.hint"))+'</p>' +
     '<textarea class="note" id="experimentNoteBox" placeholder="'+esc(t("retro.experiment.placeholder"))+'" dir="auto">'+esc(noteVal)+'</textarea>' +
     '<div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:6px;">' +
       '<span class="hint" id="expNoteSavedHint" style="margin:0;"'+(noteIsSaved?"":" hidden")+'>'+esc(t("retro.experiment.saved"))+'</span>' +
+      '<span class="hint error" id="expNoteSaveErrorHint" style="margin:0;"'+(noteSaveFailed?"":" hidden")+'>'+esc(t("retro.experiment.saveFailed"))+'</span>' +
       '<button class="btn" id="saveExperimentNoteBtn" type="button">'+esc(t("retro.experiment.saveButton"))+'</button>' +
     '</div>';
   var finishHtml = activeDims.length
@@ -384,6 +386,14 @@ var startingSessionFor = {};
 // same "state change re-renders this card" problem startingSessionFor
 // above solves, applied to the sprint-experiment note's save confirmation).
 var savedExperimentNoteFor = {};
+
+// Codex review (PR #35): { [sessionId]: true } for a device whose most
+// recent save attempt was rejected, read by renderSessionCardHtml() the
+// same way savedExperimentNoteFor is -- otherwise the failure hint would
+// be hardcoded `hidden` in the markup again and vanish on the very next
+// unrelated re-render, the exact bug class this file already fixed once
+// for "Saved" itself.
+var noteSaveFailedFor = {};
 
 function bindSessionCardEvents(sq){
   var startBtn = document.getElementById("startSessionBtn");
@@ -496,10 +506,27 @@ function bindSessionCardEvents(sq){
     var box = document.getElementById("experimentNoteBox");
     if(!sess || !box) return;
     var text = box.value.trim();
-    saveExperimentNote(sess.id, text);
-    savedExperimentNoteFor[sess.id] = text;
-    var hint = document.getElementById("expNoteSavedHint");
-    if(hint) hint.hidden = false;
+    delete noteSaveFailedFor[sess.id];
+    var errHint = document.getElementById("expNoteSaveErrorHint");
+    if(errHint) errHint.hidden = true;
+    // Codex review (PR #35): the "Saved" hint used to be shown -- and
+    // savedExperimentNoteFor recorded -- immediately on click, without
+    // ever waiting to see whether the write actually landed. Await the
+    // save's own promise and only claim "saved" once it resolves; a
+    // rejected write (relay down, a stale/missing session doc) instead
+    // records the failure in noteSaveFailedFor (read at render time, same
+    // pattern as savedExperimentNoteFor) so the failure hint survives an
+    // unrelated re-render instead of being wiped like "Saved" itself used
+    // to be, and never gets papered over with a stale "Saved".
+    saveExperimentNote(sess.id, text).then(function(){
+      savedExperimentNoteFor[sess.id] = text;
+      var hint = document.getElementById("expNoteSavedHint");
+      if(hint) hint.hidden = false;
+    }).catch(function(){
+      noteSaveFailedFor[sess.id] = true;
+      var errHint2 = document.getElementById("expNoteSaveErrorHint");
+      if(errHint2) errHint2.hidden = false;
+    });
   });
 
   var finishBtn = document.getElementById("finishSessionBtn");
@@ -627,13 +654,20 @@ function openSessionOverrideEditor(sess, dimKey){
 // remote change, which would otherwise yank focus out of the textarea
 // while someone's still typing.
 function saveExperimentNote(sessionId, text){
-  liveOr(function(){
+  // Returns the write's own promise -- rejecting, not swallowing, on
+  // failure -- so the caller (the Save button's click handler) can tell a
+  // real persisted save from one that never landed. See Codex's PR #35
+  // review: this used to catch-and-log only, which meant the promise
+  // always resolved and the caller had no way to know the write failed.
+  return liveOr(function(){
     return state.db.collection("sessions").doc(sessionId).update({ experimentNote: text }).catch(function(err){
       diag("Save experiment note failed: " + (err && err.code ? err.code : String(err)));
+      throw err;
     });
   }, function(){
     var sess = state.sessions.filter(function(s){ return s.id===sessionId; })[0];
     if(sess) sess.experimentNote = text;
+    return Promise.resolve();
   });
 }
 

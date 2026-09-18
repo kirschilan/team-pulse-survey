@@ -87,6 +87,7 @@
   .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px 18px 16px; box-shadow:var(--shadow); }
   .card h2{ font-size:15px; font-weight:700; }
   .card .hint{ font-size:12.5px; color:var(--text-muted); margin-top:3px; margin-bottom:14px; }
+  .hint.error{ color:var(--crit); }
 
   .rank-row{ display:grid; grid-template-columns:20px 1fr auto; align-items:center; gap:10px; padding:7px 0; border-top:1px solid var(--border); }
   .rank-row:first-of-type{ border-top:none; }
