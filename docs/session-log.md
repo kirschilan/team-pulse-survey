@@ -3521,3 +3521,57 @@ back in `STATUS.md`.
   event, e.g. "see STATUS.md's session log for the incident") untouched, same precedent as the
   original pass. Docs-only change; fast unit suite re-run as a sanity check (180/180). No comments
   posted to GitHub (relayed via chat, no PR review thread existed to reply on).
+- 2026-09-18 — REF-12 (STATUS.md's "Repository / tooling improvements" backlog): investigation pass,
+  picked up after the user explicitly said to. This row is explicitly scoped as investigation-only --
+  "no code should land under this ID without a follow-up decision recorded first" -- so this pass
+  produced a recorded decision, not an implementation. Read `tests/fixtures/build_page.py` in full:
+  it's the sole shared writer of generated `_test_*.html`/`.js` files into `public/`, and its own
+  header comment already explains why (relative asset links to `styles.css`/`vendor/qrcode.js`/
+  `app.js` must resolve exactly as they do in production, and the suite runs over `file://`).
+  Measured the actual blast radius instead of estimating it, since the row itself flagged
+  "potentially every Playwright test file's page-load call" as an open risk: of 64 test files, 58
+  call `build_page()`/`write_plain_index()`/`build_custom_page()` with no direct `PUBLIC_DIR` write
+  of their own, and only ever consume the helper's own returned, already-resolved `Path` for their
+  `page.goto("file://"+...)` call -- zero changes needed there (a further correction below fixed
+  this from an initial, less precise "60" that double-counted 2 files that both call the shared
+  helper AND separately touch `PUBLIC_DIR` on their own). Found 4 more files carrying their OWN
+  duplicated `PUBLIC_DIR`/`out_path` write logic
+  instead of calling the shared helper (`test_backend_contract_parity.py` twice,
+  `test_relay_error_handling.py`, `test_relay_legacy_known_codes.py`,
+  `test_relay_write_acknowledgment.py`) -- these would need the same relocation treatment. Also found
+  `test_join_link_secret_not_in_http_request.py` already runs a real local HTTP server rooted at
+  `PUBLIC_DIR` (added for an unrelated SEC/Codex PR #14 finding, to prove a secret never reaches a
+  server's access log at the request level) -- useful precedent, but it still writes its own file
+  straight into `public/` today, and its `base_url` construction uses `out.name` alone, which would
+  need to become `out.relative_to(PUBLIC_DIR)` once the file moves into a subdirectory.
+  (2026-09-18 correction, Codex review of this PR: a 7th file, `test_relay_config_injection.py`, was
+  initially missed because it builds its output path inline -- `REPO_ROOT / "public" /
+  "_test_relay_config_injection.html"` -- rather than through a named `PUBLIC_DIR` variable, so the
+  grep pattern used to find the other 4 duplicated-write-logic files didn't catch it. It also has its
+  own relative script URLs (`src="relay-config.js"`, `src="vendor/qrcode.js"`, extracted straight out
+  of `index.html`) that would need the same `../`-prefix treatment. It does call `harness_path.
+  unlink()` after a successful run, but that line is never reached if an assertion inside the harness
+  fails -- exactly the case where a developer would most want the file still there to look at -- so it
+  is not a safe exclusion and was added to the inventory rather than carved out as an exception.)
+  Total measured blast radius: 7 code files, not "every Playwright test file's page-load call."
+  Evaluated the row's
+  two named alternatives: a `public/_test/` subdirectory, or switching every test's transport to a
+  local HTTP server. Rejected the HTTP-server option -- the existing precedent above shows it doesn't
+  even address the stated problem (files still land in `public/` either way) and would touch far more
+  call sites for no corresponding benefit, while the row's own acceptance criteria prefers keeping
+  `file://` unless a replacement is proven equivalent. For the subdirectory option, proved (rather
+  than assumed) its two riskiest acceptance criteria with a real throwaway Playwright smoke test:
+  built `public/_test_ref12_spike/index.html` one level below `public/`, referencing `../styles.css`
+  and `../vendor/qrcode.js`, with the app's real CSP meta tag (`script-src 'self'`) copied in verbatim.
+  Loaded it over `file://`: zero console or page errors, all 4 resource requests (the page itself,
+  `styles.css`, `vendor/qrcode.js`, a sibling script) returned 200, and
+  `getComputedStyle(document.body).fontFamily` matched `styles.css`'s own rule -- confirming the
+  stylesheet was actually APPLIED, not just fetched (a naive `document.styleSheets[...].cssRules`
+  check falsely suggested otherwise, blocked by a `file://` cross-origin-style restriction on reading
+  rules back, unrelated to whether they'd been applied -- caught by cross-checking against a real
+  computed style instead of trusting that one signal). Deleted the spike directory immediately after
+  the check; `git status` confirmed no residue. Recorded the recommendation (adopt `public/_test/`,
+  reject the HTTP server, the measured 6-file list above as next-pass scope) in this row's own Status
+  and Dependencies/blast-radius columns in `STATUS.md`. Docs-only change; no `public/js/*.js`/
+  `local-store.js`/`relay/*.js` touched and no code landed under this ID, per its own scoping, so no
+  new automated test applies -- ran the fast unit suite as a sanity check anyway (180/180).
