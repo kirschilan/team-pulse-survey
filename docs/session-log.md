@@ -3529,10 +3529,13 @@ back in `STATUS.md`.
   header comment already explains why (relative asset links to `styles.css`/`vendor/qrcode.js`/
   `app.js` must resolve exactly as they do in production, and the suite runs over `file://`).
   Measured the actual blast radius instead of estimating it, since the row itself flagged
-  "potentially every Playwright test file's page-load call" as an open risk: of 64 test files, 60
-  call `build_page()`/`write_plain_index()`/`build_custom_page()` and only ever consume the helper's
-  own returned, already-resolved `Path` for their `page.goto("file://"+...)` call -- zero changes
-  needed there. Found 5 more files carrying their OWN duplicated `PUBLIC_DIR`/`out_path` write logic
+  "potentially every Playwright test file's page-load call" as an open risk: of 64 test files, 58
+  call `build_page()`/`write_plain_index()`/`build_custom_page()` with no direct `PUBLIC_DIR` write
+  of their own, and only ever consume the helper's own returned, already-resolved `Path` for their
+  `page.goto("file://"+...)` call -- zero changes needed there (a further correction below fixed
+  this from an initial, less precise "60" that double-counted 2 files that both call the shared
+  helper AND separately touch `PUBLIC_DIR` on their own). Found 4 more files carrying their OWN
+  duplicated `PUBLIC_DIR`/`out_path` write logic
   instead of calling the shared helper (`test_backend_contract_parity.py` twice,
   `test_relay_error_handling.py`, `test_relay_legacy_known_codes.py`,
   `test_relay_write_acknowledgment.py`) -- these would need the same relocation treatment. Also found
@@ -3540,8 +3543,18 @@ back in `STATUS.md`.
   `PUBLIC_DIR` (added for an unrelated SEC/Codex PR #14 finding, to prove a secret never reaches a
   server's access log at the request level) -- useful precedent, but it still writes its own file
   straight into `public/` today, and its `base_url` construction uses `out.name` alone, which would
-  need to become `out.relative_to(PUBLIC_DIR)` once the file moves into a subdirectory. Total measured
-  blast radius: 6 code files, not "every Playwright test file's page-load call." Evaluated the row's
+  need to become `out.relative_to(PUBLIC_DIR)` once the file moves into a subdirectory.
+  (2026-09-18 correction, Codex review of this PR: a 7th file, `test_relay_config_injection.py`, was
+  initially missed because it builds its output path inline -- `REPO_ROOT / "public" /
+  "_test_relay_config_injection.html"` -- rather than through a named `PUBLIC_DIR` variable, so the
+  grep pattern used to find the other 4 duplicated-write-logic files didn't catch it. It also has its
+  own relative script URLs (`src="relay-config.js"`, `src="vendor/qrcode.js"`, extracted straight out
+  of `index.html`) that would need the same `../`-prefix treatment. It does call `harness_path.
+  unlink()` after a successful run, but that line is never reached if an assertion inside the harness
+  fails -- exactly the case where a developer would most want the file still there to look at -- so it
+  is not a safe exclusion and was added to the inventory rather than carved out as an exception.)
+  Total measured blast radius: 7 code files, not "every Playwright test file's page-load call."
+  Evaluated the row's
   two named alternatives: a `public/_test/` subdirectory, or switching every test's transport to a
   local HTTP server. Rejected the HTTP-server option -- the existing precedent above shows it doesn't
   even address the stated problem (files still land in `public/` either way) and would touch far more
