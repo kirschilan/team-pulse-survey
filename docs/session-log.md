@@ -3868,7 +3868,7 @@ back in `STATUS.md`.
   this, `6a0955d` actually resolved to `success` at 21:13:03 UTC** (matching vercel-status.com's own
   "Monitoring -- a fix has been implemented" update, itself posted at 21:13 UTC, with the incident
   fully "Resolved" at 21:22 UTC); `cf0052d` got a `pending` status posted later, at 21:30:56 UTC,
-  and was still showing `pending` as of this correction (2026-09-19) -- it's no longer the branch
+  and was still showing `pending` as of this correction (2026-09-18) -- it's no longer the branch
   tip, so it's unclear whether it will ever get a final status, and that's a live-data fact, not a
   permanent one, so don't treat either commit's state here as still current by the time you're
   reading this -- re-check live if it matters. It was a real Vercel platform incident ("Elevated
