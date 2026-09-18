@@ -61,6 +61,19 @@ with sync_playwright() as p:
     assert page.eval_on_selector('#startSessionBtn', 'el => el.disabled') is False
     assert page.eval_on_selector('#dimSelectHint', 'el => el.hidden') is True
 
+    print("=== Codex review on PR #34: a board snapshot (any dimensions change, from this device or a co-facilitator's) rebuilds this card -- the facilitator's in-progress exclusion must survive that, not silently reset to all-checked ===")
+    # window.__NOTIFY__() calls the fake store's notify() SYNCHRONOUSLY, same
+    # as every other test's use of it -- no wait needed before reading the
+    # DOM right after. This simulates exactly what db.js's real dimensions
+    # onSnapshot listener does on every remote dimensions change: call
+    # renderAll(), which rebuilds Squad view (and this card) from scratch.
+    page.evaluate("window.__NOTIFY__('dimensions')")
+    assert page.eval_on_selector('.dim-include-checkbox[data-dim-key="value"]', 'el => el.checked') is False, \
+        "excluding a dimension must survive an unrelated board re-render, not reset to checked"
+    assert page.eval_on_selector('.dim-include-checkbox[data-dim-key="release"]', 'el => el.checked') is True
+    assert page.eval_on_selector('.dim-include-checkbox[data-dim-key="process"]', 'el => el.checked') is True
+    assert page.eval_on_selector('#startSessionBtn', 'el => el.disabled') is False
+
     page.click('#startSessionBtn')
     page.wait_for_function("() => Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/')).length === 1")
 

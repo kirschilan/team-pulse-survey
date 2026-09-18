@@ -168,17 +168,20 @@ function renderSessionCardHtml(sq){
   if(!sess){
     // RETRO-3: one checkbox per board dimension, checked (included) by
     // default -- unchecking one excludes it from THIS session only (see
-    // startSession()'s own comment). No change listener re-renders this
-    // card on toggle (bindSessionCardEvents() below wires a plain `change`
-    // listener that flips #startSessionBtn's disabled attribute and
-    // #dimSelectHint's hidden attribute directly instead) -- a re-render
-    // here would rebuild every checkbox back to its default checked state,
-    // silently discarding whatever the facilitator had just unchecked,
-    // exactly the same reason #pacingToggle above has no listener of its
-    // own either.
+    // startSession()'s own comment). Checked state is restored from
+    // pendingDimExclusionsFor (below), not hardcoded to `checked` --
+    // Codex review on PR #34 found that state.dimensions changing AT ALL
+    // (even on an unrelated dimension, from this device or a
+    // co-facilitator's) fires db.js's own dimensions listener, which calls
+    // renderAll() and rebuilds this whole card from scratch; a plain
+    // unchecked checkbox on the OLD DOM node survives none of that, so
+    // without this the facilitator's exclusion silently reset to
+    // "everything included" on the very next unrelated board change.
+    var excludedDraft = pendingDimExclusionsFor[sq.id] || {};
     var dimChecklistHtml = sortedDimensions().map(function(d){
+      var checked = !excludedDraft[d.key];
       return '<label class="check-row" style="display:flex;align-items:center;gap:8px;margin:0 0 6px;">' +
-        '<input type="checkbox" class="dim-include-checkbox" data-dim-key="'+esc(d.key)+'" checked>' +
+        '<input type="checkbox" class="dim-include-checkbox" data-dim-key="'+esc(d.key)+'"'+(checked?' checked':'')+'>' +
         '<span dir="auto">'+esc(localizedDimText(d, "label"))+'</span>' +
       '</label>';
     }).join("");
@@ -374,6 +377,22 @@ function renderSessionCardHtml(sq){
 // (third, ninth...) concurrent attempt.
 var startingSessionFor = {};
 
+// RETRO-3: draft dimension-exclusion choices, kept OUTSIDE the DOM and
+// keyed by squad id -- exactly the reason startingSessionFor (above)
+// exists: state.dimensions changing at all (even a totally unrelated
+// dimension, from this device or a co-facilitator's) fires db.js's own
+// dimensions listener, which calls renderAll() and rebuilds this whole
+// card from scratch (Codex review on PR #34, reproduced: exclude a
+// dimension, trigger a board snapshot, and the checklist silently reset to
+// all-checked). A plain unchecked checkbox on the OLD DOM node survives
+// none of that; this object does, so renderSessionCardHtml() can restore
+// exactly what the facilitator chose instead of defaulting back to
+// "everything included." { [squadId]: { [dimKey]: true } } -- a key's mere
+// presence means "excluded"; absent/false means included, matching an
+// unchecked-by-default checklist needing no entries at all in the common
+// case where nothing's excluded.
+var pendingDimExclusionsFor = {};
+
 function bindSessionCardEvents(sq){
   var startBtn = document.getElementById("startSessionBtn");
   if(startBtn){
@@ -391,7 +410,14 @@ function bindSessionCardEvents(sq){
         var hint = document.getElementById("dimSelectHint");
         if(hint) hint.hidden = anyChecked;
       };
-      dimCheckboxes.forEach(function(cb){ cb.addEventListener("change", updateDimSelectionValidity); });
+      dimCheckboxes.forEach(function(cb){
+        cb.addEventListener("change", function(){
+          var draft = pendingDimExclusionsFor[sq.id] || (pendingDimExclusionsFor[sq.id] = {});
+          if(cb.checked) delete draft[cb.getAttribute("data-dim-key")];
+          else draft[cb.getAttribute("data-dim-key")] = true;
+          updateDimSelectionValidity();
+        });
+      });
       updateDimSelectionValidity();
     }
     startBtn.addEventListener("click", function(){
@@ -404,6 +430,7 @@ function bindSessionCardEvents(sq){
         .map(function(cb){ return cb.getAttribute("data-dim-key"); });
       startSession(sq, pacingToggle && pacingToggle.checked, excludedDimKeys).then(function(){
         delete startingSessionFor[sq.id];
+        delete pendingDimExclusionsFor[sq.id];
       }).catch(function(err){
         delete startingSessionFor[sq.id];
         startBtn.disabled = false;
