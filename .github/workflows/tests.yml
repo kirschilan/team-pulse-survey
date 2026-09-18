@@ -19,9 +19,15 @@ jobs:
         with:
           node-version: "22"
 
+      # REF-8 (STATUS.md's "Code quality & refactoring backlog"): `npm ci`,
+      # not `npm install` -- installs exactly what relay/package-lock.json
+      # pins and fails fast on a lockfile/package.json mismatch, instead of
+      # `npm install`'s more permissive dependency-graph resolution
+      # silently drifting from what's actually committed. See
+      # relay/README.md's own note on when to use which.
       - name: Install relay dependencies
         working-directory: relay
-        run: npm install
+        run: npm ci
 
       - name: Run relay's own protocol tests
         working-directory: relay
@@ -90,9 +96,11 @@ jobs:
           pip install -r tests/requirements.txt
           playwright install --with-deps chromium
 
+      # REF-8: same reasoning as the unit-and-relay job's own identical
+      # comment above -- npm ci, not npm install.
       - name: Install relay dependencies
         working-directory: relay
-        run: npm install
+        run: npm ci
 
       - name: Run this shard's Playwright files
         env:
