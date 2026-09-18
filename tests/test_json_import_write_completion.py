@@ -5,7 +5,7 @@ from fixtures.build_page import write_plain_index, test_output_path
 
 # REF-1 (STATUS.md's "Code quality & refactoring backlog"): JSON board
 # import's persistence writes (applySquadImportPlan()/
-# applyDimensionTemplateConfigImportPlan() in board-export-import.js) used
+# applyDimensionTemplateConfigImportPlan() in board-import-apply.js) used
 # to route through syncLiveIfConnected() -- fire-and-forget, no way for a
 # caller to await it. The import modal closed and the "JSON import
 # applied" diagnostic fired synchronously right after ISSUING the writes,
@@ -71,7 +71,7 @@ with sync_playwright() as p:
     page_a.click('#importJsonApplyBtn')
     # Real signal, not a guessed wait: the modal only becomes hidden once
     # the whole import (dimension creation + the rating that depends on
-    # it) has actually settled -- see board-export-import.js's Apply
+    # it) has actually settled -- see board-import-preview.js's Apply
     # handler.
     page_a.wait_for_selector('#importJsonBackdrop[hidden]', state="attached")
 
@@ -144,7 +144,7 @@ with sync_playwright() as p:
     print(diag_b)
     assert "failed" in diag_b, "the specific write failure must still be visible"
     # "JSON import applied (" is the squads/ratings plan's OWN success line
-    # (board-export-import.js's applySquadImportPlan()) -- distinct from the
+    # (board-import-apply.js's applySquadImportPlan()) -- distinct from the
     # legitimately-separate "JSON import applied to dimensions/templates/
     # board settings" line, which is allowed to still say success here since
     # the dimensions/templates/config part of THIS import genuinely had

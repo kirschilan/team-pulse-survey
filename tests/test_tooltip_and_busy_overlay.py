@@ -199,7 +199,7 @@ with sync_playwright() as p:
     new_squad_path = test_output_path("test_tooltip_busy_newsquad.json")
     new_squad_path.write_text(json.dumps(new_squad_json))
     page.set_input_files('#jsonFileInput', str(new_squad_path))
-    # board-export-import.js reads the file via FileReader (genuinely async)
+    # board-import-ui.js reads the file via FileReader (genuinely async)
     # -- wait for the real modal-open signal before clicking Apply, rather
     # than guess how long the read takes.
     page.wait_for_selector('#importJsonBackdrop:not([hidden])')

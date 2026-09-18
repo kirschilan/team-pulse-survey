@@ -121,7 +121,7 @@ var LOCALE_EN = {
   // Story 13 items 3a+3b: the JSON board import preview modal. One/Many key
   // pairs below follow templates.js's own templates.meta.dimensionsOne/Many
   // convention, since t() has no built-in pluralization and Hebrew's plural
-  // grammar isn't just an English "+s" either way -- see board-export-import.js's countKey().
+  // grammar isn't just an English "+s" either way -- see board-import-preview.js's countKey().
   "importJson.title": "Import board JSON",
   "importJson.hint": "Choose what to bring in from this file, and whether to merge it with what's already here or replace it.",
   "importJson.scopeLabel": "What to import",

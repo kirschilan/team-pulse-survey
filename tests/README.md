@@ -179,8 +179,8 @@ converted just to remove a sleep.
 Before adding a new Playwright test, check whether what it would prove is
 already fully covered by a `tests/unit/*.js` test on the same underlying
 pure function (see `docs/` and `tests/unit/README.md` — `helpers.js`'s
-consolidation/scoring math and `board-export-import.js`'s import-plan
-matching/validation logic are the two richest examples). A Playwright test
+consolidation/scoring math and `board-import-plan.js`'s/`board-import-validate.js`'s
+import-plan matching/validation logic are the two richest examples). A Playwright test
 earns its slower, real-browser cost by covering something a unit test
 structurally can't: real DOM rendering/interaction, `localStorage`, a real
 WebSocket, or `crypto.subtle`. A scenario whose ONLY assertions re-check

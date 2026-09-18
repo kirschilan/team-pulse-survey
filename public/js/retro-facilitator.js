@@ -517,7 +517,7 @@ function saveExperimentNote(sessionId, text){
 // otherwise lost the moment the session closes and its doc eventually
 // expires via the relay's room-empty grace period). This is what makes a
 // finished retro's own context -- not just its resulting ratings --
-// portable through JSON board export/import (board-export-import.js).
+// portable through JSON board export/import (board-export.js/board-import-*.js).
 function finishRetroAndApply(sq, sess, results){
   sq.dimensions = Object.assign({}, sq.dimensions);
   var patchedKeys = [];

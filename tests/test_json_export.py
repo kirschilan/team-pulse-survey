@@ -8,7 +8,7 @@ from fixtures.build_page import build_page
 # it names, item 1): a full-board JSON export. Proves the button exists and
 # is i18n-wired (English + Hebrew, same convention as every other Admin
 # panel control -- see test_admin_language_switch.py), and that a real click
-# produces real, parseable JSON with the shape board-export-import.js's
+# produces real, parseable JSON with the shape board-export.js's
 # buildBoardExport() is unit-tested against (tests/unit/test_json_export.js
 # covers that shape in detail; this only proves the UI is wired to it).
 
