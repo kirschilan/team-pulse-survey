@@ -3575,6 +3575,40 @@ back in `STATUS.md`.
   and Dependencies/blast-radius columns in `STATUS.md`. Docs-only change; no `public/js/*.js`/
   `local-store.js`/`relay/*.js` touched and no code landed under this ID, per its own scoping, so no
   new automated test applies -- ran the fast unit suite as a sanity check anyway (180/180).
+- 2026-09-18 -- Diagnosed the reported ~1.5-2s stall on the live Vercel deployment's initial load
+  using the browser's own `PerformanceNavigationTiming`/`PerformanceResourceTiming` entries
+  (fetched via a Playwright session pointed at the real deployed URL, latest code). Root cause:
+  `index.html`'s ~28 `<script src="...">` tags (no `defer`/`async`) forced the browser to fetch
+  and execute them one at a time -- confirmed via resource-timing entries showing zero overlap
+  between any two script downloads (e.g. `qrcode.js` 130->207ms, then `relay-config.js` starting
+  only at 256ms, ... down to `app.js` finishing at 2625ms) -- i.e. ~2.5s of pure serialized
+  round-trip latency between an HTML response that itself completed in 122ms and
+  `domInteractive`. Fixed by adding `defer` to every same-origin script tag in `index.html`: lets
+  the browser fetch all of them in parallel over HTTP/2 while still guaranteeing document-order
+  execution before `DOMContentLoaded` (so the existing load-order dependencies -- `state.js`
+  before anything using it, etc. -- are unaffected; no bundler/build step introduced, matching
+  this repo's "no build step" architecture). One test needed updating for the literal string
+  change: `test_relay_config_injection.py` looked for the exact (now-stale) `<script
+  src="vendor/qrcode.js"></script>` text to locate a snippet of `index.html`; updated both string
+  matches to include `defer`. Full regression suite re-verified green: `node --test
+  tests/unit/test_*.js` (180/180), `tests/run_all.sh` (all Playwright files passing). Not yet
+  deployed -- the live site needs a redeploy of this branch/commit for the fix to take effect
+  there.
+- 2026-09-18 -- PR #38 follow-up: a Claude Code review of the `defer` fix above found no correctness
+  bugs (verified independently -- ran the full suite itself, re-ran
+  `test_relay_config_injection.py` standalone, confirmed no inline `<script>` tags exist in
+  `index.html` to interact badly with `defer`, grepped `public/js/*.js` for
+  `DOMContentLoaded`/`readyState` ordering assumptions that could behave differently under
+  `defer` -- none found) and approved, with one optional suggestion: nothing guarded against
+  someone silently reintroducing a non-`defer`'d script tag one file at a time. Added
+  `tests/unit/test_script_loading.js` (plain Node, no DOM -- this is text parsing, not
+  browser-dependent behavior, per the TDD skill): asserts every same-origin `<script src>` in
+  `index.html` carries `defer`, and separately asserts no inline `<script>` tags exist at all
+  (the SEC-3 CSP requirement the `defer`-fix diagnosis leaned on). Verified the new test is a
+  real regression guard, not a false-positive pass, by temporarily stripping `defer` from one
+  tag and confirming it fails with that exact tag named in the assertion output, then restored
+  the file (`git status` confirmed clean). Full suite re-verified green: `node --test
+  tests/unit/test_*.js` (182/182), `tests/run_all.sh` (all Playwright files passing).
 - 2026-09-18 -- Revisited four backlog/deferred items at the user's request (ESLint config,
   naming/abbreviation consistency, `state.editing`'s dual shape, splitting
   `dimensions-templates.js`, from `docs/refactoring-report.md`; SEC-3a) to check whether any were
@@ -3603,5 +3637,5 @@ back in `STATUS.md`.
     pattern, same as REF-11/REF-12 earlier today).
   - **SEC-3a**: re-checked -- no embed deployment is active, still correctly YAGNI/PO-gated, no
     change.
-  Docs-only change; fast unit suite re-run as a sanity check (180/180 -- PR #38's two additional
-  tests aren't in this branch yet since that PR hasn't merged).
+  Docs-only change; fast unit suite re-run as a sanity check after merging in PR #38's changes
+  (182/182, including PR #38's two new `test_script_loading.js` cases).
