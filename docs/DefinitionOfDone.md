@@ -23,11 +23,53 @@ duplicated or contradicted elsewhere:
 
 - Every change to `public/js/*.js`, `public/local-store.js`, or `relay/*.js`
   gets a **failing test written before the implementation** — see the `tdd`
-  skill for which tier it belongs in and how to write it.
+  skill for which tier it belongs in and how to write it. The one narrow
+  exception, and the discipline that replaces "write it first" there: a
+  structure-only refactor (a rename, a file split/move) that changes no
+  observable behavior — see the `tdd` skill's own "behavior change vs.
+  structure-only refactor" section for exactly what qualifies and what's
+  required instead (confirm existing coverage first, write a
+  characterization test if it's missing, never mix in a discovered bug
+  fix). This bullet is the rule for everything else — a bug fix, a new
+  feature, any change to what the code does. (Cross-reference added
+  2026-09-17 after a Codex review pointed out the `tdd` skill's refactor
+  exception, added the same day, wasn't reflected here at all — a reader
+  of this document alone would have concluded no exception exists.)
 - Before calling any change done, run the **full suite**
   (`node --test tests/unit/test_*.js` and `tests/run_all.sh`), not just
   whatever test you added or touched — zero regressions, zero JavaScript
   errors.
+- **Before opening a PR, re-read your own diff adversarially against the
+  checklist below and address what it finds** (fix a real one; for a
+  finding you disagree with, say why in the PR rather than silently
+  dropping it). This is a self-review pass, not a replacement for external
+  review — its job is to catch what a second pass over your own diff would
+  catch before an external reviewer has to. Stated as a checklist, not a
+  named tool, because this rule binds every contributor to this repo —
+  Copilot, Codex, Claude Code, or a human — and only some of those have a
+  built-in "code review" capability to invoke by name (a Claude Code
+  session does: its own `code-review` skill runs this same class of check
+  and is the fastest way to satisfy this bullet when it's available, but
+  it is a convenience, not the requirement itself — anyone without it
+  still clears this bullet by walking the checklist directly):
+  - Does every `Promise.all(...)` in the diff need to be
+    `Promise.allSettled(...)` instead — would one rejection hide another
+    still-pending write?
+  - Does every new/changed Playwright wait use a real, causally-correct
+    condition, per this section's own fixed-timer rule below — not a
+    `wait_for_timeout()` standing in for one?
+  - Does every factual claim the diff adds to a doc or comment ("X returns
+    Y," "Z is forwarded to W") have a test that actually proves it, not
+    just a reading of the source?
+  - Does the diff match what its own PR description/commit message claims
+    it does — no leftover debug code, no silently wider scope than
+    described?
+  (Adopted 2026-09-17, revised same day after a Codex review of the first
+  version pointed out it named a Claude-Code-specific skill as a repo-wide
+  requirement with no equivalent for a contributor who can't invoke it —
+  see STATUS.md's session log. Originally motivated by a run of PRs each
+  drawing at least one real finding from external review that this same
+  checklist would plausibly have caught first.)
 - **When the full suite's total serial wall-clock time is measured and has
   moved meaningfully since the last figure recorded in STATUS.md, log the
   new number there.** This isn't a gate — no change is blocked on it — but

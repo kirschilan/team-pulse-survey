@@ -26,6 +26,60 @@ a new test tried to prove a SECOND device could actually decrypt what the
 first device pushed — a weaker test (does the write not throw?) would have
 stayed green through the whole bug.
 
+## First: is this a behavior change, or a structure-only refactor?
+
+The "write the failing test first" rule above governs *behavior* — a bug
+fix, a new feature, anything that changes what the code returns or does.
+It does not apply the same way to a **structure-only refactor** (a rename,
+a file split/move, an extraction) that changes *nothing* observable —
+there is no new behavior for a test to fail against, and treating "no
+failing test" as a violation there is a category error. This distinction,
+and the discipline that replaces "write it first" for a pure refactor, is
+adapted directly from Fowler, Beck, and Feathers (added 2026-09-17 after a
+session that split `board-export-import.js` into six files without
+writing new tests, and had to work out after the fact whether that was a
+lapse or the correct call):
+
+- **Fowler's prerequisite, made an explicit step, not an assumption**:
+  before moving anything, enumerate what's being moved and confirm
+  existing tests already cover ALL of it. Don't just trust that they do —
+  check (REF-4 did this by diffing every function/`var` name against what
+  the test suite actually calls; a lighter version is grepping each moved
+  function's name across `tests/`). Only once that's confirmed do you move
+  code, in small steps, running the full suite after each step — never
+  batch several moves before re-checking green.
+- **Feathers' answer when that check comes up short**: if coverage is
+  NOT adequate for something you're about to move, that IS a "write the
+  test first" moment — but the test characterizes CURRENT behavior (pins
+  down what the code already does, ugly or not), not desired future
+  behavior. Write that test, watch it pass against the current code, THEN
+  refactor with it as your safety net. Skipping this because "it's just a
+  refactor" is exactly the mistake Feathers' whole discipline exists to
+  prevent.
+- **Beck's rule: never mix modes.** If a refactor (docs, a rename, a move)
+  surfaces a real bug along the way — it will happen; REF-3's own
+  state-machine documentation pass found a genuine race condition this way
+  — stop. Finish the refactor as its own change, then treat the bug as a
+  completely separate red-green cycle: write a failing test for the bug
+  specifically, confirm it fails for the right reason, then fix it. Don't
+  let a structural change and a behavioral fix ride in the same breath.
+- **A documentation change that asserts a factual claim about runtime
+  behavior is a testable claim, not prose.** "`set()` replaces the stored
+  value," "the secret argument is forwarded to child refs" — either of
+  these being wrong is a real bug in the doc. Before publishing a claim
+  like this, check whether a test already proves it; if not, add one
+  (extend an existing test file rather than always creating a new one) —
+  don't publish the claim on the strength of reading the source once. Two
+  such claims shipped wrong in `docs/backend-contract.md` (PR #22) and
+  only got caught by external review, precisely because they were treated
+  as documentation instead of as assertions needing their own proof.
+
+If you're not sure which mode you're in: if you can describe the change
+as "X now does Y" (a verb, a new outcome), it's a behavior change — use
+the failing-test-first workflow below. If the only accurate description is
+"Y moved from file A to file B" or "Y is now called Z," it's a refactor —
+use the checklist above instead.
+
 ## Step 1: pick the tier before writing anything
 
 This repo has two test tiers with very different costs and reach — get

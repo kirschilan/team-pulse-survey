@@ -37,16 +37,22 @@ thing: specific architecture/product choices already made, not the bar every cha
   failure modes). Both tiers run automatically on every push/PR via `.github/workflows/tests.yml`.
 - `vercel.json` is in place for zero-config static hosting (`outputDirectory: "public"`), and the
   repo **is now connected to Vercel** — feature branches deploy to preview URLs (confirmed
-  2026-09-12 via real testing on one). The relay is not part of that deployment and isn't deployed
-  anywhere yet (see the relay bullet below and `relay/README.md`) — a preview/production Vercel
-  deployment with no relay configured is expected to run the board fully, with live retro sessions
-  correctly reporting themselves unavailable rather than hanging (see "Deliberately not built yet").
+  2026-09-12 via real testing on one). **The relay is deployed on Render.com** (confirmed by the PO
+  2026-09-17 — this was done at the very start of implementing the retro feature, but never got
+  logged here at the time; see the relay bullet below and `relay/README.md` for the deploy shape).
+  The actual `SQUAD_PULSE_RELAY_URL` value isn't hardcoded here — it's a real, live Vercel env var
+  that differs per environment (Production/Preview) and would go stale the moment it's rotated;
+  `relay/README.md` documents how to find/set it. (Not a secrets concern — a Codex review on PR #25
+  caught this file, and `ETHICS.md`, both drawing the wrong conclusion about why: the URL is a
+  public, build-time-emitted service endpoint, not a credential — see `ETHICS.md`'s own corrected
+  Section 1.)
 - **Retro sessions now sync across real devices.** `relay/` is a small standalone Node/`ws`
   WebSocket server; `public/js/relay-client.js` + `public/js/crypto.js` route every
   `sessions`-rooted `db` call to it (encrypted, per the decision below) instead of `localStorage`,
   while squads/dimensions/templates/config stay local as before. Verified end to end — real relay
   process, two independent browser contexts, real WebSocket, real AES-GCM — by
-  `tests/test_relay_cross_device_sync.py`. Not yet deployed anywhere public; see `relay/README.md`.
+  `tests/test_relay_cross_device_sync.py`. Deployed on Render.com and wired to the Vercel deployment
+  via its own env var (see above) — see `relay/README.md` for the deploy/wiring steps this followed.
 
 ## The app's file layout
 
@@ -870,7 +876,6 @@ users' data was performed.
 
 | Not built | Why it's cut for now | What would trigger building it |
 |---|---|---|
-| Relay deployed anywhere public | Built, tested, and now deploy-ready (`render.yaml` + `SQUAD_PULSE_RELAY_URL`-driven build step — see `relay/README.md`), but this session has no hosting/Vercel account access to actually click "deploy" | Whoever has account access runs the Render blueprint (or any equivalent host) and sets the Vercel env var — see `relay/README.md`'s "Wiring the deployed static site to this relay" for the exact steps, including testing it on a Preview deployment before merging to `main` |
 | Save-board / Load-board-to-file | `local-store.js` already persists the board via `localStorage`, which covers the same browser/device | Once someone needs a board to move between browsers/devices without a relay |
 | Relay deployed on Vercel itself (one deployment, not two) | Deliberately rejected, not just deferred — see the locked decision above and `relay/README.md`'s "Why not a Vercel Function" | Only if Vercel's WebSocket support later guarantees same-instance routing without an external store, which would remove the reason this was rejected |
 | Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing | Once the marketing site (separate Claude Code project) is further along |
@@ -982,16 +987,6 @@ there are smaller, single-responsibility files to set real size/complexity limit
 - **ESLint config** — see "Additional review measures" above: a real recommendation, but explicitly
   not introduced in this backlog-only pass.
 
-## Suggested next step
-
-**Deploy the relay.** No code changes needed — the static site is already live on Vercel; the
-relay just needs someone with a Render (or equivalent) account to run the `render.yaml`
-blueprint at the repo root, then set `SQUAD_PULSE_RELAY_URL` in Vercel's project settings (scope
-it to Preview first to test on this branch before merging to `main`, then Production). Full
-steps: `relay/README.md`'s "Deploying it" and "Wiring the deployed static site to this relay".
-This is the real unblock for testing cross-device retro sessions and board sync with a real team,
-not just in this repo's own tests.
-
 ## Session log
 
 - 2026-09-10 — Migrated the project from a single-file Claude Artifact (3077-line inline-script
@@ -1074,8 +1069,10 @@ not just in this repo's own tests.
   zero regressions. Still true, and now more clearly *surfaced* rather than silently broken: the
   relay isn't deployed anywhere public yet, so live retro sessions on the Vercel preview correctly
   report themselves unavailable (clear error dialog, no hang, no runaway reconnect spam) rather
-  than working end to end — deploying the relay (see "Suggested next step") is what actually
-  unblocks cross-device retro testing.
+  than working end to end — deploying the relay is what actually unblocks cross-device retro
+  testing. (It was in fact deployed on Render.com shortly after this, at the start of implementing
+  the retro feature for real — see the "The app's file layout" section above; this specific entry
+  is left as the historical record of the moment it was still pending.)
 - 2026-09-12 — Made the relay actually deployable, for two audiences stated explicitly this round:
   embedding this on a company website (subdomain/iframe) and forking the repo so others can
   self-host it entirely offline on their own LAN, to route around their own security constraints.
@@ -3921,3 +3918,64 @@ not just in this repo's own tests.
   unit tests, all 61 Playwright files, relay's own suite. Pushed to the same
   `ref-4-split-board-export-import` branch/PR (no new PR) -- CI itself is the real remaining check,
   watched after this push per Codex's own "align and rerun" recommendation.
+- 2026-09-17 — Three process corrections from a PO conversation, no runtime code touched
+  (REF-4's own session-log entries above cover the file split itself, **merged as PR #24**):
+  (1) **Relay deployment status was stale.** The PO confirmed the relay has been deployed on
+  Render.com since the very start of implementing the retro feature -- this was simply never
+  logged here at the time. Corrected "The app's file layout"'s intro bullets, removed the
+  "Deliberately not built yet" table's now-false "Relay deployed anywhere public" row, and removed
+  the "Suggested next step" section entirely (its one item, deploying the relay, is done). The
+  actual `SQUAD_PULSE_RELAY_URL` value itself is deliberately NOT recorded here or anywhere in this
+  session's chat history -- see the new `ETHICS.md`, written specifically because of this exchange
+  (a request to paste it into chat was declined, and the PO asked for the principle to be written
+  down rather than left as one contributor's one-off judgment call). (2) **The TDD skill didn't
+  distinguish a behavior change from a structure-only refactor**, and REF-2's/REF-4's own work this
+  session (doc corrections, a pure file split) had quietly treated "no behavior change" as license
+  to skip test-first without that exception being written down anywhere -- raised by the PO, who
+  asked what Fowler/Beck/Feathers would each say. Synthesized into a new section in
+  `.claude/skills/tdd/SKILL.md`: Fowler's prerequisite (confirm existing coverage is adequate,
+  explicitly, before moving anything) replaces "write it first" for a pure refactor; Feathers'
+  answer when that check comes up short (write a CHARACTERIZATION test pinning current behavior,
+  not a new one describing desired behavior); Beck's rule (never mix a refactor and a discovered
+  bug fix in the same change -- split them, exactly as REF-3's race-condition fix already did
+  correctly, now named as the pattern rather than a one-off); and a new rule this session's own
+  Codex findings motivated directly -- a documentation change asserting a factual runtime-behavior
+  claim is a testable claim, needing its own test before publishing, not after review catches it
+  wrong (the exact shape of both `docs/backend-contract.md` P2 findings on PR #22). (3) **Added the
+  `code-review` skill to `docs/DefinitionOfDone.md`'s Testing section** -- run it against your own
+  diff before opening a PR, addressing what it finds -- after a run of PRs (#20-#23) each drawing at
+  least one real external-review finding this session's own self-review could plausibly have caught
+  first (a `Promise.all`/`allSettled` bug, a fixed-timer test flake, two documentation-accuracy
+  bugs). Not a claim that external review becomes unnecessary -- a self-review pass ahead of it,
+  same reasoning as the new TDD section's documentation-claims rule.
+- 2026-09-17 — Fixed three real P2 findings from a Codex review of PR #25, all verified
+  independently against primary sources before acting (per this session's own established
+  discipline for an externally-relayed claim) rather than taken at face value: (1) the DoD's new
+  self-review bullet named `code-review`, a Claude-Code-specific built-in skill, as a requirement
+  binding on every contributor -- but this repo's own working agreements explicitly bind Copilot,
+  Codex, and humans too, none of whom can invoke a skill by that name. Rewrote the bullet as a
+  tool-independent checklist (the same four categories the original wording named -- Promise.all/
+  allSettled, fixed-timer waits, untested documentation claims, diff-matches-description) that
+  anyone can walk directly; a Claude Code session's own `code-review` skill remains the fastest way
+  to satisfy it, now stated as a convenience, not the requirement. (2) The TDD skill's new
+  behavior-vs-refactor section (added earlier this same day) carved out an exception to
+  `docs/DefinitionOfDone.md`'s own unconditional "every change gets a failing test first" rule --
+  but never updated DoD itself to acknowledge it, so the two documents actively contradicted each
+  other (DoD is supposed to be authoritative; the skill is supposed to satisfy it, not silently
+  diverge). Added a cross-reference in DoD's own Testing section naming the exception and pointing
+  at the skill's fuller treatment. (3) The most substantive finding: `ETHICS.md`'s own motivating
+  example -- declining to paste `SQUAD_PULSE_RELAY_URL` into chat -- was framed as protecting a
+  secret, but it isn't one. Verified directly against `scripts/generate-relay-config.js`: it writes
+  this exact value into `public/relay-config.js` at build time, a plain static file this repo's own
+  build serves to every visitor's browser, unauthenticated -- readable via view-source or a
+  browser's Network tab the instant the app loads, and knowing it grants no access at all (the
+  relay authenticates nothing beyond rate limits; every real guarantee comes from the per-team
+  secret, which the relay never sees). Rewrote `ETHICS.md`'s Section 1 to use this app's ACTUAL
+  secrets as the illustrative examples (a hosting account's own API token; the per-team encryption
+  secret) and added an explicit correction distinguishing a public service endpoint from a
+  credential -- a preference against casually sharing one, if there is one, is a separate, weaker
+  concern (unnecessary exposure, not confidentiality) and shouldn't borrow this section's
+  reasoning. Corrected the same mischaracterization in this file's own earlier entry (the "Per
+  ETHICS.md... same place any deployment secret belongs" line, written a few entries above this
+  one, before the correction). Docs-only; no runtime code touched. Full suite re-verified green:
+  167/167 unit tests, all Playwright files.
