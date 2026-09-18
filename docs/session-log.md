@@ -3886,3 +3886,11 @@ back in `STATUS.md`.
   enabling required status checks on `claude/optimistic-keller-holuql` to make this an enforced
   gate instead of a judgment call. Docs-only change; ran the fast unit suite as a sanity check
   anyway (184/184).
+- 2026-09-18 -- PO sign-off: RETRO-1 (carry latest retro results into board export/import, PR #21),
+  RETRO-2 (paced one-question-at-a-time facilitation, PR #30), and RETRO-3 (choose which
+  dimensions to include, PR #34) all confirmed Done by the product owner. All three were already
+  merged; this records the PO's explicit acceptance on top of that, the same DONE/merged
+  distinction this file already draws elsewhere (e.g. the Introduction & help backlog's Story 7,
+  where "merged" and "PO-approved" are tracked separately because they aren't the same claim).
+  STATUS.md's "Facilitated retro backlog" table updated: each row's Status cell now reads
+  "PO-confirmed DONE, 2026-09-18" alongside its existing merge record. Docs-only change.
