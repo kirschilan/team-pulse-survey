@@ -911,7 +911,7 @@ Stories 1–9, already DONE; these are new, not part of that closed backlog). No
 | Priority | Story | User value and acceptance criteria | Status |
 |---|---|---|---|
 | P1 | RETRO-1 — Carry latest retro results into board export/import | As a facilitator, back up or migrate a board without losing its most recently finished retro. Extend the JSON board export (`board-export-import.js`, later split by REF-4 into `board-export.js`/`board-import-*.js`) to also capture, per squad, the latest finished retro session's per-dimension result (consolidated or overridden), sprint experiment note, and finish timestamp, and restore it on import alongside the existing squads/ratings/dimensions/templates/settings. Define what happens when an imported snapshot's dimensions no longer match the target board (e.g. a renamed/removed dimension) instead of silently dropping or misapplying data. | **Merged (2026-09-17, PR #21)** — see session log. New squad field `lastRetro` (finishedAt/experimentNote/dimensions incl. `overridden`), written by `finishRetroAndApply()` (retro-facilitator.js) via `persistDimensionRatings()`'s new optional `extraFields` param, carried through `db.js`'s squad listener, and exported/imported by `board-export.js`/`board-import-validate.js`/`board-import-plan.js`/`board-import-apply.js` (validated, matched/skipped the same way ratings already are). |
-| P2 | RETRO-2 — Facilitation option: progress one question at a time | As a facilitator running a live session, optionally pace the group through statements one at a time instead of everyone seeing the full survey at once. Add a session-level toggle (default off, preserving today's all-at-once survey) that, when on, shows each participant only the current question and advances everyone together as the facilitator moves forward; revisiting an earlier question doesn't discard that participant's existing answer to it. | **PR open (2026-09-18)**, not yet merged — see session log. A session-level `pacingEnabled`/`currentQuestionIndex` pair, chosen once via a checkbox at "Start retro session" (default off). `helpers.js`'s new `pacingSequence(dims)` (pure, order-matched to the existing `interleavedStatements()`) gives every device the same ordered list of individually-answerable items independently, so nothing about the sequence itself needs to be stored — only the shared index into it. The facilitator's session card gets Previous/Next controls (`setCurrentQuestionIndex()`, same `liveOr()`/`.update()` shape `setRevealMode()` already uses); a participant's join screen shows exactly the one item at that index, retaining (never discarding) whatever they'd already answered on an earlier visit to it, and auto-submits the whole draft, unchanged atomic-submission shape, once the facilitator advances past the last question — a participant who hasn't finished answering by then sees a friendly wait state instead of a silent partial submit. |
+| P2 | RETRO-2 — Facilitation option: progress one question at a time | As a facilitator running a live session, optionally pace the group through statements one at a time instead of everyone seeing the full survey at once. Add a session-level toggle (default off, preserving today's all-at-once survey) that, when on, shows each participant only the current question and advances everyone together as the facilitator moves forward; revisiting an earlier question doesn't discard that participant's existing answer to it. | **Merged (2026-09-18, PR #30)** — see session log (corrected here: a prior row said "PR open, not yet merged", stale after the PR merged without this row being updated). A session-level `pacingEnabled`/`currentQuestionIndex` pair, chosen once via a checkbox at "Start retro session" (default off). `helpers.js`'s new `pacingSequence(dims)` (pure, order-matched to the existing `interleavedStatements()`) gives every device the same ordered list of individually-answerable items independently, so nothing about the sequence itself needs to be stored — only the shared index into it. The facilitator's session card gets Previous/Next controls (`setCurrentQuestionIndex()`, same `liveOr()`/`.update()` shape `setRevealMode()` already uses); a participant's join screen shows exactly the one item at that index, retaining (never discarding) whatever they'd already answered on an earlier visit to it, and auto-submits the whole draft, unchanged atomic-submission shape, once the facilitator advances past the last question — a participant who hasn't finished answering by then sees a friendly wait state instead of a silent partial submit. **PO review follow-up (2026-09-18)**: two gaps fixed, see session log — (1) the facilitator's own card only showed a bare "Question X of N" counter with no way to know what that question actually asks; `pacingQuestionText()` now shows the exact same text a participant sees. (2) the sprint-experiment note's "Saved" confirmation was a 1.8s timed flash that could be missed, and could even be wiped out mid-flash by an unrelated re-render (any live sessions/responses update re-renders the whole card); it's now a durable, state-derived indicator (`savedExperimentNoteFor`) that survives re-renders and only clears once the note is actually edited again. |
 | P3 | RETRO-3 — Facilitation option: choose which questions to include | As a facilitator, exclude statements/dimensions from the active template that don't apply to this particular retro. Let the facilitator deselect specific questions/dimensions when starting (or before opening) a session, without altering the saved template itself; excluded ones are omitted from the join survey and from that session's consolidation/results. | **NOT STARTED** |
 
 ## Code quality & refactoring backlog (2026-09-17)
@@ -4295,3 +4295,37 @@ there are smaller, single-responsibility files to set real size/complexity limit
   bin:$PATH" bash -c 'which python3'` that `make browser`'s `PATH` prepend actually resolves to
   the venv's binary, not just that tests happened to pass. Full suite re-verified green via the
   Makefile itself: `make unit` (180/180), `make relay`, `make test` (full aggregate, 69s).
+- 2026-09-18 — Corrected RETRO-2's backlog row: it merged via PR #30 the same day it was written,
+  but the row still said "PR open, not yet merged" (never updated after the merge). No code
+  change, just a stale-status fix noticed while picking up this PO-review follow-up next.
+- 2026-09-18 — RETRO-2 follow-up (PO review of the already-merged pacing feature): implemented on
+  branch `retro-2-followup-po-review`, PR opened against `claude/optimistic-keller-holuql`.
+  Two independent, small fixes to the same feature area, per the PO's own two review points:
+  (1) **Facilitator sees the current question.** The session card's paced controls only ever
+  showed a bare "Question X of N" counter, with no way to know what that question actually asks
+  without a separate participant device open alongside it. Test-first:
+  `tests/test_retro_paced_questions.py` extended with a failing assertion for a `#pacingQuestionText`
+  element before any implementation. Fixed by adding `pacingQuestionText(dims, seq, index)` to
+  retro-facilitator.js -- resolves the exact same text retro-join.js's own paced render shows a
+  participant for `pacingSeq[index]` (a statement's localized text, or a direct-rating dimension's
+  localized label). Deliberately duplicated rather than shared via helpers.js: it calls
+  `localizedDimText()` (state.js), which depends on live app state/locale and can't run through the
+  Node-only unit-test harness a true helpers.js function does -- Playwright-tested only, same as
+  retro-join.js's own nearly-identical lookup. Verified the facilitator's own text matches the
+  participant's exactly at every step: question 1 (a statement), question 2 (a statement, after
+  Next/Previous), and each direct-rating dimension's label. (2) **A durable "Saved" indicator on
+  the sprint-experiment note.** The existing "Saved" hint was a 1.8s `setTimeout`-based flash --
+  easy to miss, and worse, could be silently wiped out mid-flash by an UNRELATED re-render (any
+  live sessions/responses update re-renders this whole card -- e.g. a participant submitting a
+  response while the facilitator is mid-typing), since it was hardcoded `hidden` in the markup
+  rather than derived from anything -- the exact same class of "DOM state lost on re-render" bug
+  Codex found in RETRO-3 on PR #34 the same day. Test-first: extended
+  `tests/test_retro_experiment_note_and_finish.py` with failing assertions (hint must survive a
+  real 2.2s wait past the old timeout, must survive a simulated `window.__NOTIFY__('sessions')`
+  re-render, and must hide again once the note is edited) before fixing anything. Fixed by adding
+  `savedExperimentNoteFor` -- a session-keyed record of the exact text this device last
+  successfully saved, the same shape/reasoning as `startingSessionFor` already used for the Start
+  button's own in-flight state -- read at RENDER time (not a timeout) to decide whether "Saved"
+  shows, plus a plain `input` listener on the textarea that hides it the moment the box's value
+  diverges from what's saved. Removed the old timer entirely. Full suite green for both fixes:
+  180/180 unit tests, relay's own suite, all 63 Playwright files.

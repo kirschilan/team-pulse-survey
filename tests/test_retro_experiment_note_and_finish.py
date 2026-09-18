@@ -116,6 +116,37 @@ with sync_playwright() as p:
     assert page.eval_on_selector('#experimentNoteBox', 'el => el.value') == note_text
     print("errors:", errors)
 
+    print("=== PO review follow-up: 'Saved' must be a durable state, not a timed flash that can be missed ===")
+    # Deliberate real-time wait, not a guessed one -- this specifically
+    # proves the ABSENCE of the old 1.8s auto-hide timer, which is not
+    # something any event/state change can signal; waiting past that
+    # duration is the only way to distinguish "still shown" from "about to
+    # disappear on its own."
+    page.wait_for_timeout(2200)
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == False, \
+        "'Saved' must stay visible indefinitely, not auto-hide after a fixed delay"
+
+    print("=== an UNRELATED re-render (e.g. a live sessions update) must not wipe the 'Saved' indication ===")
+    # window.__NOTIFY__() fires the sessions collection listener exactly like
+    # a real remote change would -- see RETRO-3's own use of this same
+    # mechanism (Codex review on PR #34) for a dimensions listener causing
+    # an identical class of "hardcoded markup state lost on re-render" bug.
+    page.evaluate("window.__NOTIFY__('sessions')")
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == False, \
+        "'Saved' must survive an unrelated re-render, derived from state rather than hardcoded in the markup"
+    assert page.eval_on_selector('#experimentNoteBox', 'el => el.value') == note_text
+
+    print("=== editing the note again (making it dirty) hides 'Saved' until the next save ===")
+    page.fill('#experimentNoteBox', note_text + " -- plus more")
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == True
+    # restore the original note_text afterward -- later assertions in this
+    # file check the finished retro's own lastRetro.experimentNote against
+    # this same note_text, and this scenario's only job is to prove the
+    # dirty/saved toggle, not to change what the rest of the test expects.
+    page.fill('#experimentNoteBox', note_text)
+    page.click('#saveExperimentNoteBtn')
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == False
+
     print("=== Story 9: 'Finish retro' with nothing submitted just closes, no squad changes ===")
     page.click('#finishSessionBtn')
     page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
