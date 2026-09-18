@@ -3509,3 +3509,15 @@ back in `STATUS.md`.
   test-first policy; ran the fast unit suite as a sanity check anyway (180/180, matching the
   precedent set by the 2026-09-17 backlog-only pass, which also didn't re-run the full Playwright/
   relay suite for a documentation-only change).
+- 2026-09-18 — REF-11 follow-up (Codex re-review of PR #36 at `22ba423`): confirmed valid, one P3.
+  Codex found three more live instructions in `docs/DefinitionOfDone.md` still naming `STATUS.md`
+  as the place to record something going forward -- the serial-timing-update bullet, the
+  timing-baseline-growth bullet, the unfinished-PR-note bullet, and the new-data-shape migration-
+  decision bullet -- all four are dated-entry-shaped notes that now belong in `docs/session-log.md`
+  per this same REF-11 split, missed by the original grep because they don't contain the literal
+  phrase "session log" (they say "in STATUS.md" or "in the STATUS.md entry"). Re-grepped the file
+  for every remaining `STATUS.md` mention to classify each one before editing: updated the four live
+  instructions, left the five dated historical incident references (each describing a specific past
+  event, e.g. "see STATUS.md's session log for the incident") untouched, same precedent as the
+  original pass. Docs-only change; fast unit suite re-run as a sanity check (180/180). No comments
+  posted to GitHub (relayed via chat, no PR review thread existed to reply on).
