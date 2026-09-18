@@ -18,11 +18,12 @@ squad's own ratings.
 
 ## Status
 
-See **`STATUS.md`** for current state, locked-in decisions, what's deliberately
-not built yet, and the session log — that's the one place "what's outstanding"
-lives, kept up to date as work lands. See **`docs/DefinitionOfDone.md`** for
-the standing quality bar (testing, multi-language support, delivery workflow)
-every change clears before it's called done.
+See **`STATUS.md`** for current state, locked-in decisions, and what's
+deliberately not built yet — that's the one place "what's outstanding"
+lives, kept up to date as work lands. The dated session log of past work
+lives separately in **`docs/session-log.md`**. See **`docs/DefinitionOfDone.md`**
+for the standing quality bar (testing, multi-language support, delivery
+workflow) every change clears before it's called done.
 
 Short version: this app originated as a
 prototype running inside a Claude Artifact's `db` capability and has been
@@ -37,7 +38,7 @@ never a board's real contents.
 ## Project layout
 
 ```
-STATUS.md          Current state, open items, session log -- start here
+STATUS.md          Current state, open items -- start here
 public/            The app itself -- static site, deploys as-is
   index.html
   app.js           Entry point: view-switch wiring, the Escape-key handler, boot -- thin on purpose
@@ -58,6 +59,7 @@ relay/             The one server this app has -- a small WebSocket relay for li
 tests/             Playwright + Python regression suite (see tests/README.md)
 docs/
   DefinitionOfDone.md         The standing quality bar every change clears -- start here
+  session-log.md              Dated session log of past work (split out of STATUS.md, 2026-09-18)
   facilitated-retro-spec.md   Feature spec + history for the retro-session work
   standalone-plan.md          Architecture plan for the standalone/embedded version
   refactoring-report.md       Prioritized code-quality backlog (SOLID gaps, complexity, naming)

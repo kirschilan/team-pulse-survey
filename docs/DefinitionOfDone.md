@@ -279,8 +279,9 @@ and to every one already covered:
   push to `main` on your own judgment. This is unchanged by the branching
   model above: `claude/optimistic-keller-holuql` is a PREVIEW branch, not a
   path around that gate.
-- A real, non-trivial change gets a session-log entry in `STATUS.md` (see
-  nearly every existing entry for the expected level of detail: what
+- A real, non-trivial change gets a session-log entry in `docs/session-log.md`
+  (moved there from `STATUS.md` itself on 2026-09-18, REF-11 — see nearly
+  every existing entry there for the expected level of detail: what
   changed, why, what it fixed, and what was verified).
 - **A genuine architecture or UX decision — something the product owner
   would want to see and react to before engineering time goes into it, not
