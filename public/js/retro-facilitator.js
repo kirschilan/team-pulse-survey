@@ -34,25 +34,33 @@ function openSessionForSquad(squadId){
   return null;
 }
 
-// Story 10: attaches this device to an ALREADY-OPEN session by code,
-// without starting or answering anything -- just reading the session doc
-// once is enough to make relay-client.js's getRoom() remember the code
-// (see rememberCode()) and connect, so the broad `sessions` listener
-// db.js's initDb() already runs for every non-join-mode device picks it
-// up the moment the relay's initial snapshot for that room arrives.
-// openSessionForSquad() above never checks who created a state.sessions
-// entry, so once this device "knows" the code, Squad view for the
-// matching squad renders the exact same facilitator card (live tally,
-// reveal, override, finish) a device that started the session sees --
+// Story 10: attaches this device to an ALREADY-OPEN session by its
+// co-facilitate link's secret, without starting or answering anything --
+// just reading the session doc once is enough to make relay-client.js's
+// getRoom() remember the room (see rememberCode()) and connect, so the
+// broad `sessions` listener db.js's initDb() already runs for every
+// non-join-mode device picks it up the moment the relay's initial snapshot
+// for that room arrives. openSessionForSquad() above never checks who
+// created a state.sessions entry, so once this device "knows" the room, Squad
+// view for the matching squad renders the exact same facilitator card (live
+// tally, reveal, override, finish) a device that started the session sees --
 // no separate rendering path needed. Requires the squad to already exist
 // locally (e.g. via a connected team link, see board-sync.js) for
 // anything meaningful to show; without that, Squad view just has no
 // matching squad to select, same as picking any squad this device
 // doesn't have.
-function coFacilitateSessionByCode(code){
-  if(!(state.live && state.db)) return Promise.reject({ message: "Not connected to the relay yet — try again in a moment." });
-  return state.db.doc("sessions/" + code).get().then(function(snap){
-    if(!snap.exists) return Promise.reject({ message: "That session code isn’t open." });
+function coFacilitateSessionByCode(secret){
+  if(!(state.live && state.db)) return Promise.reject({ message: t("retro.coFacilitate.notConnected") });
+  return SquadPulseCrypto.roomIdFor(secret).then(function(roomId){
+    // Recorded explicitly, not left to relay-client.js's own getRoom() side
+    // effect (see relay-client.js's own comment on rememberCode) -- that
+    // side effect never runs at all against a `state.db` that isn't
+    // relay-client.js itself (e.g. the test suite's fake local store), and
+    // renderSessionCardHtml()'s secretForRoom() lookup needs this regardless.
+    SquadPulseRelay.rememberCode(roomId, secret);
+    return state.db.doc("sessions/" + roomId, secret).get();
+  }).then(function(snap){
+    if(!snap.exists) return Promise.reject({ message: t("retro.coFacilitate.codeNotOpen") });
     var data = snap.data();
     if(data.squadId) selectSquad(data.squadId);
     setView("squad");
@@ -60,15 +68,33 @@ function coFacilitateSessionByCode(code){
   });
 }
 
-function startSession(sq){
+function startSession(sq, pacingEnabled, excludedDimKeys){
   // snapshot dimensions the same way saveCurrentAsTemplate()/loadTemplate()
-  // do, carrying statements/scoreBands/strategies along for whichever
-  // future step reads them (nothing does yet)
-  var dimsSnapshot = sortedDimensions().map(function(d){
+  // do, carrying statements/scoreBands/strategies (and any Hebrew
+  // translation the dimension has -- see state.js's localizedDimText())
+  // along so the retro flow can render this session correctly translated
+  // (Story 11 / the retro-statement-translation follow-up).
+  //
+  // RETRO-3: a facilitator can exclude specific dimensions from THIS retro
+  // only (the "no session" card's checklist below) -- a one-off skip, never
+  // a template edit. Filtering them out of the snapshot right here, before
+  // it's ever written to the session doc, is what makes every downstream
+  // consumer (the join survey in retro-join.js, pacingSequence(), the live
+  // tally, finishRetroAndApply()) correctly skip an excluded dimension with
+  // ZERO changes of their own -- none of them know or care that a
+  // dimension was excluded, they just never see it, because it was never in
+  // sess.dimensions to begin with. Deliberately whole-dimension only, not
+  // per-statement: a statement dimension's scoreBands are calibrated
+  // against summing ALL of its statements, so dropping only some of them
+  // would silently shift what "good"/"warn"/"crit" mean.
+  var excluded = {};
+  (excludedDimKeys||[]).forEach(function(k){ excluded[k] = true; });
+  var dimsSnapshot = sortedDimensions().filter(function(d){ return !excluded[d.key]; }).map(function(d){
     var spec = { key:d.key, label:d.label, green:d.green||"", red:d.red||"", order:d.order||0 };
     if(isStatementDimension(d)) spec.statements = d.statements;
     if(d.scoreBands) spec.scoreBands = d.scoreBands;
     if(d.strategies && d.strategies.length) spec.strategies = d.strategies;
+    if(d.i18n) spec.i18n = d.i18n;
     return spec;
   });
   var payload = {
@@ -77,42 +103,49 @@ function startSession(sq){
     dimensions: dimsSnapshot,
     status: "open", revealMode: "hold",
     overrides: {}, experimentNote: "",
-    createdAt: nowIso()
+    createdAt: nowIso(),
+    // RETRO-2: paced ("one question at a time") is a session-level choice
+    // made once, at start -- default false, preserving today's all-at-once
+    // survey unchanged for every existing session and every facilitator who
+    // doesn't opt in. `currentQuestionIndex` is only ever meaningful when
+    // `pacingEnabled` is true; it's still written (at 0) either way so
+    // there's one consistent shape to read, not an optional field callers
+    // have to guard against being absent.
+    pacingEnabled: !!pacingEnabled, currentQuestionIndex: 0
   };
-  var code = uniqueSessionCode();
-  return liveOr(function(){
-    return state.db.collection("sessions").doc(code).set(payload).then(function(){
-      diag("Started retro session " + code + " for squad " + sq.id);
-    }).catch(function(err){
-      diag("Start session failed: " + (err && err.code ? err.code : String(err)));
-      throw err;
+  // SEC-2: a live session's room id and its encryption key are no longer
+  // the same value -- see crypto.js's header comment. generateSecret()/
+  // roomIdFor() are the exact same primitives board-sync.js already uses
+  // for the identical reason; a session's secret never touches the relay,
+  // only its one-way-derived room id does.
+  var secret = SquadPulseCrypto.generateSecret();
+  return SquadPulseCrypto.roomIdFor(secret).then(function(roomId){
+    // See coFacilitateSessionByCode()'s identical call for why this is
+    // explicit rather than left to relay-client.js's own getRoom() side
+    // effect.
+    SquadPulseRelay.rememberCode(roomId, secret);
+    return liveOr(function(){
+      return state.db.doc("sessions/" + roomId, secret).set(payload).then(function(){
+        diag("Started retro session " + roomId + " for squad " + sq.id);
+      }).catch(function(err){
+        diag("Start session failed: " + (err && err.code ? err.code : String(err)));
+        throw err;
+      });
+    }, function(){
+      state.sessions.push(Object.assign({ id:roomId }, payload));
+      renderSquadView();
+      return Promise.resolve();
     });
-  }, function(){
-    state.sessions.push(Object.assign({ id:code }, payload));
-    renderSquadView();
-    return Promise.resolve();
   });
 }
 
-// Short, human-typeable session codes -- doubles as the session doc's id,
-// so joining by code needs no separate lookup index. Excludes visually
-// ambiguous characters (0/O, 1/I/L) since this gets read off a screen and
-// typed on a phone. Used as the PRIMARY join method (see the header's
-// "Join a retro" button): the QR/link is a secondary convenience that some
-// phones' camera-to-app handoff doesn't carry a query string through, so
-// the code has to work standalone.
-var SESSION_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
-function generateSessionCode(){
-  var code = "";
-  for(var i=0;i<6;i+=1) code += SESSION_CODE_ALPHABET[Math.floor(Math.random()*SESSION_CODE_ALPHABET.length)];
-  return code;
-}
-function uniqueSessionCode(){
-  var code;
-  do { code = generateSessionCode(); } while(state.sessions.some(function(s){ return s.id===code; }));
-  return code;
-}
-
+// Returns the write's own promise (resolved once the close has actually
+// landed, rejected if it failed) rather than swallowing it -- a caller that
+// needs to know the close really happened before doing something else
+// (templates.js's loadTemplate() confirm handler, closing every in-progress
+// retro before it rewrites the shared dimension set) can await it; a
+// fire-and-forget caller (the plain "close this retro" button below) can
+// still just call it and ignore the return value, same as before.
 function closeSession(sessionId){
   // An update to status:"closed" rather than a delete -- a participant
   // already on the join screen (or one who opens a stale link soon
@@ -122,52 +155,171 @@ function closeSession(sessionId){
   // grace period elapses (see relay/server.js) -- this only widens the
   // window in which "closed" is distinguishable, it doesn't make it
   // permanent, since nothing here is a real database.
-  liveOr(function(){
+  return liveOr(function(){
     return state.db.collection("sessions").doc(sessionId).update({ status:"closed", closedAt: nowIso() }).catch(function(err){
       diag("Close session failed: " + (err && err.code ? err.code : String(err)));
+      throw err;
     });
   }, function(){
     state.sessions = state.sessions.filter(function(s){ return s.id!==sessionId; });
     renderSquadView();
+    return Promise.resolve();
   });
 }
 
+// RETRO-2 follow-up (PO review): the facilitator's own session card only
+// ever showed a bare "Question X of N" counter during a paced session --
+// no way to know WHAT that question actually asks without also having a
+// participant's device open next to it. Resolves the exact same text
+// retro-join.js's own paced render shows a participant for pacingSeq[index]
+// -- duplicated here rather than shared via helpers.js because it calls
+// localizedDimText() (state.js), which -- like this function -- depends on
+// live app state/locale and can't run through the Node-only unit-test
+// harness a true helpers.js function does (see tests/unit/README.md);
+// Playwright-tested only, same as retro-join.js's own version. Returns
+// null past the end of the sequence (nothing to show).
+function pacingQuestionText(dims, seq, index){
+  var item = seq[index];
+  if(!item) return null;
+  var dim = dims.filter(function(d){ return d.key===item.dimKey; })[0];
+  if(!dim) return null;
+  if(item.kind==="stmt"){
+    var localizedStmts = localizedDimText(dim, "statements");
+    return (localizedStmts && localizedStmts[item.idx]!==undefined) ? localizedStmts[item.idx] : dim.statements[item.idx];
+  }
+  return localizedDimText(dim, "label");
+}
+
+// This card renders inside #viewSquad, which Story 4 made i18n-supported
+// (flips to dir="rtl" under Hebrew) -- Story 11 brought this flow's own
+// chrome under translation too, so it now inherits that flip like the rest
+// of Squad view, rather than opting out with its own dir="ltr" the way it
+// did before this story.
 function renderSessionCardHtml(sq){
   var sess = openSessionForSquad(sq.id);
   if(!sess){
+    // RETRO-3: one checkbox per board dimension, checked (included) by
+    // default -- unchecking one excludes it from THIS session only (see
+    // startSession()'s own comment). Checked state is restored from
+    // pendingDimExclusionsFor (below), not hardcoded to `checked` --
+    // Codex review on PR #34 found that state.dimensions changing AT ALL
+    // (even on an unrelated dimension, from this device or a
+    // co-facilitator's) fires db.js's own dimensions listener, which calls
+    // renderAll() and rebuilds this whole card from scratch; a plain
+    // unchecked checkbox on the OLD DOM node survives none of that, so
+    // without this the facilitator's exclusion silently reset to
+    // "everything included" on the very next unrelated board change.
+    var excludedDraft = pendingDimExclusionsFor[sq.id] || {};
+    var dimChecklistHtml = sortedDimensions().map(function(d){
+      var checked = !excludedDraft[d.key];
+      return '<label class="check-row" style="display:flex;align-items:center;gap:8px;margin:0 0 6px;">' +
+        '<input type="checkbox" class="dim-include-checkbox" data-dim-key="'+esc(d.key)+'"'+(checked?' checked':'')+'>' +
+        '<span dir="auto">'+esc(localizedDimText(d, "label"))+'</span>' +
+      '</label>';
+    }).join("");
     return '<div class="card session-card">' +
-      '<h2>Retro session</h2>' +
-      '<p class="hint">Start a live session using the board&rsquo;s current template (&ldquo;'+esc(state.config.activeTemplateName||"Custom")+'&rdquo;) &mdash; teammates can join and answer on their own device.</p>' +
-      '<button class="btn primary" id="startSessionBtn" type="button">Start retro session</button>' +
+      '<h2>'+esc(t("retro.noSession.heading"))+'</h2>' +
+      '<p class="hint">'+esc(t("retro.noSession.hint", {templateName: state.config.activeTemplateName||"Custom"}))+'</p>' +
+      '<label class="check-row" style="display:flex;align-items:center;gap:8px;margin:0 0 12px;">' +
+        '<input type="checkbox" id="pacingToggle">' +
+        '<span dir="auto">'+esc(t("retro.startOptions.pacingLabel"))+'</span>' +
+      '</label>' +
+      '<p class="hint" style="margin:-6px 0 12px;">'+esc(t("retro.startOptions.pacingHint"))+'</p>' +
+      '<details class="legend" style="margin:0 0 12px;">' +
+        '<summary><span>'+esc(t("retro.startOptions.dimensionsSummary"))+'</span> <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>' +
+        '<div style="padding:0 4px 10px;">' +
+          '<p class="hint" style="margin:0 0 8px;">'+esc(t("retro.startOptions.dimensionsHint"))+'</p>' +
+          dimChecklistHtml +
+          '<p class="hint" id="dimSelectHint" style="margin:6px 0 0;" hidden>'+esc(t("retro.startOptions.noDimensionsHint"))+'</p>' +
+        '</div>' +
+      '</details>' +
+      '<button class="btn primary" id="startSessionBtn" type="button">'+esc(t("retro.startButton"))+'</button>' +
     '</div>';
   }
-  var joinUrl = joinUrlFor(sess.id);
-  var coFacilitateUrl = coFacilitateUrlFor(sess.id);
+  // SEC-2: state.sessions is rebuilt wholesale from the relay's own,
+  // necessarily secret-less, broad snapshot on every change (see db.js) --
+  // the secret a join/co-facilitate link needs lives only in
+  // relay-client.js's own knownCodes bookkeeping (see its secretForRoom()).
+  var sessSecret = SquadPulseRelay.secretForRoom(sess.id) || "";
+  var joinUrl = joinUrlFor(sessSecret);
+  var coFacilitateUrl = coFacilitateUrlFor(sessSecret);
   var activeDims = retroDimensions(sess.dimensions);
   var revealMode = sess.revealMode || "hold";
+  // RETRO-2: shown only for a session started with pacing on. `total` is
+  // recomputed from `sess.dimensions` on every render rather than stored --
+  // see helpers.js's pacingSequence() header comment for why that's safe
+  // (a pure function of the same snapshot every device already has).
+  // `currentQuestionIndex` ranges 0..total inclusive: 0..total-1 is a real
+  // question; `total` itself is the "questioning finished" sentinel every
+  // participant's own auto-submit watches for (retro-join.js) -- Previous
+  // stays enabled there too, so the facilitator can still go back and let a
+  // straggler catch up after finishing.
+  var pacingHtml = "";
+  var pacingSeq = pacingSequence(sess.dimensions);
+  if(sess.pacingEnabled && pacingSeq.length){
+    var qIdx = sess.currentQuestionIndex || 0;
+    var atStart = qIdx <= 0;
+    var atEnd = qIdx >= pacingSeq.length;
+    var nextLabel = qIdx === pacingSeq.length - 1 ? t("retro.pacing.finishButton") : t("retro.pacing.nextButton");
+    var qText = atEnd ? null : pacingQuestionText(activeDims, pacingSeq, qIdx);
+    // PO review follow-up: a plain 12.5px .hint line was too easy for a
+    // facilitator to miss next to the Previous/Next controls -- this now
+    // gets its own accent-tinted box (see .pacing-question-box/.pacing-
+    // current-question, styles.css) plus the same green/red anchor text a
+    // direct-rating participant sees before answering (directRowHtml(),
+    // retro-join.js), so the facilitator can interpret what a green vs. red
+    // answer means for THIS dimension without a second device open.
+    var questionTextHtml = "";
+    if(qText){
+      var curItem = pacingSeq[qIdx];
+      var curDim = activeDims.filter(function(d){ return d.key===curItem.dimKey; })[0];
+      var curGreen = curDim ? localizedDimText(curDim, "green") : "";
+      var curRed = curDim ? localizedDimText(curDim, "red") : "";
+      var pacingAnchorsHtml = (curGreen || curRed)
+        ? '<p class="hint" id="pacingQuestionAnchors" style="margin:8px 0 0;">' +
+            (curGreen ? '<b>'+esc(t("tribe.legend.greenLabel"))+'</b> <span dir="auto">'+esc(curGreen)+'</span> ' : '') +
+            (curRed ? '<b>'+esc(t("tribe.legend.redLabel"))+'</b> <span dir="auto">'+esc(curRed)+'</span>' : '') +
+          '</p>'
+        : "";
+      questionTextHtml =
+        '<div class="pacing-question-box">' +
+          '<p class="field-label" style="margin:0 0 4px;">'+esc(t("retro.pacing.currentQuestionLabel"))+'</p>' +
+          '<p class="pacing-current-question" id="pacingQuestionText" dir="auto">'+esc(qText)+'</p>' +
+          pacingAnchorsHtml +
+        '</div>';
+    }
+    pacingHtml =
+      questionTextHtml +
+      '<div class="pacing-controls" style="display:flex;align-items:center;gap:10px;margin:0 0 10px;">' +
+        '<button class="btn" id="pacingPrevBtn" type="button"'+(atStart?" disabled":"")+'>'+esc(t("retro.pacing.prevButton"))+'</button>' +
+        '<span class="hint" id="pacingCounter" style="margin:0;">'+esc(atEnd ? t("retro.pacing.doneHint") : t("retro.pacing.counter", {current: qIdx+1, total: pacingSeq.length}))+'</span>' +
+        (atEnd ? "" : '<button class="btn primary" id="pacingNextBtn" type="button">'+esc(nextLabel)+'</button>') +
+      '</div>';
+  }
   var liveHtml = "";
   if(activeDims.length){
     var responses = state.sessionResponses || [];
     var submittedCount = responses.length;
     var toggleHtml =
-      '<div class="view-switch reveal-toggle" role="tablist" aria-label="Reveal mode" style="margin-top:8px;">' +
-        '<button class="reveal-btn'+(revealMode==="hold"?" active":"")+'" data-reveal="hold" type="button" role="tab">Hold results</button>' +
-        '<button class="reveal-btn'+(revealMode==="live"?" active":"")+'" data-reveal="live" type="button" role="tab">Show live</button>' +
+      '<div class="view-switch reveal-toggle" role="tablist" aria-label="'+esc(t("retro.reveal.ariaLabel"))+'" style="margin-top:8px;">' +
+        '<button class="reveal-btn'+(revealMode==="hold"?" active":"")+'" data-reveal="hold" type="button" role="tab">'+esc(t("retro.reveal.hold"))+'</button>' +
+        '<button class="reveal-btn'+(revealMode==="live"?" active":"")+'" data-reveal="live" type="button" role="tab">'+esc(t("retro.reveal.live"))+'</button>' +
       '</div>';
-    var countLine = submittedCount + ' ' + (submittedCount===1?'teammate has':'teammates have') + ' submitted so far.';
+    var countLine = submittedCount===1 ? t("retro.countLine.one") : t("retro.countLine.many", {count: submittedCount});
     if(revealMode === "live"){
       var dimRowsHtml = activeDims.map(function(dim){
         var result = effectiveDimResult(dim, sess, responses);
-        var pillWord = !result ? "Waiting…" : result.color==="good" ? "Green" : result.color==="warn" ? "Yellow" : "Red";
+        var pillWord = !result ? t("retro.live.waiting") : colorWordLocalized(result.color);
         var trendHtml = (result && (result.trend==="up" || result.trend==="down"))
-          ? '<span class="dim-trend '+result.trend+'" title="'+trendWord(result.trend)+'">'+trendIcon(result.trend)+'</span>' : '';
+          ? '<span class="dim-trend '+result.trend+'" title="'+esc(trendWordLocalized(result.trend))+'">'+trendIcon(result.trend)+'</span>' : '';
+        var dimLabel = localizedDimText(dim, "label");
         return '<div class="live-dim-row">' +
-          '<span class="dim-name" dir="auto">'+esc(dim.label)+'</span>' +
+          '<span class="dim-name" dir="auto">'+esc(dimLabel)+'</span>' +
           '<span class="live-dim-actions">' +
-            (result && result.overridden ? '<span class="override-tag">Overridden</span>' : '') +
-            '<span class="pill'+(result?(' '+result.color):' unscored')+'">'+pillWord+'</span>' +
+            (result && result.overridden ? '<span class="override-tag">'+esc(t("retro.live.overriddenTag"))+'</span>' : '') +
+            '<span class="pill'+(result?(' '+result.color):' unscored')+'">'+esc(pillWord)+'</span>' +
             trendHtml +
-            '<button class="icon-btn override-btn" data-override-dim="'+esc(dim.key)+'" type="button" title="Override this result" aria-label="Override '+esc(dim.label)+'">' +
+            '<button class="icon-btn override-btn" data-override-dim="'+esc(dim.key)+'" type="button" title="'+esc(t("retro.live.overrideTitle"))+'" aria-label="'+esc(t("retro.live.overrideTitle"))+' '+esc(dimLabel)+'">' +
               '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>' +
             '</button>' +
           '</span>' +
@@ -178,18 +330,19 @@ function renderSessionCardHtml(sq){
       // pills above, and only reachable at all while already in live mode.
       var respTableHtml = "";
       if(responses.length){
-        var headHtml = activeDims.map(function(d){ return '<th dir="auto">'+esc(d.label)+'</th>'; }).join("");
+        var headHtml = activeDims.map(function(d){ return '<th dir="auto">'+esc(localizedDimText(d, "label"))+'</th>'; }).join("");
         var bodyHtml = responses.map(function(r, i){
           var cells = activeDims.map(function(d){
             var b = bandForResponse(d, r);
-            var word = b==="good"?"Green":b==="warn"?"Yellow":b==="crit"?"Red":"—";
-            return '<td><span class="pill'+(b?(' '+b):' unscored')+'">'+word+'</span></td>';
+            var word = b ? colorWordLocalized(b) : "—";
+            return '<td><span class="pill'+(b?(' '+b):' unscored')+'">'+esc(word)+'</span></td>';
           }).join("");
-          return '<tr><th>Response '+(i+1)+'</th>'+cells+'</tr>';
+          return '<tr><th>'+esc(t("retro.live.responseRowLabel", {n: i+1}))+'</th>'+cells+'</tr>';
         }).join("");
+        var seeResponsesText = responses.length===1 ? t("retro.live.seeResponsesOne") : t("retro.live.seeResponsesMany", {count: responses.length});
         respTableHtml =
           '<details class="legend resp-details" style="margin-top:10px;">' +
-            '<summary>See all '+responses.length+' response'+(responses.length===1?"":"s")+' <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>' +
+            '<summary><span>'+esc(seeResponsesText)+'</span> <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>' +
             '<div style="padding:0 4px 10px;">' +
               '<div class="table-scroll"><table class="resp-table"><thead><tr><th></th>'+headHtml+'</tr></thead><tbody>'+bodyHtml+'</tbody></table></div>' +
             '</div>' +
@@ -197,8 +350,8 @@ function renderSessionCardHtml(sq){
       }
       liveHtml =
         '<div class="live-block">' +
-          '<div class="field-label" style="margin-top:0;">Live results</div>' +
-          '<p class="hint" style="margin:0 0 8px;">'+countLine+'</p>' +
+          '<div class="field-label" style="margin-top:0;">'+esc(t("retro.live.heading"))+'</div>' +
+          '<p class="hint" style="margin:0 0 8px;">'+esc(countLine)+'</p>' +
           dimRowsHtml +
           respTableHtml +
           toggleHtml +
@@ -206,68 +359,87 @@ function renderSessionCardHtml(sq){
     } else {
       liveHtml =
         '<div class="live-block">' +
-          '<div class="field-label" style="margin-top:0;">Results held</div>' +
-          '<p class="hint" style="margin:0 0 0;">'+countLine+' Switch to &ldquo;Show live&rdquo; any time to see the consolidated results as they come in.</p>' +
+          '<div class="field-label" style="margin-top:0;">'+esc(t("retro.held.heading"))+'</div>' +
+          '<p class="hint" style="margin:0 0 0;">'+esc(countLine)+esc(t("retro.held.hint"))+'</p>' +
           toggleHtml +
         '</div>';
     }
   }
   var noteVal = sess.experimentNote || "";
+  // RETRO-2 follow-up (PO review): "Saved" used to be a 1.8s timed flash
+  // (window.__expNoteHintTimer, since removed) -- easy to miss, and worse,
+  // could be silently wiped out mid-flash by an UNRELATED re-render (any
+  // live sessions/responses update re-renders this whole card -- see
+  // subscribeSessionResponses()), since it was hardcoded `hidden` in this
+  // markup rather than derived from anything. savedExperimentNoteFor
+  // (below, near startingSessionFor) is this device's own record of the
+  // exact text it last successfully saved for this session; comparing it
+  // against the session's own persisted note HERE, at render time, means
+  // "Saved" stays correctly shown through any number of unrelated
+  // re-renders, and (via #experimentNoteBox's own `input` listener in
+  // bindSessionCardEvents) disappears the moment this device's note
+  // differs from what's actually saved.
+  if(!(sess.id in savedExperimentNoteFor)) savedExperimentNoteFor[sess.id] = noteVal;
+  var noteIsSaved = noteVal !== "" && savedExperimentNoteFor[sess.id] === noteVal;
+  var noteSaveFailed = !!noteSaveFailedFor[sess.id];
   var experimentHtml =
-    '<div class="field-label" style="margin-top:14px;">Sprint experiment</div>' +
-    '<p class="hint" style="margin:0 0 8px;">What will the team try differently next sprint?</p>' +
-    '<textarea class="note" id="experimentNoteBox" placeholder="e.g. Pair on the riskiest story each day" dir="auto">'+esc(noteVal)+'</textarea>' +
+    '<div class="field-label" style="margin-top:14px;">'+esc(t("retro.experiment.heading"))+'</div>' +
+    '<p class="hint" style="margin:0 0 8px;">'+esc(t("retro.experiment.hint"))+'</p>' +
+    '<textarea class="note" id="experimentNoteBox" placeholder="'+esc(t("retro.experiment.placeholder"))+'" dir="auto">'+esc(noteVal)+'</textarea>' +
     '<div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:6px;">' +
-      '<span class="hint" id="expNoteSavedHint" style="margin:0;" hidden>Saved</span>' +
-      '<button class="btn" id="saveExperimentNoteBtn" type="button">Save note</button>' +
+      '<span class="hint" id="expNoteSavedHint" style="margin:0;"'+(noteIsSaved?"":" hidden")+'>'+esc(t("retro.experiment.saved"))+'</span>' +
+      '<span class="hint error" id="expNoteSaveErrorHint" style="margin:0;"'+(noteSaveFailed?"":" hidden")+'>'+esc(t("retro.experiment.saveFailed"))+'</span>' +
+      '<button class="btn" id="saveExperimentNoteBtn" type="button">'+esc(t("retro.experiment.saveButton"))+'</button>' +
     '</div>';
   var finishHtml = activeDims.length
-    ? '<button class="btn primary" id="finishSessionBtn" type="button" style="margin-top:14px;">Finish retro &amp; apply results</button>'
+    ? '<button class="btn primary" id="finishSessionBtn" type="button" style="margin-top:14px;">'+esc(t("retro.finishButton"))+'</button>'
     : "";
+  // SEC-2: the join-code modal and the raw code display above are gone --
+  // per the locked PO decision in STATUS.md, a retro session is joined only
+  // by scanning its QR code or opening its link, so this block (previously
+  // collapsed behind an "Or scan/share a link" <details>) is now the only
+  // path and is shown directly, no longer collapsed by default.
+  var securityNoticeHtml = '<p class="hint security-notice">'+esc(t("retro.shareSecurity.notice"))+'</p>';
   return '<div class="card session-card">' +
-    '<h2>Retro session in progress</h2>' +
-    '<p class="hint">Retro: &ldquo;'+esc(sess.templateName)+'&rdquo;.</p>' +
-    '<div class="session-code-block">' +
-      '<div class="field-label" style="margin-top:0;">Session code</div>' +
-      '<div class="session-code">'+esc(sess.id)+'</div>' +
-      '<p class="hint" style="margin:8px 0 0;">Have teammates open Squad Pulse and tap &ldquo;Join a retro&rdquo; up top, then type this code in.</p>' +
-    '</div>' +
+    '<h2>'+esc(t("retro.inProgressHeading"))+'</h2>' +
+    '<p class="hint">'+esc(t("retro.retroLabel", {name: sess.templateName}))+'</p>' +
+    pacingHtml +
     liveHtml +
     experimentHtml +
-    '<details class="legend" style="margin-top:14px;">' +
-      '<summary>Or scan/share a link <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>' +
-      '<div style="padding:0 18px 16px;">' +
-        '<p class="hint" style="margin:0 0 10px;">On some phones, scanning this opens the Claude app to the regular board instead of the retro &mdash; if that happens, use the session code above instead.</p>' +
-        '<div class="join-row">' +
-          '<div class="qr-box" id="sessionQr"></div>' +
-          '<div class="join-link-col">' +
-            '<div class="field-label" style="margin-top:0;">Join link</div>' +
-            '<div class="join-link-row">' +
-              '<input class="join-link-input" id="sessionJoinLink" type="text" readonly value="'+esc(joinUrl)+'" aria-label="Join link">' +
-              '<button class="btn" id="copyJoinLinkBtn" type="button">Copy</button>' +
-            '</div>' +
+    '<div class="join-share-block" style="margin-top:14px;">' +
+      '<div class="field-label" style="margin-top:0;">'+esc(t("retro.shareLink.summary"))+'</div>' +
+      '<p class="hint" style="margin:0 0 10px;">'+esc(t("retro.shareLink.hint"))+'</p>' +
+      '<div class="join-row">' +
+        '<div class="qr-box" id="sessionQr"></div>' +
+        '<div class="join-link-col">' +
+          '<div class="field-label" style="margin-top:0;">'+esc(t("retro.shareLink.linkLabel"))+'</div>' +
+          '<div class="join-link-row">' +
+            '<input class="join-link-input" id="sessionJoinLink" type="text" readonly value="'+esc(joinUrl)+'" aria-label="'+esc(t("retro.shareLink.linkLabel"))+'">' +
+            '<button class="btn" id="copyJoinLinkBtn" type="button">'+esc(t("retro.shareLink.copy"))+'</button>' +
           '</div>' +
         '</div>' +
       '</div>' +
-    '</details>' +
+      securityNoticeHtml +
+    '</div>' +
     '<details class="legend" style="margin-top:8px;">' +
-      '<summary>Bring in a co-facilitator <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>' +
+      '<summary><span>'+esc(t("retro.coFacilitate.summary"))+'</span> <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>' +
       '<div style="padding:0 18px 16px;">' +
-        '<p class="hint" style="margin:0 0 10px;">A different link from the join link above &mdash; opening this gets the FULL facilitator view (live tally, override, finish), not the survey.</p>' +
+        '<p class="hint" style="margin:0 0 10px;">'+esc(t("retro.coFacilitate.hint"))+'</p>' +
         '<div class="join-row">' +
           '<div class="qr-box" id="coFacilitateQr"></div>' +
           '<div class="join-link-col">' +
-            '<div class="field-label" style="margin-top:0;">Co-facilitator link</div>' +
+            '<div class="field-label" style="margin-top:0;">'+esc(t("retro.coFacilitate.linkLabel"))+'</div>' +
             '<div class="join-link-row">' +
-              '<input class="join-link-input" id="coFacilitateLink" type="text" readonly value="'+esc(coFacilitateUrl)+'" aria-label="Co-facilitator link">' +
-              '<button class="btn" id="copyCoFacilitateLinkBtn" type="button">Copy</button>' +
+              '<input class="join-link-input" id="coFacilitateLink" type="text" readonly value="'+esc(coFacilitateUrl)+'" aria-label="'+esc(t("retro.coFacilitate.linkLabel"))+'">' +
+              '<button class="btn" id="copyCoFacilitateLinkBtn" type="button">'+esc(t("retro.shareLink.copy"))+'</button>' +
             '</div>' +
           '</div>' +
         '</div>' +
+        securityNoticeHtml +
       '</div>' +
     '</details>' +
     finishHtml +
-    '<button class="btn danger" id="closeSessionBtn" type="button" style="margin-top:'+(finishHtml?"8px":"14px")+';">Close session without applying results</button>' +
+    '<button class="btn danger" id="closeSessionBtn" type="button" style="margin-top:'+(finishHtml?"8px":"14px")+';">'+esc(t("retro.closeButton"))+'</button>' +
   '</div>';
 }
 
@@ -282,25 +454,83 @@ function renderSessionCardHtml(sq){
 // (third, ninth...) concurrent attempt.
 var startingSessionFor = {};
 
+// RETRO-2 follow-up (PO review): { [sessionId]: <text this device last
+// successfully saved> }, read by renderSessionCardHtml() above to decide
+// whether "Saved" shows -- see that comment for the full reasoning (the
+// same "state change re-renders this card" problem startingSessionFor
+// above solves, applied to the sprint-experiment note's save confirmation).
+var savedExperimentNoteFor = {};
+
+// Codex review (PR #35): { [sessionId]: true } for a device whose most
+// recent save attempt was rejected, read by renderSessionCardHtml() the
+// same way savedExperimentNoteFor is -- otherwise the failure hint would
+// be hardcoded `hidden` in the markup again and vanish on the very next
+// unrelated re-render, the exact bug class this file already fixed once
+// for "Saved" itself.
+var noteSaveFailedFor = {};
+
+// RETRO-3: draft dimension-exclusion choices, kept OUTSIDE the DOM and
+// keyed by squad id -- exactly the reason startingSessionFor (above)
+// exists: state.dimensions changing at all (even a totally unrelated
+// dimension, from this device or a co-facilitator's) fires db.js's own
+// dimensions listener, which calls renderAll() and rebuilds this whole
+// card from scratch (Codex review on PR #34, reproduced: exclude a
+// dimension, trigger a board snapshot, and the checklist silently reset to
+// all-checked). A plain unchecked checkbox on the OLD DOM node survives
+// none of that; this object does, so renderSessionCardHtml() can restore
+// exactly what the facilitator chose instead of defaulting back to
+// "everything included." { [squadId]: { [dimKey]: true } } -- a key's mere
+// presence means "excluded"; absent/false means included, matching an
+// unchecked-by-default checklist needing no entries at all in the common
+// case where nothing's excluded.
+var pendingDimExclusionsFor = {};
+
 function bindSessionCardEvents(sq){
   var startBtn = document.getElementById("startSessionBtn");
   if(startBtn){
     if(startingSessionFor[sq.id]){ startBtn.disabled = true; startBtn.textContent = "Starting…"; }
+    // RETRO-3: a plain `change` listener per checkbox, not a re-render --
+    // see renderSessionCardHtml()'s own comment on why. Runs once up front
+    // too, so a board with every dimension pre-excluded by some future
+    // caller (none exist today; every checkbox starts checked) doesn't show
+    // a momentarily-enabled Start button before the first toggle.
+    var dimCheckboxes = document.querySelectorAll(".dim-include-checkbox");
+    if(dimCheckboxes.length){
+      var updateDimSelectionValidity = function(){
+        var anyChecked = Array.prototype.some.call(dimCheckboxes, function(cb){ return cb.checked; });
+        startBtn.disabled = !anyChecked || !!startingSessionFor[sq.id];
+        var hint = document.getElementById("dimSelectHint");
+        if(hint) hint.hidden = anyChecked;
+      };
+      dimCheckboxes.forEach(function(cb){
+        cb.addEventListener("change", function(){
+          var draft = pendingDimExclusionsFor[sq.id] || (pendingDimExclusionsFor[sq.id] = {});
+          if(cb.checked) delete draft[cb.getAttribute("data-dim-key")];
+          else draft[cb.getAttribute("data-dim-key")] = true;
+          updateDimSelectionValidity();
+        });
+      });
+      updateDimSelectionValidity();
+    }
     startBtn.addEventListener("click", function(){
-      if(startingSessionFor[sq.id]) return;
+      if(startingSessionFor[sq.id] || startBtn.disabled) return;
       startingSessionFor[sq.id] = true;
       startBtn.disabled = true;
-      startBtn.textContent = "Starting…";
-      startSession(sq).then(function(){
+      startBtn.textContent = t("retro.startingButton");
+      var pacingToggle = document.getElementById("pacingToggle");
+      var excludedDimKeys = Array.prototype.filter.call(dimCheckboxes, function(cb){ return !cb.checked; })
+        .map(function(cb){ return cb.getAttribute("data-dim-key"); });
+      startSession(sq, pacingToggle && pacingToggle.checked, excludedDimKeys).then(function(){
         delete startingSessionFor[sq.id];
+        delete pendingDimExclusionsFor[sq.id];
       }).catch(function(err){
         delete startingSessionFor[sq.id];
         startBtn.disabled = false;
-        startBtn.textContent = "Start retro session";
+        startBtn.textContent = t("retro.startButton");
         openConfirm(
-          "Couldn’t start the retro session",
-          (err && err.message) ? err.message : "Something went wrong reaching the relay. Check the diagnostic log below for details.",
-          function(){}, "OK"
+          t("retro.confirmStart.errorTitle"),
+          (err && err.message) ? err.message : t("retro.coFacilitate.errorFallback"),
+          function(){}, t("common.ok")
         );
       });
     });
@@ -311,10 +541,10 @@ function bindSessionCardEvents(sq){
     var sess = openSessionForSquad(sq.id);
     if(!sess) return;
     openConfirm(
-      "Close this retro session?",
-      "Ends the session for everyone with the link. This does not change any of " + sq.name + "’s existing ratings.",
-      function(){ closeSession(sess.id); },
-      "Close without applying results"
+      t("retro.confirmClose.title"),
+      t("retro.confirmClose.message", {name: sq.name}),
+      function(){ closeSession(sess.id).catch(function(){}); },
+      t("retro.confirmClose.button")
     );
   });
 
@@ -329,7 +559,7 @@ function bindSessionCardEvents(sq){
   var qrBox = document.getElementById("sessionQr");
   if(qrBox){
     var sess = openSessionForSquad(sq.id);
-    if(sess) renderQrInto(qrBox, joinUrlFor(sess.id));
+    if(sess) renderQrInto(qrBox, joinUrlFor(SquadPulseRelay.secretForRoom(sess.id) || ""));
   }
 
   var copyCoFacilitateBtn = document.getElementById("copyCoFacilitateLinkBtn");
@@ -343,7 +573,7 @@ function bindSessionCardEvents(sq){
   var coFacilitateQrBox = document.getElementById("coFacilitateQr");
   if(coFacilitateQrBox){
     var coFacSess = openSessionForSquad(sq.id);
-    if(coFacSess) renderQrInto(coFacilitateQrBox, coFacilitateUrlFor(coFacSess.id));
+    if(coFacSess) renderQrInto(coFacilitateQrBox, coFacilitateUrlFor(SquadPulseRelay.secretForRoom(coFacSess.id) || ""));
   }
 
   document.querySelectorAll(".reveal-btn").forEach(function(btn){
@@ -352,6 +582,19 @@ function bindSessionCardEvents(sq){
       if(!sess) return;
       setRevealMode(sess, btn.getAttribute("data-reveal"));
     });
+  });
+
+  var pacingPrevBtn = document.getElementById("pacingPrevBtn");
+  if(pacingPrevBtn) pacingPrevBtn.addEventListener("click", function(){
+    var sess = openSessionForSquad(sq.id);
+    if(!sess) return;
+    setCurrentQuestionIndex(sess, (sess.currentQuestionIndex || 0) - 1);
+  });
+  var pacingNextBtn = document.getElementById("pacingNextBtn");
+  if(pacingNextBtn) pacingNextBtn.addEventListener("click", function(){
+    var sess = openSessionForSquad(sq.id);
+    if(!sess) return;
+    setCurrentQuestionIndex(sess, (sess.currentQuestionIndex || 0) + 1);
   });
 
   document.querySelectorAll(".override-btn").forEach(function(btn){
@@ -363,17 +606,51 @@ function bindSessionCardEvents(sq){
   });
 
   var saveNoteBtn = document.getElementById("saveExperimentNoteBtn");
+  var expNoteBox = document.getElementById("experimentNoteBox");
+  var expNoteHint = document.getElementById("expNoteSavedHint");
+  // RETRO-2 follow-up (PO review): live dirty-detection while typing --
+  // without this, "Saved" (shown by renderSessionCardHtml() at render time,
+  // or set true below right after a click) would keep claiming the note is
+  // saved even after the facilitator starts editing it again.
+  if(expNoteBox && expNoteHint) expNoteBox.addEventListener("input", function(){
+    var sess = openSessionForSquad(sq.id);
+    if(!sess) return;
+    expNoteHint.hidden = savedExperimentNoteFor[sess.id] !== expNoteBox.value;
+  });
   if(saveNoteBtn) saveNoteBtn.addEventListener("click", function(){
     var sess = openSessionForSquad(sq.id);
     var box = document.getElementById("experimentNoteBox");
     if(!sess || !box) return;
-    saveExperimentNote(sess.id, box.value.trim());
-    var hint = document.getElementById("expNoteSavedHint");
-    if(hint){
-      hint.hidden = false;
-      clearTimeout(window.__expNoteHintTimer);
-      window.__expNoteHintTimer = setTimeout(function(){ hint.hidden = true; }, 1800);
-    }
+    var text = box.value.trim();
+    delete noteSaveFailedFor[sess.id];
+    var errHint = document.getElementById("expNoteSaveErrorHint");
+    if(errHint) errHint.hidden = true;
+    // Codex review (PR #35): the "Saved" hint used to be shown -- and
+    // savedExperimentNoteFor recorded -- immediately on click, without
+    // ever waiting to see whether the write actually landed. Await the
+    // save's own promise and only claim "saved" once it resolves; a
+    // rejected write (relay down, a stale/missing session doc) instead
+    // records the failure in noteSaveFailedFor (read at render time, same
+    // pattern as savedExperimentNoteFor) so the failure hint survives an
+    // unrelated re-render instead of being wiped like "Saved" itself used
+    // to be, and never gets papered over with a stale "Saved".
+    saveExperimentNote(sess.id, text).then(function(){
+      savedExperimentNoteFor[sess.id] = text;
+      // Codex review (PR #35, second pass): a save's own completion doesn't
+      // mean the box still shows what it just saved -- the facilitator can
+      // (and did, in the reported repro) type something newer while this
+      // exact write was still in flight. Only claim "Saved" if the box's
+      // CURRENT value still matches the text this completion actually
+      // persisted; otherwise leave it exactly as the `input` listener
+      // above already left it for the now-newer, unsaved text.
+      var currentBox = document.getElementById("experimentNoteBox");
+      var hint = document.getElementById("expNoteSavedHint");
+      if(hint) hint.hidden = !currentBox || currentBox.value !== text;
+    }).catch(function(){
+      noteSaveFailedFor[sess.id] = true;
+      var errHint2 = document.getElementById("expNoteSaveErrorHint");
+      if(errHint2) errHint2.hidden = false;
+    });
   });
 
   var finishBtn = document.getElementById("finishSessionBtn");
@@ -387,21 +664,21 @@ function bindSessionCardEvents(sq){
     }).filter(function(x){ return !!x.result; });
     if(!results.length){
       openConfirm(
-        "Finish this retro?",
-        "No submissions or overrides yet, so " + sq.name + "’s ratings won’t change. This just closes the session.",
-        function(){ closeSession(sess.id); },
-        "Close without applying results"
+        t("retro.confirmFinishEmpty.title"),
+        t("retro.confirmFinishEmpty.message", {name: sq.name}),
+        function(){ closeSession(sess.id).catch(function(){}); },
+        t("retro.confirmClose.button")
       );
       return;
     }
     var summary = results.map(function(x){
-      return x.dim.label + ": " + colorWord(x.result.color) + (x.result.overridden ? " (overridden)" : "");
+      return localizedDimText(x.dim, "label") + ": " + colorWordLocalized(x.result.color) + (x.result.overridden ? t("retro.confirmFinish.overriddenSuffix") : "");
     }).join(", ");
     openConfirm(
-      "Finish this retro?",
-      "Writes these results into " + sq.name + "’s ratings, then closes the session — " + summary,
+      t("retro.confirmFinish.title"),
+      t("retro.confirmFinish.message", {name: sq.name, summary: summary}),
       function(){ finishRetroAndApply(sq, sess, results); },
-      "Finish & apply"
+      t("retro.confirmFinish.button")
     );
   });
 
@@ -420,6 +697,27 @@ function setRevealMode(sess, mode){
     });
   }, function(){
     sess.revealMode = mode;
+    renderSquadView();
+  });
+}
+
+// RETRO-2: moves the paced session's shared "current question" pointer.
+// Clamped to [0, pacingSequence(sess.dimensions).length] -- the upper bound
+// is the "questioning finished" sentinel every participant's join screen
+// watches for (see retro-join.js), not an out-of-range value to guard
+// against; going lower than 0 (Previous past the first question) is simply
+// a no-op, same shape bindSessionCardEvents()'s own disabled-Prev-button
+// already prevents from the UI, but checked here too since this is the one
+// function that actually writes the shared value.
+function setCurrentQuestionIndex(sess, index){
+  var total = pacingSequence(sess.dimensions).length;
+  var clamped = Math.max(0, Math.min(index, total));
+  liveOr(function(){
+    return state.db.collection("sessions").doc(sess.id).update({ currentQuestionIndex: clamped }).catch(function(err){
+      diag("Set current question index failed: " + (err && err.code ? err.code : String(err)));
+    });
+  }, function(){
+    sess.currentQuestionIndex = clamped;
     renderSquadView();
   });
 }
@@ -461,13 +759,13 @@ function openSessionOverrideEditor(sess, dimKey){
     trend: (existingOverride && existingOverride.trend) || "flat",
     note: (existingOverride && existingOverride.note) || ""
   };
-  document.getElementById("modalTitle").textContent = d.label;
-  document.getElementById("modalSquadline").textContent = "Overriding this retro’s consolidated result";
-  document.getElementById("modalGreen").textContent = d.green||"";
-  document.getElementById("modalRed").textContent = d.red||"";
+  document.getElementById("modalTitle").textContent = localizedDimText(d, "label");
+  document.getElementById("modalSquadline").textContent = t("retro.override.squadline");
+  document.getElementById("modalGreen").textContent = localizedDimText(d, "green") || "";
+  document.getElementById("modalRed").textContent = localizedDimText(d, "red") || "";
   var noteBox = document.getElementById("modalNote");
   noteBox.value = state.editingOverride.note;
-  noteBox.placeholder = "Why override this? (optional)";
+  noteBox.placeholder = t("retro.override.notePlaceholder");
   updateSwatchSelection();
   updateTrendSelection();
   document.getElementById("modalResetOverride").hidden = !existingOverride;
@@ -480,13 +778,20 @@ function openSessionOverrideEditor(sess, dimKey){
 // remote change, which would otherwise yank focus out of the textarea
 // while someone's still typing.
 function saveExperimentNote(sessionId, text){
-  liveOr(function(){
+  // Returns the write's own promise -- rejecting, not swallowing, on
+  // failure -- so the caller (the Save button's click handler) can tell a
+  // real persisted save from one that never landed. See Codex's PR #35
+  // review: this used to catch-and-log only, which meant the promise
+  // always resolved and the caller had no way to know the write failed.
+  return liveOr(function(){
     return state.db.collection("sessions").doc(sessionId).update({ experimentNote: text }).catch(function(err){
       diag("Save experiment note failed: " + (err && err.code ? err.code : String(err)));
+      throw err;
     });
   }, function(){
     var sess = state.sessions.filter(function(s){ return s.id===sessionId; })[0];
     if(sess) sess.experimentNote = text;
+    return Promise.resolve();
   });
 }
 
@@ -494,16 +799,28 @@ function saveExperimentNote(sessionId, text){
 // Writes the (possibly overridden) consolidated result for each scored
 // dimension into the squad's own rating -- the same field Tribe view
 // already reads -- then closes the session like a normal close.
+// RETRO-1 (STATUS.md's "Facilitated retro backlog"): also snapshots this
+// finish onto the squad itself as `lastRetro` -- finishedAt, the sprint
+// experiment note, and each dimension's result INCLUDING whether it was
+// manually overridden (effectiveDimResult()'s own `overridden` flag,
+// otherwise lost the moment the session closes and its doc eventually
+// expires via the relay's room-empty grace period). This is what makes a
+// finished retro's own context -- not just its resulting ratings --
+// portable through JSON board export/import (board-export.js/board-import-*.js).
 function finishRetroAndApply(sq, sess, results){
   sq.dimensions = Object.assign({}, sq.dimensions);
   var patchedKeys = [];
+  var lastRetroDimensions = {};
   results.forEach(function(x){
     var existing = sq.dimensions[x.dim.key] || {};
     sq.dimensions[x.dim.key] = { color: x.result.color, trend: x.result.trend, note: existing.note || "" };
     patchedKeys.push(x.dim.key);
+    lastRetroDimensions[x.dim.key] = { color: x.result.color, trend: x.result.trend, overridden: !!x.result.overridden };
   });
-  if(patchedKeys.length) persistDimensionRatings(sq, patchedKeys);
-  closeSession(sess.id);
+  var lastRetro = { finishedAt: nowIso(), experimentNote: sess.experimentNote || "", dimensions: lastRetroDimensions };
+  sq.lastRetro = lastRetro;
+  if(patchedKeys.length) persistDimensionRatings(sq, patchedKeys, { lastRetro: lastRetro });
+  closeSession(sess.id).catch(function(){});
   renderAll();
 }
 
@@ -536,7 +853,7 @@ function subscribeSessionResponses(sess){
 }
 
 // Renders a QR code as inline SVG via the bundled qrcode-generator library
-// (kept inline rather than loaded from a CDN, so the join code still works
+// (kept inline rather than loaded from a CDN, so the join link still works
 // even if a live retro session has no route to an external script host).
 function renderQrInto(el, text){
   try{

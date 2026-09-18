@@ -44,16 +44,16 @@ function renderAdminSquadList(){
   var html = squads.map(function(sq){
     return '<div class="tpl-row" data-id="'+esc(sq.id)+'">' +
       '<div class="tinfo">' +
-        '<input class="dim-label admin-squad-name" data-id="'+esc(sq.id)+'" value="'+esc(sq.name)+'" aria-label="'+esc(unitLower())+' name" dir="auto">' +
+        '<input class="dim-label admin-squad-name" data-id="'+esc(sq.id)+'" value="'+esc(sq.name)+'" aria-label="'+esc(t("admin.squads.nameAriaLabel", {unit: unitLower()}))+'" dir="auto">' +
       '</div>' +
-      '<button class="icon-btn danger admin-squad-del" data-id="'+esc(sq.id)+'" title="Remove '+esc(unitLower())+'" type="button">' +
+      '<button class="icon-btn danger admin-squad-del" data-id="'+esc(sq.id)+'" title="'+esc(t("admin.squads.removeTitle", {unit: unitLower()}))+'" type="button">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
     '</div>';
   }).join("");
-  document.getElementById("adminSquadList").innerHTML = html || '<p class="hint" style="margin:0;">No '+esc(unitPluralLower())+' yet — add one below.</p>';
+  document.getElementById("adminSquadList").innerHTML = html || '<p class="hint" style="margin:0;">'+esc(t("admin.squads.emptyList", {unitPlural: unitPluralLower()}))+'</p>';
   document.querySelectorAll(".admin-squad-name").forEach(function(input){
     input.addEventListener("change", function(){
-      renameSquad(input.getAttribute("data-id"), input.value.trim() || "Untitled " + unitLower());
+      renameSquad(input.getAttribute("data-id"), input.value.trim() || t("admin.squads.untitledFallback", {unit: unitLower()}));
     });
   });
   document.querySelectorAll(".admin-squad-del").forEach(function(btn){
@@ -61,10 +61,10 @@ function renderAdminSquadList(){
       var id = btn.getAttribute("data-id");
       var sq = findSquad(id);
       openConfirm(
-        "Remove " + unitLower() + "?",
-        "Remove “" + (sq ? sq.name : "this " + unitLower()) + "”? Its ratings go with it.",
+        t("admin.squads.confirmRemoveTitle", {unit: unitLower()}),
+        t("admin.squads.confirmRemoveMessage", {name: sq ? sq.name : t("admin.squads.thisUnit", {unit: unitLower()})}),
         function(){ removeSquad(id); },
-        "Remove"
+        t("admin.squads.confirmRemoveButton")
       );
     });
   });
@@ -85,7 +85,7 @@ function renderSquadPicker(){
   var html = squads.map(function(sq){
     return '<button class="btn squad-pick-btn'+(sq.id===state.ui.selectedSquadId?" active":"")+'" data-id="'+esc(sq.id)+'" type="button" dir="auto">'+esc(sq.name)+'</button>';
   }).join("");
-  document.getElementById("squadPicker").innerHTML = html || '<p class="hint" style="margin:0;">No '+esc(unitPluralLower())+' yet — ask an admin to add one.</p>';
+  document.getElementById("squadPicker").innerHTML = html || '<p class="hint" style="margin:0;">'+esc(t("squad.picker.empty", {unitPlural: unitPluralLower()}))+'</p>';
   document.querySelectorAll(".squad-pick-btn").forEach(function(btn){
     btn.addEventListener("click", function(){ selectSquad(btn.getAttribute("data-id")); });
   });
@@ -104,10 +104,10 @@ function renderSquadDetailHtml(sq){
   var hotspotHtml = hotspots.length
     ? hotspots.map(function(d){
         var cell = sq.dimensions[d.key];
-        return '<div class="hotspot-row"><div class="hd"><span class="dim" dir="auto">'+esc(d.label)+'</span>' +
-          '<span class="cnt">'+(cell.color==="crit"?"Red":"Yellow")+'</span></div></div>';
+        return '<div class="hotspot-row"><div class="hd"><span class="dim" dir="auto">'+esc(localizedDimText(d, "label"))+'</span>' +
+          '<span class="cnt">'+esc(cell.color==="crit"?t("common.color.crit"):t("common.color.warn"))+'</span></div></div>';
       }).join("")
-    : '<p class="hint" style="margin:0;">Nothing red or yellow right now &mdash; nice work.</p>';
+    : '<p class="hint" style="margin:0;">'+esc(t("squad.hotspots.empty"))+'</p>';
 
   var entryHtml = dims.length ? '<div class="entry-list">' + dims.map(function(d){
     var cell = (sq.dimensions && sq.dimensions[d.key]) || {};
@@ -117,29 +117,29 @@ function renderSquadDetailHtml(sq){
     var showTrend = trend==="up" || trend==="down";
     return '<div class="entry-row">' +
       '<div class="entry-info">' +
-        '<div class="entry-label" dir="auto">'+esc(d.label)+'</div>' +
-        '<div class="entry-desc" dir="auto"><span class="tip-dot good"></span><span>'+esc(d.green||"")+'</span></div>' +
-        '<div class="entry-desc" dir="auto"><span class="tip-dot crit"></span><span>'+esc(d.red||"")+'</span></div>' +
+        '<div class="entry-label" dir="auto">'+esc(localizedDimText(d, "label"))+'</div>' +
+        '<div class="entry-desc" dir="auto"><span class="tip-dot good"></span><span>'+esc(localizedDimText(d, "green")||"")+'</span></div>' +
+        '<div class="entry-desc" dir="auto"><span class="tip-dot crit"></span><span>'+esc(localizedDimText(d, "red")||"")+'</span></div>' +
       '</div>' +
       '<button class="cell-btn '+color+'" data-squad="'+esc(sq.id)+'" data-dim="'+esc(d.key)+'" type="button" ' +
-        'aria-label="'+esc(d.label)+': '+colorWord(color)+trendWord(trend, true)+'">' +
+        'aria-label="'+esc(localizedDimText(d, "label"))+': '+esc(colorWordLocalized(color)+trendWordLocalized(trend, true))+'">' +
         markIcon(color) +
-        (showTrend ? '<span class="trend-badge '+trend+'" title="'+trendWord(trend)+'">'+trendIcon(trend)+'</span>' : '') +
-        (hasNote ? '<span class="note-dot" title="Has a note"></span>' : '') +
+        (showTrend ? '<span class="trend-badge '+trend+'" title="'+esc(trendWordLocalized(trend))+'">'+trendIcon(trend)+'</span>' : '') +
+        (hasNote ? '<span class="note-dot" title="'+esc(t("common.hasNoteTitle"))+'"></span>' : '') +
       '</button>' +
     '</div>';
-  }).join("") + '</div>' : '<p class="hint" style="margin:0;">No dimensions yet &mdash; ask an admin to set some up.</p>';
+  }).join("") + '</div>' : '<p class="hint" style="margin:0;">'+esc(t("squad.entries.empty"))+'</p>';
 
   return (
     '<div class="heatmap-head">' +
       '<div>' +
         '<h2 style="font-size:18px;" dir="auto">'+esc(sq.name)+'</h2>' +
-        '<p class="squad-score-line">'+r.score+' pts &middot; '+r.scored+'/'+r.total+' scored</p>' +
+        '<p class="squad-score-line">'+esc(t("common.scoreLine", {score: r.score, fraction: r.scored + "/" + r.total}))+'</p>' +
       '</div>' +
     '</div>' +
     '<div class="card" style="margin:14px 0;">' +
-      '<h2>Your hotspots</h2>' +
-      '<p class="hint">Where '+esc(sq.name)+' is flagged red or yellow right now.</p>' +
+      '<h2>'+esc(t("squad.hotspots.heading"))+'</h2>' +
+      '<p class="hint">'+esc(t("squad.hotspots.hint", {name: sq.name}))+'</p>' +
       hotspotHtml +
     '</div>' +
     entryHtml
@@ -151,7 +151,7 @@ function renderSquadView(){
   var container = document.getElementById("squadDetail");
   var sq = state.ui.selectedSquadId ? findSquad(state.ui.selectedSquadId) : null;
   if(!sq){
-    container.innerHTML = '<p class="squad-empty">Select your '+esc(unitLower())+' above to enter or review its ratings.</p>';
+    container.innerHTML = '<p class="squad-empty">'+esc(t("squad.empty", {unit: unitLower()}))+'</p>';
     return;
   }
   container.innerHTML = renderSessionCardHtml(sq) + renderSquadDetailHtml(sq);
@@ -168,21 +168,37 @@ function renderSquadView(){
 // -dimension case; persistDimensionRatings(sq, keys) is used when finishing
 // a retro (Story 9) writes several consolidated results at once, so they
 // land together rather than as separate round-trips.
+// extraFields (optional, RETRO-1): additional top-level doc fields to write
+// alongside the dimensions patch -- today only { lastRetro: {...} },
+// passed by finishRetroAndApply() (retro-facilitator.js). When present,
+// this uses set() for the WHOLE doc rather than update() for just a
+// dimensions patch, deliberately: update()'s deepMerge() would otherwise
+// splice a STALE lastRetro.dimensions entry from an older finished retro
+// into this one's, since both old and new values at that key are plain
+// objects -- a lastRetro snapshot must fully replace what was there, not
+// merge with it. sq.dimensions already holds this squad's full, current
+// rating set at this point (not just dimKeys), so writing it whole here
+// is safe and loses nothing.
 function persistDimensionRating(sq, dimKey){ persistDimensionRatings(sq, [dimKey]); }
 
-function persistDimensionRatings(sq, dimKeys){
+function persistDimensionRatings(sq, dimKeys, extraFields){
   if(!(state.live && state.db)) { diag("Persist skipped: not connected to live storage (state.live=" + state.live + ")"); return; }
   try{
-    var patch = { dimensions:{}, updatedAt: nowIso() };
-    dimKeys.forEach(function(k){ patch.dimensions[k] = sq.dimensions[k]; });
     diag("Writing squads/" + sq.id + " (" + dimKeys.length + " dim(s))...");
-    state.db.collection("squads").doc(sq.id).update(patch).then(function(){
+    var write = (extraFields && extraFields.lastRetro)
+      ? state.db.collection("squads").doc(sq.id).set(Object.assign({ name:sq.name, order:sq.order||0, dimensions:sq.dimensions, updatedAt: nowIso() }, extraFields))
+      : state.db.collection("squads").doc(sq.id).update((function(){
+          var patch = { dimensions:{}, updatedAt: nowIso() };
+          dimKeys.forEach(function(k){ patch.dimensions[k] = sq.dimensions[k]; });
+          return patch;
+        })());
+    write.then(function(){
       diag("Write CONFIRMED for squads/" + sq.id);
     }).catch(function(err){
       diag("Write REJECTED for squads/" + sq.id + ": " + (err && err.code ? err.code : String(err)) + (err && err.message ? " - " + err.message : ""));
       if(err && err.code==="invalid_argument"){
         // document might not exist yet (rare race) -- create it whole
-        state.db.collection("squads").doc(sq.id).set(Object.assign({name:sq.name, order:sq.order||0}, {dimensions:sq.dimensions}))
+        state.db.collection("squads").doc(sq.id).set(Object.assign({name:sq.name, order:sq.order||0}, {dimensions:sq.dimensions}, extraFields || {}))
           .then(function(){ diag("Fallback set() succeeded for squads/" + sq.id); })
           .catch(function(err2){ diag("Fallback set() ALSO failed for squads/" + sq.id + ": " + (err2 && err2.code ? err2.code : String(err2))); });
       }

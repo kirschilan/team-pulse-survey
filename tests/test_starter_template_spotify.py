@@ -13,19 +13,34 @@ from fixtures.build_page import build_page, test_output_path
 
 out_path = build_page(out_name="_test_starter_spotify.html")
 
+
+def strip_bidi(s):
+    # Story 9 routed the Templates modal's row meta line (dimension count,
+    # unit) through t(), which wraps every interpolated value in Unicode
+    # bidi isolate marks (U+2066 LRI / U+2069 PDI) -- see i18n.js/STATUS.md.
+    # Invisible and harmless, but present in .textContent, so substring
+    # checks here strip them rather than matching against plain ASCII.
+    return s.replace("⁦", "").replace("⁩", "")
+
+
 with sync_playwright() as p:
     browser = p.chromium.launch()
     page = browser.new_page(viewport={"width":1280,"height":1000})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
     print("=== Spotify appears as a starter template, alongside the other two ===")
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     page.click('#templatesBtn')
-    page.wait_for_timeout(150)
+    # eval_on_selector()/query_selector() below don't auto-wait -- wait for
+    # the real "templates list rendered" signal instead of guessing.
+    page.wait_for_selector('#tplList .tpl-row', state="attached")
     starter_row = page.query_selector('#tplList .tpl-row[data-id="starter-spotify"]')
     print("starter-spotify row found:", starter_row is not None)
     assert starter_row is not None
@@ -34,23 +49,28 @@ with sync_playwright() as p:
     assert has_delete is None
     meta = page.eval_on_selector('#tplList .tpl-row[data-id="starter-spotify"] .tmeta', 'el=>el.textContent')
     print("meta line:", meta)
-    assert "12 dimension" in meta
+    assert "12 dimension" in strip_bidi(meta)
 
     print("=== switch away to Five Dysfunctions, then load Spotify back ===")
     page.click('#tplList .tpl-row[data-id="starter-5dysfunctions"] [data-action="load"]')
-    page.wait_for_timeout(100)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     page.click('#confirmOk')
-    page.wait_for_timeout(400)
+    # evaluate() below doesn't auto-wait -- wait for the real "Five
+    # Dysfunctions' dimensions landed" signal (loadTemplate()'s own Promise
+    # chain) instead of guessing how long it takes.
+    page.wait_for_function("() => window.__FAKE_STORE__['dimensions/trust'] !== undefined")
     dim_keys_5df = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k=>k.startsWith('dimensions/')).sort()")
     print("dimension keys on Five Dysfunctions:", dim_keys_5df)
     assert len(dim_keys_5df) == 5
 
     page.click('#templatesBtn')
-    page.wait_for_timeout(150)
     page.click('#tplList .tpl-row[data-id="starter-spotify"] [data-action="load"]')
-    page.wait_for_timeout(100)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     page.click('#confirmOk')
-    page.wait_for_timeout(400)
+    # evaluate() below doesn't auto-wait -- wait for the real "Spotify's
+    # dimensions landed" signal instead of guessing (dimensions/release
+    # didn't exist a moment ago -- we were on Five Dysfunctions).
+    page.wait_for_function("() => window.__FAKE_STORE__['dimensions/release'] !== undefined")
 
     dim_keys_back = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k=>k.startsWith('dimensions/')).sort()")
     print("dimension keys after loading Spotify back:", dim_keys_back)
@@ -67,11 +87,12 @@ with sync_playwright() as p:
 
     print("=== the retro join screen shows it as direct-rating rows, as before ===")
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
     page.click('#startSessionBtn')
-    page.wait_for_timeout(250)
+    # evaluate() below doesn't auto-wait -- the fake store's set() writes
+    # into __FAKE_STORE__ synchronously, but poll for the real condition
+    # rather than assume that timing.
+    page.wait_for_function("() => Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/')).length === 1")
     session_doc = page.evaluate("""
       (function(){
         var k = Object.keys(window.__FAKE_STORE__).filter(function(x){ return x.startsWith('sessions/'); })[0];
@@ -80,6 +101,61 @@ with sync_playwright() as p:
     """)
     print("session dimension count:", len(session_doc["dimensions"]))
     assert len(session_doc["dimensions"]) == 12
+    print("errors:", errors)
+
+    print("=== Story 5: switching to Hebrew live-translates the Spotify template's dimension content ===")
+    print("(no explicit template reload -- fixes a real gap: the DEFAULT board never went through")
+    print(" loadTemplate() at all, so an earlier load-time-only translation never applied to it)")
+    # setLocale() (i18n.js) is fully synchronous -- state, localStorage, DOM
+    # re-render all happen inline in the click handler -- and the reads
+    # below are all of stored data (unaffected by the UI's language
+    # anyway), so no wait is needed for either click.
+    page.click('.view-btn[data-view="admin"]')
+    page.click('.lang-btn[data-lang="he"]')
+
+    # stored data stays English always -- localization is a render-time concern
+    # (state.js's localizedDimText()/localizedAttribution()), never baked into
+    # the dimension docs or config themselves
+    release_doc_he = page.evaluate("window.__FAKE_STORE__['dimensions/release']")
+    config_he = page.evaluate("window.__FAKE_STORE__['meta/config']")
+    english_attribution = page.evaluate("SPOTIFY_ATTRIBUTION")
+    print("stored release dimension content under Hebrew (should stay English):", release_doc_he)
+    assert release_doc_he["label"] == "Easy to release"
+    assert config_he.get("attribution") == english_attribution
+
+    page.click('.view-btn[data-view="tribe"]')
+    page.click('#legendSummary')
+    # eval_on_selector() below doesn't auto-wait, and expanding a native
+    # <details> is a synchronous browser toggle -- the legend content was
+    # already rendered (and attached, just collapsed) by renderLegend(),
+    # not populated lazily on open.
+    page.wait_for_selector('.legend-item .lh', state="attached")
+    release_label_he = page.eval_on_selector('.legend-item .lh', 'el=>el.textContent')
+    release_green_he = page.eval_on_selector('.legend-item p:nth-of-type(1) span[dir="auto"]', 'el=>el.textContent')
+    release_red_he = page.eval_on_selector('.legend-item p:nth-of-type(2) span[dir="auto"]', 'el=>el.textContent')
+    attribution_he = page.eval_on_selector('#legendAttrib', 'el=>el.textContent')
+    print("Tribe legend under Hebrew -- label/green/red/attribution:", release_label_he, release_green_he, release_red_he, attribution_he)
+    assert release_label_he.strip() and release_label_he != "Easy to release"
+    assert release_green_he != "Releasing is routine, low-risk, and low-drama."
+    assert release_red_he != "Releases are rare, risky, or dreaded events."
+    assert attribution_he.strip() and attribution_he != english_attribution
+    # the Templates-modal display name itself stays English -- that's Story 8's
+    # job, not this one's
+    assert config_he.get("activeTemplateName") == "Spotify Squad Health Check"
+
+    print("=== switching back to English immediately restores English display (live both ways) ===")
+    page.click('.view-btn[data-view="admin"]')
+    page.click('.lang-btn[data-lang="en"]')
+    page.click('.view-btn[data-view="tribe"]')
+    # eval_on_selector() below doesn't auto-wait -- wait for the real
+    # "legend re-rendered" signal instead of guessing (the <details> stays
+    # open across the view switch -- only its content needs to be re-read).
+    page.wait_for_selector('.legend-item .lh', state="attached")
+    release_label_en = page.eval_on_selector('.legend-item .lh', 'el=>el.textContent')
+    attribution_en = page.eval_on_selector('#legendAttrib', 'el=>el.textContent')
+    print("Tribe legend restored to English:", release_label_en, attribution_en)
+    assert release_label_en == "Easy to release"
+    assert attribution_en == english_attribution
     print("errors:", errors)
 
     page.screenshot(path=str(test_output_path("shot_starter_spotify.png")), full_page=True)

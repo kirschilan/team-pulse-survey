@@ -46,6 +46,17 @@ relay_proc = subprocess.Popen(
 
 try:
     if not wait_for_port(RELAY_PORT):
+        # Must kill the process (closing its stdout) BEFORE reading it --
+        # .read() blocks until EOF, and a relay that's still alive (just
+        # slow to bind, e.g. under CPU contention from parallel test jobs)
+        # never sends EOF, so this used to deadlock the whole suite instead
+        # of raising the intended error. Found via a real hang in CI/local
+        # runs: this exact test process stuck for 50+ minutes.
+        relay_proc.terminate()
+        try:
+            relay_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            relay_proc.kill()
         out = relay_proc.stdout.read() if relay_proc.stdout else ""
         raise RuntimeError("relay server never opened port %d\n%s" % (RELAY_PORT, out))
 
@@ -60,8 +71,10 @@ try:
         a_errors = []
         a.on("pageerror", lambda e: a_errors.append(str(e)))
         a.goto(INDEX_URL, wait_until="domcontentloaded")
-        a.wait_for_timeout(300)
-
+        # No wait needed -- local-store.js's window.claude shim installs
+        # synchronously at script-load time, and page.goto()'s default
+        # waitUntil="load" already guarantees that's done by the time it
+        # returns; nothing here touches the DOM at all, only the db shim.
         print("=== isBoardPath/isSessionPath recognize their own namespaces and not each other's ===")
         checks = a.evaluate("""() => ({
           boardIsBoard: SquadPulseRelay.isBoardPath("boards/TEAM01"),
@@ -76,11 +89,17 @@ try:
         assert checks["sessionIsBoard"] is False
 
         print("=== device A writes an encrypted board doc via the real db shim ===")
+        # No wait after this: db.doc(...).set()'s promise now resolves only
+        # once the relay has actually acked the write (see
+        # relay-client.js's sendTracked()/relay/server.js's {op:"ack"}), so
+        # the `await` above is itself the real completion signal -- a fixed
+        # sleep guessing "surely long enough" used to stand in here and was
+        # the actual source of a real flake under parallel CPU load (see
+        # tests/test_relay_write_acknowledgment.py and STATUS.md).
         a.evaluate("""async () => {
           const db = await window.claude.use("db");
           await db.doc("boards/TEAM01/config").set({ unit: "Tribe", updatedAt: "2026-09-12T00:00:00.000Z" });
         }""")
-        a.wait_for_timeout(300)
         print("errors so far:", a_errors)
 
         # ============ device B: an independently-seeded context joins the
@@ -91,8 +110,6 @@ try:
         b_errors = []
         b.on("pageerror", lambda e: b_errors.append(str(e)))
         b.goto(INDEX_URL, wait_until="domcontentloaded")
-        b.wait_for_timeout(300)
-
         print("=== device B reads the same board doc, decrypted, over the relay ===")
         result = b.evaluate("""async () => {
           const db = await window.claude.use("db");
@@ -121,6 +138,12 @@ try:
         assert session_untouched["exists"] is False
 
         print("=== a doc() call can pass a SEPARATE secret, decoupling the routing id from the encryption key ===")
+        # This is the exact write+read pair that used to race under
+        # parallel load (see tests/test_relay_write_acknowledgment.py): the
+        # `await` below now only returns once the relay has acked the
+        # write, so by the time this call returns the write is already
+        # durably applied server-side -- right_page/wrong_page below need
+        # no bootstrap wait either, same synchronous-shim reasoning as A/B above.
         a.evaluate("""async () => {
           const db = await window.claude.use("db");
           await db.doc("boards/ROUTINGONLY", "the-real-secret").set({ hello: "with a secret" });
@@ -137,7 +160,6 @@ try:
         right_ctx.add_init_script(point_at_test_relay)
         right_page = right_ctx.new_page()
         right_page.goto(INDEX_URL, wait_until="domcontentloaded")
-        right_page.wait_for_timeout(200)
         read_with_right_secret = right_page.evaluate("""async () => {
           const db = await window.claude.use("db");
           const snap = await db.doc("boards/ROUTINGONLY", "the-real-secret").get();
@@ -151,7 +173,6 @@ try:
         wrong_ctx.add_init_script(point_at_test_relay)
         wrong_page = wrong_ctx.new_page()
         wrong_page.goto(INDEX_URL, wait_until="domcontentloaded")
-        wrong_page.wait_for_timeout(200)
         read_with_wrong_secret = wrong_page.evaluate("""async () => {
           const db = await window.claude.use("db");
           const snap = await db.doc("boards/ROUTINGONLY", "a-different-guess").get();
@@ -160,8 +181,48 @@ try:
         print("read with the SAME routing id but a wrong secret, from a fresh connection:", read_with_wrong_secret)
         assert read_with_wrong_secret["exists"] is False, "same room, wrong key -- decryption must fail, not fall back to plaintext or the path-derived key"
 
-        print("=== ALL ERRORS: a=", a_errors, "b=", b_errors)
-        assert a_errors == [] and b_errors == []
+        print("=== REF-6: getRoom()'s CACHE HIT refuses a mismatched secret on the SAME connection ===")
+        # Deliberately a fresh context, unlike right_page/wrong_page above --
+        # this specifically needs relay-client.js's `rooms` cache to already
+        # hold an entry for "ROUTINGONLY" on THIS page before the mismatched
+        # call below, which is exactly the getRoom()-level cache-reuse case
+        # the wrong_page check above does NOT exercise (a brand-new page has
+        # no cache to hit yet).
+        cache_ctx = browser.new_context()
+        cache_ctx.add_init_script(point_at_test_relay)
+        cache_page = cache_ctx.new_page()
+        cache_errors = []
+        cache_page.on("pageerror", lambda e: cache_errors.append(str(e)))
+        cache_page.goto(INDEX_URL, wait_until="domcontentloaded")
+
+        primed = cache_page.evaluate("""async () => {
+          const db = await window.claude.use("db");
+          const snap = await db.doc("boards/ROUTINGONLY", "the-real-secret").get();
+          return { exists: snap.exists, data: snap.data() };
+        }""")
+        print("first call on this page, correct secret (primes the getRoom() cache):", primed)
+        assert primed["exists"] is True
+        assert primed["data"]["hello"] == "with a secret"
+
+        mismatched = cache_page.evaluate("""async () => {
+          const db = await window.claude.use("db");
+          const snap = await db.doc("boards/ROUTINGONLY", "a-different-guess").get();
+          return { exists: snap.exists, unavailable: snap.unavailable };
+        }""")
+        print("SECOND call, same page, same routing id, a DIFFERENT secret:", mismatched)
+        # Before the REF-6 fix, getRoom()'s cache-hit branch returned
+        # `rooms[code]` unconditionally -- this call would have silently
+        # gotten back the room opened with "the-real-secret" above (still
+        # decrypting fine, `exists: true`), with zero error and zero
+        # diagnostic. The fix returns a fresh, dedicated, already-
+        # unavailable room instead, same shape every other getRoom()
+        # failure already returns -- `unavailable: true` is what makes this
+        # distinguishable from an ordinary "not found".
+        assert mismatched["exists"] is False
+        assert mismatched["unavailable"] is True, "a same-page secret mismatch on an existing routing code must surface as unavailable, not a silent reuse of the wrong key"
+
+        print("=== ALL ERRORS: a=", a_errors, "b=", b_errors, "cache=", cache_errors)
+        assert a_errors == [] and b_errors == [] and cache_errors == []
         browser.close()
 finally:
     relay_proc.terminate()

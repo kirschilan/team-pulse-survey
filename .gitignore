@@ -1,7 +1,11 @@
 # Test-run artifacts (Playwright preview pages get written into public/ so
 # their relative asset links resolve; screenshots/scratch fixtures go to
 # tests/output/). Neither is a build product anyone ships or needs to keep.
+# The .js sibling files are build_page.py's externalized fake-store/seed
+# scripts (SEC-3: split out of inline <script> tags so test pages satisfy
+# the same script-src 'self' CSP the real app ships -- see its own comment).
 public/_test_*.html
+public/_test_*.js
 tests/output/
 __pycache__/
 *.pyc
@@ -12,6 +16,16 @@ __pycache__/
 # Node (once the relay lands)
 node_modules/
 
+# Root Makefile's `make setup` target (REF-10) creates this project-local
+# virtualenv so pip installs work regardless of the host's Python packaging
+# policy (see the Makefile's own comment) -- never something to commit.
+/.venv/
+
 # relay/storage/file-adapter.js's default RELAY_DATA_DIR -- only exists
 # locally when RELAY_STORAGE=file is opted into; never something to commit.
 relay/data/
+
+# scripts/export-template-translations.js's default output -- a scratch
+# file for the product owner's own translation review, regenerated on
+# demand from state.js; never something to commit.
+/translations-export.json

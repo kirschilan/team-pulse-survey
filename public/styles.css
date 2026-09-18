@@ -45,6 +45,13 @@
   .title-block h1{ font-size:28px; font-weight:800; color:var(--text); }
   .title-block p{ margin:6px 0 0; color:var(--text-2); font-size:14.5px; max-width:60ch; line-height:1.5; }
   .title-block .model-badge{ display:inline-flex; align-items:center; gap:6px; margin-top:8px; font-size:11.5px; font-weight:600; color:var(--accent); background:var(--accent-soft); padding:3px 9px; border-radius:99px; }
+  /* A heading + small pill badge, e.g. the Admin panel's "Language Beta" --
+     flexbox `gap` instead of a directional margin (margin-left/-right) so
+     the spacing stays correct under dir="rtl" too, where a hardcoded
+     margin-left pushes the badge to the physically-wrong side and reads as
+     misaligned (see STATUS.md's session log). */
+  .heading-with-badge{ display:flex; align-items:center; gap:8px; }
+  .beta-badge{ font-size:11.5px; font-weight:600; color:var(--accent); background:var(--accent-soft); padding:3px 9px; border-radius:99px; }
   .actions{ display:flex; gap:8px; flex-wrap:wrap; }
 
   button{ font-family:inherit; cursor:pointer; }
@@ -80,6 +87,7 @@
   .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px 18px 16px; box-shadow:var(--shadow); }
   .card h2{ font-size:15px; font-weight:700; }
   .card .hint{ font-size:12.5px; color:var(--text-muted); margin-top:3px; margin-bottom:14px; }
+  .hint.error{ color:var(--crit); }
 
   .rank-row{ display:grid; grid-template-columns:20px 1fr auto; align-items:center; gap:10px; padding:7px 0; border-top:1px solid var(--border); }
   .rank-row:first-of-type{ border-top:none; }
@@ -266,6 +274,28 @@
   .dim-row .fields .grn{ color:var(--good); }
   .dim-row .fields .rd{ color:var(--crit); }
 
+  .dim-array-list{ display:flex; flex-direction:column; gap:6px; margin-top:6px; }
+  .dim-array-item{
+    width:100%; font-family:inherit; font-size:12.5px; color:var(--text); background:var(--surface);
+    border:1px solid var(--border); border-radius:7px; padding:7px 9px;
+  }
+
+  .i18n-toggle{
+    display:flex; align-items:center; gap:7px; margin-top:10px; width:100%;
+    background:none; border:1px dashed var(--border); border-radius:8px; padding:7px 10px;
+    font-size:12px; font-weight:600; color:var(--accent);
+  }
+  .i18n-toggle:hover{ border-color:var(--accent); background:var(--accent-soft); }
+  .i18n-toggle .chev{ transition:transform .15s; margin-inline-start:auto; flex:none; }
+  .i18n-toggle[aria-expanded="true"] .chev{ transform:rotate(180deg); }
+  .i18n-panel{
+    margin-top:8px; padding:12px 12px 4px; border:1px solid var(--border); border-radius:10px;
+    background:var(--surface); direction:rtl;
+  }
+  .i18n-panel[hidden]{ display:none; }
+  .i18n-panel .fields{ margin-top:8px; }
+  .i18n-source{ font-size:11px; color:var(--text-muted); margin:0 0 8px; direction:ltr; text-align:right; }
+
   .tpl-list{ display:flex; flex-direction:column; gap:8px; margin:14px 0; max-height:40vh; overflow-y:auto; }
   .tpl-row{ display:flex; align-items:center; gap:10px; border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:var(--surface-2); }
   .tpl-row .tinfo{ flex:1; min-width:0; }
@@ -280,6 +310,40 @@
   @media (max-width:520px){ .tpl-save-row{ flex-direction:column; } .tpl-save-row button{ width:100%; justify-content:center; } }
 
   .import-warning{ font-size:12.5px; line-height:1.5; color:var(--text); background:color-mix(in srgb, var(--warn) 16%, var(--surface-2)); border:1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius:10px; padding:10px 13px; margin-top:14px; }
+  .import-warning.danger{ background:color-mix(in srgb, var(--crit) 12%, var(--surface-2)); border-color:color-mix(in srgb, var(--crit) 45%, var(--border)); }
+  .import-warning ul{ margin:6px 0 0; padding-inline-start:18px; }
+  .import-warning .chip.crit, .import-stats .chip.crit{ color:#fff; background:var(--crit); border-color:var(--crit); }
+
+  /* ---------- JSON board import (beta): merge/replace mode ---------- */
+  .mode-switch{ display:inline-flex; gap:2px; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:2px; }
+  .mode-btn{ appearance:none; border:none; background:transparent; color:var(--text-2); padding:8px 16px; border-radius:8px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer; }
+  .mode-btn.active{ background:var(--surface); color:var(--text); box-shadow:var(--shadow); }
+  .mode-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .external-tip{ font-size:12px; color:var(--text-muted); margin:10px 0 0; line-height:1.55; }
+  .external-tip a{ color:var(--accent); }
+  .backup-offer{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px; }
+  .backup-done{ font-size:12px; color:var(--good); font-weight:600; display:inline-flex; align-items:center; gap:5px; }
+  .backup-failed{ font-size:12px; color:var(--crit); font-weight:600; display:inline-flex; align-items:center; gap:5px; }
+  .error-state{ display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:6px 0 4px; }
+  .error-state h4{ font-size:14px; margin:0; }
+  .error-state p{ font-size:12.5px; color:var(--text-2); margin:0; line-height:1.5; }
+
+  /* ---------- JSON board import: item 3b's scope choice + extra sections ---------- */
+  .scope-row{ display:flex; flex-wrap:wrap; gap:14px; }
+  .scope-check{ display:flex; align-items:center; gap:7px; font-size:13px; color:var(--text); cursor:pointer; }
+  .scope-check input{ width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
+  .section-heading{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin:18px 0 8px; }
+  .section-heading .field-label{ margin:0; }
+  .import-stats .chip.none{ color:var(--text-muted); font-weight:500; background:transparent; border-style:dashed; }
+  .config-diff{ border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  .config-diff .crow{ display:flex; align-items:center; gap:10px; padding:9px 12px; font-size:12.5px; border-top:1px solid var(--border); }
+  .config-diff .crow:first-child{ border-top:none; }
+  .config-diff .cfield{ color:var(--text-muted); min-width:110px; flex-shrink:0; }
+  .config-diff .cfrom{ color:var(--text-2); text-decoration:line-through; text-decoration-color:var(--crit); }
+  .config-diff .carrow{ color:var(--text-muted); }
+  .config-diff .cto{ color:var(--text); font-weight:600; }
+  .import-warning .wgroup{ font-weight:700; margin-top:8px; display:block; }
+  .import-warning .wgroup:first-child{ margin-top:0; }
 
   /* ---------- busy overlay (shown during multi-step live operations, e.g.
      switching templates or importing new rows, so a several-second wait
@@ -345,21 +409,25 @@
     flex:1; min-width:0; font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:12.5px;
     border:1px solid var(--border); border-radius:8px; padding:8px 10px; background:var(--surface-2); color:var(--text);
   }
-  .session-code-block{ margin-top:10px; }
-  .session-code{
-    font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:26px; font-weight:700;
-    letter-spacing:0.14em; background:var(--surface-2); border:1px solid var(--border);
-    border-radius:10px; padding:9px 16px; display:inline-block; color:var(--text);
-  }
-  .join-code-input{
-    width:100%; font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:18px; letter-spacing:0.1em;
-    text-transform:uppercase; border:1px solid var(--border); border-radius:9px; padding:10px 12px;
-    background:var(--surface-2); color:var(--text); margin:4px 0 2px;
+  .join-share-block{ margin-top:14px; }
+  /* SEC-2: the "anyone with this link/QR can see the data" notice shown
+     next to every join/co-facilitate link and QR -- see STATUS.md's locked
+     PO decision for the exact copy this renders. */
+  .security-notice{
+    color:var(--text); background:color-mix(in srgb, var(--warn) 16%, var(--surface-2));
+    border:1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius:10px;
+    padding:9px 12px; margin:10px 0 0;
   }
   .live-block{ margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
   .live-dim-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 0; border-top:1px solid var(--border); }
   .live-dim-row:first-of-type{ border-top:none; }
   .live-dim-row .dim-name{ font-size:12.5px; font-weight:600; }
+  /* PO review follow-up: a paced ("one question at a time") session's
+     current question needs to be the first thing a facilitator's eye lands
+     on -- a plain 12.5px .hint line (this card's default text treatment)
+     was too easy to miss standing next to the Previous/Next controls. */
+  .pacing-question-box{ background:var(--accent-soft); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin:0 0 10px; }
+  .pacing-current-question{ font-size:16px; font-weight:700; color:var(--text); line-height:1.4; margin:0; }
   .reveal-toggle{ margin-top:10px; }
   /* Scoped duplicate of .view-btn's look, NOT reusing that class name --
      applyViewVisibility() does a live `.view-btn` querySelectorAll and would
@@ -372,6 +440,20 @@
   .reveal-toggle .reveal-btn:hover{ color:var(--text); }
   .reveal-toggle .reveal-btn.active{ background:var(--surface); color:var(--text); box-shadow:var(--shadow); }
   .reveal-toggle .reveal-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  /* Scoped duplicate of .view-btn's look for the Admin panel's language
+     switcher, same reasoning as .reveal-toggle .reveal-btn above -- NOT
+     reusing the .view-btn class name, since applyViewVisibility() (app.js)
+     does a live `.view-btn` querySelectorAll keyed off data-view and would
+     otherwise both mis-toggle these buttons' active state and, worse,
+     app.js's own boot-time `.view-btn` click-listener would attach
+     setView(null) to them (they carry data-lang, not data-view). */
+  .lang-switch .lang-btn{
+    appearance:none; border:none; background:transparent; color:var(--text-2);
+    padding:7px 13px; border-radius:8px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;
+  }
+  .lang-switch .lang-btn:hover{ color:var(--text); }
+  .lang-switch .lang-btn.active{ background:var(--surface); color:var(--text); box-shadow:var(--shadow); }
+  .lang-switch .lang-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
   .pill{ display:inline-flex; align-items:center; font-size:12.5px; font-weight:700; padding:5px 13px; border-radius:99px; color:#fff; }
   .pill.good{ background:var(--good); }
   .pill.warn{ background:var(--warn); color:var(--warn-ink); }
@@ -414,3 +496,32 @@
   .personal-result + .personal-result{ margin-top:16px; padding-top:14px; border-top:1px solid var(--border); }
 
   [hidden]{ display:none !important; }
+
+/* On-demand introduction: native dialog supplies focus containment and inert background. */
+#aboutDialog {
+  box-sizing: border-box;
+  width: min(620px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  padding: 32px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 24px 80px #0008;
+}
+#aboutDialog::backdrop { background: #0009; }
+#aboutDialog h2 { margin-block: 8px 16px; font-size: 28px; }
+#aboutDialog p { line-height: 1.65; }
+.about-brand { color: var(--text-2); font-size: 13px; }
+.about-tagline { font-size: 20px; font-weight: 600; }
+.about-summary { margin-block: 24px; padding-block: 8px; border-block: 1px solid var(--border); }
+#aboutDialog button { margin-block-start: 12px; }
+@media (max-width: 540px) {
+  #aboutDialog { width: 100%; max-width: 100%; max-height: 100dvh; height: 100dvh; margin: 0; border-radius: 0; padding: 24px; }
+}
+.about-guides details { border-block-end: 1px solid var(--border); }
+.about-guides summary { cursor: pointer; padding-block: 16px; font-weight: 600; }
+.about-guide-body { padding-block-end: 16px; }
+.about-guide-body ol { padding-inline-start: 24px; line-height: 1.65; }
+.about-guide-body li + li { margin-block-start: 12px; }

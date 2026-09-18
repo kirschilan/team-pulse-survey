@@ -11,7 +11,20 @@
 // STATUS.md).
 var templatesBackdrop = document.getElementById("templatesBackdrop");
 
+// #diagLog (the Admin panel's diagnostics log) lives OUTSIDE this modal --
+// invisible to anyone actually looking at the still-open Templates dialog
+// when a load fails. This is the modal's own, translated, visible-in-place
+// error surface (same "hint error" idiom as expNoteSaveErrorHint in
+// retro-facilitator.js); diag() below is kept alongside it for the
+// underlying cause, not instead of it.
+var tplLoadErrorHintEl = document.getElementById("tplLoadErrorHint");
+function setTplLoadError(msg){
+  tplLoadErrorHintEl.textContent = msg || "";
+  tplLoadErrorHintEl.hidden = !msg;
+}
+
 function openTemplates(){
+  setTplLoadError(null);
   renderTemplateList();
   templatesBackdrop.hidden = false;
 }
@@ -20,50 +33,86 @@ document.getElementById("templatesBtn").addEventListener("click", openTemplates)
 document.getElementById("tplCloseBtn").addEventListener("click", closeTemplates);
 templatesBackdrop.addEventListener("click", function(e){ if(e.target===templatesBackdrop) closeTemplates(); });
 
-function templateRowHtml(t, opts){
-  var scoredCount = (t.dimensions||[]).filter(isStatementDimension).length;
-  var meta = t.dimensions.length+' dimension'+(t.dimensions.length===1?"":"s")+(t.unit?(' &middot; rates '+esc(t.unitPlural||t.unit)):"") +
-    (scoredCount ? (' &middot; '+scoredCount+' scored from statements') : "");
-  return '<div class="tpl-row" data-id="'+esc(t.id)+'">' +
+// NOTE: the template object parameter is named `tpl`, not `t`, throughout
+// this file -- `t` is the global translation function (i18n.js), and a
+// local `var t = <template>` would shadow it for the rest of that scope,
+// silently turning any `t("some.key")` call inside into "call this template
+// object as a function" (a TypeError at runtime). Real risk introduced by
+// Story 9's i18n wiring below, not a style preference.
+function templateRowHtml(tpl, opts){
+  var scoredCount = (tpl.dimensions||[]).filter(isStatementDimension).length;
+  var meta = (tpl.dimensions.length===1 ? t("templates.meta.dimensionsOne") : t("templates.meta.dimensionsMany", {count: tpl.dimensions.length})) +
+    (tpl.unit ? t("templates.meta.rates", {unit: tpl.unitPlural||tpl.unit}) : "") +
+    (scoredCount ? t("templates.meta.scoredFromStatements", {count: scoredCount}) : "");
+  return '<div class="tpl-row" data-id="'+esc(tpl.id)+'">' +
     '<div class="tinfo">' +
-      '<div class="tname" dir="auto">'+esc(t.name)+'</div>' +
+      '<div class="tname" dir="auto">'+esc(tpl.name)+'</div>' +
       '<div class="tmeta">'+meta+'</div>' +
     '</div>' +
-    '<button class="btn" data-action="load" type="button">Load</button>' +
+    '<button class="btn" data-action="load" type="button">'+esc(t("templates.loadButton"))+'</button>' +
     (opts && opts.deletable === false ? "" :
-      '<button class="icon-btn danger" data-action="delete" title="Delete template" type="button">' +
+      '<button class="icon-btn danger" data-action="delete" title="'+esc(t("templates.deleteTitle"))+'" type="button">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0-1 13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7"/></svg></button>') +
   '</div>';
 }
 
 function renderTemplateList(){
-  var starterHtml = STARTER_TEMPLATES.map(function(t){ return templateRowHtml(t, { deletable:false }); }).join("");
-  var ownHtml = state.templates.map(function(t){ return templateRowHtml(t); }).join("");
+  var starterHtml = STARTER_TEMPLATES.map(function(tpl){ return templateRowHtml(tpl, { deletable:false }); }).join("");
+  var ownHtml = state.templates.map(function(tpl){ return templateRowHtml(tpl); }).join("");
   var html =
-    '<div class="field-label" style="margin-top:0;">Starter templates</div>' +
+    '<div class="field-label" style="margin-top:0;">'+esc(t("templates.starterHeading"))+'</div>' +
     starterHtml +
-    '<div class="field-label">Your templates</div>' +
-    (ownHtml || '<p class="hint" style="margin:0;">No saved templates yet — set up your dimensions the way you want, then “Save current as template” below.</p>');
+    '<div class="field-label">'+esc(t("templates.ownHeading"))+'</div>' +
+    (ownHtml || '<p class="hint" style="margin:0;">'+esc(t("templates.emptyOwnHint"))+'</p>');
   document.getElementById("tplList").innerHTML = html;
   document.querySelectorAll("#tplList .tpl-row").forEach(function(row){
     var id = row.getAttribute("data-id");
-    var t = findAnyTemplateById(id);
-    if(!t) return;
+    var tpl = findAnyTemplateById(id);
+    if(!tpl) return;
     row.querySelector('[data-action="load"]').addEventListener("click", function(){
+      // Bug fix: loading a template rewrites the board's shared dimension
+      // set board-wide -- warn (and, if confirmed, close without saving)
+      // any squad's retro that's currently in progress, rather than
+      // silently leaving it open and running against dimensions the newly-
+      // active template no longer matches. See helpers.js's
+      // openRetroSessionsInfo() for why this checks every squad, not just
+      // one -- Templates has no single "current squad" context.
+      var openSessions = openRetroSessionsInfo();
+      var message = t("templates.confirmLoadMessage", {oldCount: state.dimensions.length, name: tpl.name, newCount: tpl.dimensions.length});
+      if(openSessions.length){
+        message += " " + t("templates.confirmLoadOpenSessionWarning", {squads: openSessions.map(function(s){ return s.squadName; }).join(", ")});
+      }
       openConfirm(
-        "Load “" + t.name + "”?",
-        "This replaces your current " + state.dimensions.length + " dimension(s) with " + t.name + "’s " + t.dimensions.length + ". Ratings tied to dimensions that don't carry over will be hidden, not deleted.",
-        function(){ loadTemplate(t); },
-        "Load template"
+        t("templates.confirmLoadTitle", {name: tpl.name}),
+        message,
+        function(){
+          // Await every close before rewriting the board's shared dimension
+          // set -- closeSession() can fail (a rejected write, same as any
+          // other live write in this app), and loading on top of a retro
+          // that's still actually open would leave it running against
+          // dimensions the newly-active template no longer matches, exactly
+          // the bug this confirm dialog exists to prevent. diag() logs the
+          // underlying cause; setTplLoadError() is what a facilitator
+          // actually SEES, since the Templates modal is still open right in
+          // front of them and #diagLog isn't.
+          setTplLoadError(null);
+          Promise.all(openSessions.map(function(s){ return closeSession(s.id); }))
+            .then(function(){ loadTemplate(tpl); })
+            .catch(function(){
+              diag("Template '" + tpl.name + "' NOT loaded: failed to close an in-progress retro session first.");
+              setTplLoadError(t("templates.confirmLoadOpenSessionCloseFailedHint", {name: tpl.name}));
+            });
+        },
+        t("templates.confirmLoadButton")
       );
     });
     var delBtn = row.querySelector('[data-action="delete"]');
     if(delBtn) delBtn.addEventListener("click", function(){
       openConfirm(
-        "Delete “" + t.name + "”?",
-        "This removes the saved template. It won't affect your current dimensions or ratings.",
-        function(){ deleteTemplate(t.id); },
-        "Delete"
+        t("templates.confirmDeleteTitle", {name: tpl.name}),
+        t("templates.confirmDeleteMessage"),
+        function(){ deleteTemplate(tpl.id); },
+        t("templates.confirmDeleteButton")
       );
     });
   });
@@ -86,6 +135,11 @@ function saveCurrentAsTemplate(name){
     if(isStatementDimension(d)) spec.statements = d.statements;
     if(d.scoreBands) spec.scoreBands = d.scoreBands;
     if(d.strategies && d.strategies.length) spec.strategies = d.strategies;
+    // Carry any Hebrew translation the admin already added (dimensions.js)
+    // along too, so a custom template saved AFTER translating stays
+    // translated for anyone who loads it later -- see state.js's
+    // localizedDimText() for why this now lives directly on the dimension.
+    if(d.i18n) spec.i18n = d.i18n;
     return spec;
   });
   var payload = {
@@ -105,60 +159,85 @@ function saveCurrentAsTemplate(name){
 }
 
 function deleteTemplate(id){
-  state.templates = state.templates.filter(function(t){ return t.id!==id; });
+  state.templates = state.templates.filter(function(tpl){ return tpl.id!==id; });
   renderTemplateList();
   syncLiveIfConnected(function(){
     return state.db.collection("templates").doc(id).delete();
   }, "Delete template " + id);
 }
 
-function loadTemplate(t){
+function loadTemplate(tpl){
+  // Stored dimension/config content is ALWAYS the template's own English
+  // (Story 5: for the Spotify starter template, PLACEHOLDER_DIMENSIONS'
+  // canonical text either way -- localizing it for a non-English locale is
+  // a RENDER-time concern (state.js's localizedDimText()/
+  // localizedAttribution(), applied at every display site) rather than
+  // something baked in here. Keeping the stored data locale-independent is
+  // what makes switching languages update the board immediately, including
+  // the default board that was never explicitly reloaded from the
+  // Templates modal. Each dimension's own `i18n` (if the template has one)
+  // is carried along below too -- since the bilingual-dimensions redesign,
+  // that's a normal editable field the loaded dimension owns from here on,
+  // same as label/green/red, not a separate template-level lookup table.
   var newConfig = {
-    unit: t.unit || state.config.unit,
-    unitPlural: t.unitPlural || state.config.unitPlural,
-    activeTemplateName: t.name,
-    attribution: t.attribution || ""
+    unit: tpl.unit || state.config.unit,
+    unitPlural: tpl.unitPlural || state.config.unitPlural,
+    activeTemplateName: tpl.name,
+    attribution: tpl.attribution || ""
   };
   // reuse each dimension's saved key (falling back to a template-namespaced
   // slug of its label for templates saved before keys were tracked) --
   // loading the SAME template again later re-creates the SAME dimension
   // ids, so any ratings given while it was active are still there
-  var newDimSpecs = t.dimensions.map(function(d, i){
-    var key = d.key || slugify(t.id + "-" + d.label, t.id + "-dim-" + (i+1));
+  var newDimSpecs = tpl.dimensions.map(function(d, i){
+    var key = d.key || slugify(tpl.id + "-" + d.label, tpl.id + "-dim-" + (i+1));
     var spec = { key:key, label:d.label, green:d.green||"", red:d.red||"", order:d.order||(i+1) };
     if(isStatementDimension(d)) spec.statements = d.statements;
     if(d.scoreBands) spec.scoreBands = d.scoreBands;
     if(d.strategies && d.strategies.length) spec.strategies = d.strategies;
+    if(d.i18n) spec.i18n = d.i18n;
     return spec;
   });
 
   if(state.live && state.db){
-    showBusy('Switching to “' + t.name + '”…');
-    diag("Loading template '" + t.name + "': removing " + state.dimensions.length + " current dimension(s)...");
+    showBusy(t("templates.switchingBusy", {name: tpl.name}));
+    diag("Loading template '" + tpl.name + "': removing " + state.dimensions.length + " current dimension(s)...");
     var oldKeys = state.dimensions.map(function(d){ return d.key; });
     var newKeys = {}; newDimSpecs.forEach(function(d){ newKeys[d.key] = true; });
     // only delete old dimensions that the incoming set doesn't reuse --
     // avoids a pointless delete+recreate round-trip when a key carries over
     var toDelete = oldKeys.filter(function(k){ return !newKeys[k]; });
-    Promise.all(toDelete.map(function(k){ return state.db.collection("dimensions").doc(k).delete(); }))
+    // board-sync.js's suppressBoardPushDuring(): the dimension writes and
+    // the config write below are separate Firestore-like operations, each
+    // of which independently fires a db.js onSnapshot listener that would
+    // otherwise push an inconsistent intermediate snapshot (new dimensions,
+    // still-old config) to the relay -- see that function's own comment for
+    // the real bug this caused (Tuckman's dimensions loaded correctly, but
+    // the model name/attribution regressed back to the previous template).
+    suppressBoardPushDuring(function(){
+      return Promise.all(toDelete.map(function(k){ return state.db.collection("dimensions").doc(k).delete(); }))
+        .then(function(){
+          diag("Writing " + newDimSpecs.length + " dimension(s) for '" + tpl.name + "'...");
+          return Promise.all(newDimSpecs.map(function(d){
+            var payload = { label:d.label, green:d.green, red:d.red, order:d.order, updatedAt: nowIso() };
+            // statements/scoreBands/strategies are optional content used by the
+            // scored-survey rating flow -- carried through here so a template
+            // that has them keeps them. i18n (the dimension's own Hebrew
+            // translation, if the template has one -- see state.js's
+            // localizedDimText()) travels the same way.
+            if(d.statements) payload.statements = d.statements;
+            if(d.scoreBands) payload.scoreBands = d.scoreBands;
+            if(d.strategies) payload.strategies = d.strategies;
+            if(d.i18n) payload.i18n = d.i18n;
+            return state.db.collection("dimensions").doc(d.key).set(payload);
+          }));
+        })
+        .then(function(){
+          return state.db.doc("meta/config").set(Object.assign({}, newConfig, { updatedAt: nowIso() }));
+        });
+    })
       .then(function(){
-        diag("Writing " + newDimSpecs.length + " dimension(s) for '" + t.name + "'...");
-        return Promise.all(newDimSpecs.map(function(d){
-          var payload = { label:d.label, green:d.green, red:d.red, order:d.order, updatedAt: nowIso() };
-          // statements/scoreBands/strategies are optional content used by the
-          // scored-survey rating flow (not built yet) -- carried through here
-          // so a template that has them keeps them once that flow exists
-          if(d.statements) payload.statements = d.statements;
-          if(d.scoreBands) payload.scoreBands = d.scoreBands;
-          if(d.strategies) payload.strategies = d.strategies;
-          return state.db.collection("dimensions").doc(d.key).set(payload);
-        }));
-      })
-      .then(function(){
-        return state.db.doc("meta/config").set(Object.assign({}, newConfig, { updatedAt: nowIso() }));
-      })
-      .then(function(){
-        diag("Template '" + t.name + "' loaded successfully.");
+        diag("Template '" + tpl.name + "' loaded successfully.");
         hideBusy();
         closeDimManager();
         closeTemplates();

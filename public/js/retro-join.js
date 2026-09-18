@@ -9,17 +9,15 @@
 // session card, overrides, the live tally) never runs any of this; see
 // retro-facilitator.js for that half.
 //
-// Reached either by opening ?session=<id> directly, or -- the reliable
-// path, since some phones' camera-to-app handoff doesn't carry a query
-// string through -- by typing the session code into the "Join a retro"
-// button in the header. Either way, once in join mode the device never
-// sees the Tribe/Squad/Admin switcher -- only this one screen, which just
-// watches that one session doc and reflects its current state.
+// SEC-2 (STATUS.md's locked PO decision): reached only by opening
+// ?session=<secret> -- scanning its QR code or opening its link -- never by
+// typing a code in by hand; the join-code modal that used to offer that is
+// gone. Once in join mode the device never sees the Tribe/Squad/Admin
+// switcher -- only this one screen, which just watches that one session doc
+// and reflects its current state.
 function enterJoinMode(){
   var switcher = document.querySelector(".view-switch");
   if(switcher) switcher.hidden = true;
-  var joinBtn = document.getElementById("joinCodeBtn");
-  if(joinBtn) joinBtn.hidden = true;
   document.getElementById("viewTribe").hidden = true;
   document.getElementById("viewSquad").hidden = true;
   document.getElementById("viewAdmin").hidden = true;
@@ -27,12 +25,16 @@ function enterJoinMode(){
   renderJoinScreen();
 }
 
-// Entering a code at runtime (rather than loading with ?session= already in
-// the URL) needs to kick off the same session listener manually, since the
-// boot-time initDb() only auto-attaches it once, before any code exists.
-function joinSessionByCode(code){
-  state.joinSessionId = code;
+// Entering a session at runtime (rather than loading with ?session=<secret>
+// already in the URL) needs to kick off the same session listener manually,
+// since the boot-time initDb() only auto-attaches it once, before any
+// secret exists. Kept as its own function (rather than inlined into the
+// boot-time path) since it's also the most direct way for a test to enter
+// join mode for a known secret without going through the UI.
+function joinSessionByCode(secret){
+  state.joinSessionId = secret;
   state.joinSession = null;
+  state.joinRoomId = null;
   enterJoinMode();
   if(state.live && state.db) listenJoinSession();
 }
@@ -43,10 +45,9 @@ function joinSessionByCode(code){
 // doesn't touch `state.joinSessionId` or unsubscribe listenJoinSession(),
 // so the session keeps updating in the background and any in-progress
 // draft answer or already-submitted personal result is still there,
-// unchanged, on return. `joinCodeBtn` stays hidden the whole time (exited
-// or not) so a participant can't accidentally start joining a SECOND
-// session while this one's still open -- the join flow only ever tracks
-// one at a time (see state.joinSessionId).
+// unchanged, on return. There's no way to start joining a SECOND session
+// from within the app (no typed-code entry point any more -- see SEC-2) so
+// the join flow only ever tracks one at a time (see state.joinSessionId).
 function exitJoinScreen(){
   if(!state.joinSessionId) return;
   document.getElementById("viewJoin").hidden = true;
@@ -69,59 +70,25 @@ function returnToJoinScreen(){
 document.getElementById("exitJoinBtn").addEventListener("click", exitJoinScreen);
 document.getElementById("backToRetroBtn").addEventListener("click", returnToJoinScreen);
 
-document.getElementById("joinCodeBtn").addEventListener("click", function(){
-  document.getElementById("joinCodeInput").value = "";
-  document.getElementById("joinCodeBackdrop").hidden = false;
-  document.getElementById("joinCodeInput").focus({preventScroll:true});
-});
-function closeJoinCodeModal(){ document.getElementById("joinCodeBackdrop").hidden = true; }
-document.getElementById("joinCodeCancel").addEventListener("click", closeJoinCodeModal);
-document.getElementById("joinCodeBackdrop").addEventListener("click", function(e){
-  if(e.target===document.getElementById("joinCodeBackdrop")) closeJoinCodeModal();
-});
-function submitJoinCode(){
-  var raw = document.getElementById("joinCodeInput").value.trim().toUpperCase().replace(/\s+/g,"");
-  if(!raw) return;
-  closeJoinCodeModal();
-  joinSessionByCode(raw);
-}
-document.getElementById("joinCodeGo").addEventListener("click", submitJoinCode);
-
-// Story 10: same modal, same code, different verb -- "Co-facilitate"
-// attaches this device to the session (coFacilitateSessionByCode(), in
-// retro-facilitator.js) instead of entering the participant join screen.
-function submitCoFacilitateCode(){
-  var raw = document.getElementById("joinCodeInput").value.trim().toUpperCase().replace(/\s+/g,"");
-  if(!raw) return;
-  closeJoinCodeModal();
-  coFacilitateSessionByCode(raw).catch(function(err){
-    openConfirm(
-      "Couldn’t co-facilitate that session",
-      (err && err.message) ? err.message : "Something went wrong reaching the relay. Check the diagnostic log below for details.",
-      function(){}, "OK"
-    );
-  });
-}
-document.getElementById("coFacilitateGo").addEventListener("click", submitCoFacilitateCode);
-document.getElementById("joinCodeInput").addEventListener("keydown", function(e){
-  if(e.key==="Enter") submitJoinCode();
-});
-
 // Personal result shown to a participant right after they submit one
 // dimension: their score, its band, the pyramid's characterization line
 // for anything not fully green, and the matching takeaway strategies. A
 // direct-rating (Spotify-style) dimension has a band but no numeric sum --
-// the score badge is simply omitted for those.
+// the score badge is simply omitted for those. `dim` here is a retro
+// session's own frozen snapshot copy (see startSession() in
+// retro-facilitator.js), which carries its `i18n` field forward same as
+// label/green/red/statements -- localizedDimText() (state.js) needs
+// nothing else to translate it correctly.
 function renderPersonalResultHtml(dim, result){
   var band = result.band;
-  var bandWord = band==="good" ? "Green" : band==="warn" ? "Yellow" : "Red";
-  var msg = band==="good" ? dim.green : dim.red;
-  var strategies = dim.strategies || [];
+  var bandWord = colorWordLocalized(band);
+  var msg = band==="good" ? localizedDimText(dim, "green") : localizedDimText(dim, "red");
+  var strategies = localizedDimText(dim, "strategies") || [];
   var showStrategies = band!=="good" && strategies.length;
   var scoreHtml = (result.sum!==undefined && result.sum!==null)
     ? '<span class="result-score '+band+'">'+result.sum+'</span>' : "";
   return '<div class="personal-result">' +
-    '<div class="field-label" style="margin-top:0;">'+esc(dim.label)+'</div>' +
+    '<div class="field-label" style="margin-top:0;">'+esc(localizedDimText(dim, "label"))+'</div>' +
     '<div class="result-hero">'+scoreHtml+'<span class="pill '+band+'">'+bandWord+'</span></div>' +
     (msg ? '<p class="hint" style="margin:0 0 '+(showStrategies?'10px':'0')+';" dir="auto">'+esc(msg)+'</p>' : "") +
     (showStrategies ?
@@ -144,17 +111,131 @@ function interleavedStatements(dims){
   var out = [];
   for(var i=0;i<maxLen;i+=1){
     dims.forEach(function(dim){
-      if(dim.statements && dim.statements[i]!==undefined) out.push({ dim: dim, idx: i, text: dim.statements[i] });
+      if(dim.statements && dim.statements[i]!==undefined){
+        var localized = localizedDimText(dim, "statements");
+        out.push({ dim: dim, idx: i, text: (localized && localized[i]!==undefined) ? localized[i] : dim.statements[i] });
+      }
     });
   }
   return out;
+}
+
+// One interleaved statement row's markup -- pulled out of renderJoinScreen()
+// so RETRO-2's paced (one-question-at-a-time) rendering can build the exact
+// same row for a SINGLE item that the all-at-once survey builds for every
+// item, with nothing to keep in sync between the two.
+function stmtRowHtml(item){
+  return '<div class="stmt-row" data-dim="'+esc(item.dim.key)+'" data-idx="'+item.idx+'"><div class="stmt-text" dir="auto">'+esc(item.text)+'</div>' +
+    '<div class="scale-btns">' +
+      '<button type="button" class="scale-btn" data-value="1">'+esc(t("join.scale.rarely"))+'</button>' +
+      '<button type="button" class="scale-btn" data-value="2">'+esc(t("join.scale.sometimes"))+'</button>' +
+      '<button type="button" class="scale-btn" data-value="3">'+esc(t("join.scale.usually"))+'</button>' +
+    '</div></div>';
+}
+// One direct-rating dimension's row markup -- see stmtRowHtml()'s own
+// comment above for why this is pulled out the same way.
+function directRowHtml(dim){
+  var greenText = localizedDimText(dim, "green");
+  var redText = localizedDimText(dim, "red");
+  var anchorsHtml = (greenText || redText) ?
+    '<p class="hint" style="margin:0 0 10px;">' +
+      (greenText ? '<b>'+esc(t("tribe.legend.greenLabel"))+'</b> <span dir="auto">'+esc(greenText)+'</span> ' : '') +
+      (redText ? '<b>'+esc(t("tribe.legend.redLabel"))+'</b> <span dir="auto">'+esc(redText)+'</span>' : '') +
+    '</p>' : "";
+  return '<div class="direct-row" data-dim="'+esc(dim.key)+'">' +
+    '<div class="stmt-text" dir="auto">'+esc(localizedDimText(dim, "label"))+'</div>' +
+    anchorsHtml +
+    '<div class="swatches">' +
+      '<button class="swatch good" data-color="good" type="button" title="'+esc(t("common.color.good"))+'"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 13l4 4 10-10"/></svg></button>' +
+      '<button class="swatch warn" data-color="warn" type="button" title="'+esc(t("common.color.warn"))+'"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 12h12"/></svg></button>' +
+      '<button class="swatch crit" data-color="crit" type="button" title="'+esc(t("common.color.crit"))+'"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
+    '</div>' +
+  '</div>';
+}
+
+// RETRO-2: true once every statement/direct-rating dimension in the draft
+// has a real answer -- the same completeness check both the all-at-once
+// Submit button (refreshSubmitEnabled(), bindStatementForm() below) and
+// the paced flow's auto-submit-at-the-end (renderJoinScreen() below) need,
+// pulled out so there's exactly one definition of "done answering."
+function isJoinDraftComplete(stmtDims, directDims){
+  var stmtsComplete = stmtDims.every(function(dim){
+    var draft = state.joinDraftAnswers[dim.key];
+    return !!draft && draft.length===dim.statements.length &&
+      draft.every(function(v){ return v===1 || v===2 || v===3; });
+  });
+  var directComplete = directDims.every(function(dim){
+    var v = state.joinDraftAnswers[dim.key];
+    return v==="good" || v==="warn" || v==="crit";
+  });
+  return stmtsComplete && directComplete;
+}
+
+// The one atomic write covering every dimension of both kinds -- pulled out
+// of bindStatementForm()'s Submit click handler so RETRO-2's paced flow can
+// call the exact same completion path once the facilitator advances past
+// the last question, instead of waiting on a Submit click that a paced
+// screen doesn't even show (advancement there is facilitator-controlled,
+// not participant-initiated -- see renderJoinScreen()'s pacing branch).
+// Reads straight from state.joinDraftAnswers rather than a local copy, so
+// it works whether or not this render pass actually built any rows.
+function submitJoinAnswers(stmtDims, directDims){
+  var results = {};
+  var payload = { answers:{}, submittedAt: nowIso() };
+  stmtDims.forEach(function(dim){
+    var draft = state.joinDraftAnswers[dim.key];
+    var sum = draft.reduce(function(a,b){ return a+b; }, 0);
+    results[dim.key] = { sum: sum, band: bandForScore(sum, dim.scoreBands) };
+    payload.answers[dim.key] = draft.slice();
+  });
+  directDims.forEach(function(dim){
+    var val = state.joinDraftAnswers[dim.key];
+    results[dim.key] = { band: val };
+    payload.answers[dim.key] = val;
+  });
+  var afterSubmit = function(){
+    Object.keys(results).forEach(function(k){ state.joinSubmittedResults[k] = results[k]; });
+    renderJoinScreen();
+  };
+  return liveOr(function(){
+    return state.db.doc("sessions/" + state.joinRoomId, state.joinSessionId).collection("responses").add(payload)
+      .then(afterSubmit)
+      .catch(function(err){
+        diag("Submit answer failed: " + (err && err.code ? err.code : String(err)));
+        throw err;
+      });
+  }, function(){ afterSubmit(); return Promise.resolve(); });
+}
+
+// RETRO-2's paced flow auto-submits once the facilitator finishes
+// questioning -- unlike the manual Submit button (bindStatementForm()
+// below), there's no click for a participant to retry from, so a real
+// write failure (a relay hiccup, not a bug) needs its own visible
+// failure-and-retry path. Codex review on PR #30 (P2): the first version
+// of this only reset `joinAutoSubmitting` on rejection and never
+// re-rendered, so the screen stayed on "Submitting..." forever with no
+// error and no way to retry short of reloading the page and losing the
+// draft. Fixed by setting `joinAutoSubmitFailed` and re-rendering into an
+// explicit failure state (renderJoinScreen() below) with a retry button
+// that calls this same function again -- the draft itself
+// (state.joinDraftAnswers) is never touched by a failed attempt, so retry
+// resubmits the exact same answers, not a reset survey.
+function attemptPacedAutoSubmit(stmtDims, directDims){
+  state.joinAutoSubmitFailed = false;
+  state.joinAutoSubmitting = true;
+  submitJoinAnswers(stmtDims, directDims).catch(function(err){
+    diag("Paced auto-submit failed: " + (err && err.code ? err.code : String(err)));
+    state.joinAutoSubmitting = false;
+    state.joinAutoSubmitFailed = true;
+    renderJoinScreen();
+  });
 }
 
 function renderJoinScreen(){
   var el = document.getElementById("joinCard");
   if(!el) return;
   if(!state.live){
-    el.innerHTML = '<h2>Connecting&hellip;</h2><p class="hint">Hang tight while we connect to the board.</p>';
+    el.innerHTML = '<h2>'+esc(t("join.connectingHeading"))+'</h2><p class="hint">'+esc(t("join.connectingHint"))+'</p>';
     return;
   }
   var sess = state.joinSession;
@@ -170,19 +251,19 @@ function renderJoinScreen(){
   // lifetime.
   if(sess && sess.status === "closed"){
     el.innerHTML =
-      '<h2>This retro has ended</h2>' +
-      '<p class="hint">The facilitator closed this session. Ask them for a new link if another one is starting.</p>';
+      '<h2>'+esc(t("join.endedHeading"))+'</h2>' +
+      '<p class="hint">'+esc(t("join.endedHint"))+'</p>';
     return;
   }
   if(!sess || sess.status !== "open"){
     if(state.joinUnavailable){
       el.innerHTML =
-        '<h2>Can&rsquo;t connect to the retro server</h2>' +
-        '<p class="hint">This device never reached the relay. Check your connection, or ask whoever&rsquo;s running the retro if it&rsquo;s up.</p>';
+        '<h2>'+esc(t("join.unavailableHeading"))+'</h2>' +
+        '<p class="hint">'+esc(t("join.unavailableHint"))+'</p>';
     } else {
       el.innerHTML =
-        '<h2>This retro session isn&rsquo;t open</h2>' +
-        '<p class="hint">Check the link with whoever is running the retro &mdash; it may have already ended, or the link may be out of date.</p>';
+        '<h2>'+esc(t("join.notOpenHeading"))+'</h2>' +
+        '<p class="hint">'+esc(t("join.notOpenHint"))+'</p>';
     }
     return;
   }
@@ -201,55 +282,108 @@ function renderJoinScreen(){
 
   if(alreadySubmitted){
     el.innerHTML =
-      '<h2 dir="auto">Thanks &mdash; here&rsquo;s your results</h2>' +
-      '<p class="hint">Retro: &ldquo;'+esc(sess.templateName||"Custom")+'&rdquo;.</p>' +
+      '<h2>'+esc(t("join.thanksHeading"))+'</h2>' +
+      '<p class="hint">'+esc(t("join.retroLabel", {name: sess.templateName||"Custom"}))+'</p>' +
       dims.map(function(d){ return renderPersonalResultHtml(d, state.joinSubmittedResults[d.key]); }).join("");
     return;
   }
 
   if(dims.length){
+    // RETRO-2: a paced session shows exactly one item from
+    // pacingSequence(sess.dimensions) at a time (facilitator-controlled,
+    // via sess.currentQuestionIndex), instead of the whole survey at once.
+    // Ensure every dim's draft exists BEFORE either branch below reads/
+    // checks it (same init bindStatementForm() always did, just no longer
+    // gated behind that function actually rendering a row for every dim --
+    // a paced render only builds ONE row per pass).
+    stmtDims.forEach(function(dim){
+      if(!state.joinDraftAnswers[dim.key]) state.joinDraftAnswers[dim.key] = new Array(dim.statements.length).fill(null);
+    });
+    directDims.forEach(function(dim){
+      if(!Object.prototype.hasOwnProperty.call(state.joinDraftAnswers, dim.key)) state.joinDraftAnswers[dim.key] = null;
+    });
+
+    if(sess.pacingEnabled){
+      var pacingSeq = pacingSequence(sess.dimensions);
+      var qIdx = sess.currentQuestionIndex || 0;
+      if(qIdx >= pacingSeq.length){
+        // "Questioning finished" sentinel -- the facilitator has advanced
+        // past the last question. Auto-submit once (guarded by
+        // joinAutoSubmitting so a second onSnapshot delivery before the
+        // write settles doesn't fire a duplicate response) if every
+        // dimension is actually answered; otherwise this participant fell
+        // behind, and gets a friendly wait state rather than a bad partial
+        // submit or a silent no-op.
+        if(isJoinDraftComplete(stmtDims, directDims)){
+          if(state.joinAutoSubmitFailed){
+            // Codex review on PR #30 (P2): a real write failure here used
+            // to leave the screen stuck on "Submitting..." forever -- see
+            // attemptPacedAutoSubmit()'s own header comment. The retry
+            // button below calls the exact same function; the draft is
+            // untouched by a failed attempt, so retrying resubmits the
+            // same answers, not a reset survey.
+            el.innerHTML =
+              '<h2>'+esc(t("join.pacing.submitFailedHeading"))+'</h2>' +
+              '<p class="hint pacing-submit-failed">'+esc(t("join.pacing.submitFailedHint"))+'</p>' +
+              '<button class="btn primary" id="pacingRetrySubmitBtn" type="button">'+esc(t("join.pacing.retryButton"))+'</button>';
+            var retryBtn = document.getElementById("pacingRetrySubmitBtn");
+            if(retryBtn) retryBtn.addEventListener("click", function(){
+              attemptPacedAutoSubmit(stmtDims, directDims);
+              renderJoinScreen();
+            });
+            return;
+          }
+          if(!state.joinAutoSubmitting) attemptPacedAutoSubmit(stmtDims, directDims);
+          el.innerHTML =
+            '<h2>'+esc(t("join.joiningHeading", {squad: sess.squadName||"the squad"}))+'</h2>' +
+            '<p class="hint">'+esc(t("join.submittingButton"))+'</p>';
+        } else {
+          el.innerHTML =
+            '<h2>'+esc(t("join.pacing.waitingHeading"))+'</h2>' +
+            '<p class="hint pacing-waiting">'+esc(t("join.pacing.waitingHint"))+'</p>';
+        }
+        return;
+      }
+      var item = pacingSeq[qIdx];
+      var rowHtml;
+      if(item.kind==="stmt"){
+        var stmtDim = stmtDims.filter(function(d){ return d.key===item.dimKey; })[0];
+        var localizedStmts = localizedDimText(stmtDim, "statements");
+        var text = (localizedStmts && localizedStmts[item.idx]!==undefined) ? localizedStmts[item.idx] : stmtDim.statements[item.idx];
+        rowHtml = '<div class="stmt-list">' + stmtRowHtml({ dim: stmtDim, idx: item.idx, text: text }) + '</div>';
+      } else {
+        var directDim = directDims.filter(function(d){ return d.key===item.dimKey; })[0];
+        rowHtml = '<div class="direct-list">' + directRowHtml(directDim) + '</div>';
+      }
+      el.innerHTML =
+        '<h2>'+esc(t("join.joiningHeading", {squad: sess.squadName||"the squad"}))+'</h2>' +
+        '<p class="hint" id="pacingCounter">'+esc(t("join.pacing.counter", {current: qIdx+1, total: pacingSeq.length}))+'</p>' +
+        '<p class="hint">'+esc(t("join.pacing.hint"))+'</p>' +
+        '<div id="stmtForm">' + rowHtml + '</div>';
+      bindStatementForm(stmtDims, directDims);
+      return;
+    }
+
     var flatStatements = interleavedStatements(stmtDims);
     var statementListHtml = stmtDims.length ?
-      '<div class="stmt-list">' + flatStatements.map(function(item){
-        return '<div class="stmt-row" data-dim="'+esc(item.dim.key)+'" data-idx="'+item.idx+'"><div class="stmt-text" dir="auto">'+esc(item.text)+'</div>' +
-          '<div class="scale-btns">' +
-            '<button type="button" class="scale-btn" data-value="1">Rarely</button>' +
-            '<button type="button" class="scale-btn" data-value="2">Sometimes</button>' +
-            '<button type="button" class="scale-btn" data-value="3">Usually</button>' +
-          '</div></div>';
-      }).join("") + '</div>' : "";
+      '<div class="stmt-list">' + flatStatements.map(stmtRowHtml).join("") + '</div>' : "";
     var directIntroHtml = (stmtDims.length && directDims.length) ?
-      '<div class="field-label" style="margin-top:18px;">Squad health check</div>' : "";
+      '<div class="field-label" style="margin-top:18px;">'+esc(t("join.squadHealthCheckHeading"))+'</div>' : "";
     var directListHtml = directDims.length ?
-      directIntroHtml + '<div class="direct-list">' + directDims.map(function(dim){
-        var anchorsHtml = (dim.green || dim.red) ?
-          '<p class="hint" style="margin:0 0 10px;" dir="auto">' +
-            (dim.green ? '<b>Green:</b> '+esc(dim.green)+' ' : '') +
-            (dim.red ? '<b>Red:</b> '+esc(dim.red) : '') +
-          '</p>' : "";
-        return '<div class="direct-row" data-dim="'+esc(dim.key)+'">' +
-          '<div class="stmt-text" dir="auto">'+esc(dim.label)+'</div>' +
-          anchorsHtml +
-          '<div class="swatches">' +
-            '<button class="swatch good" data-color="good" type="button" title="Green"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 13l4 4 10-10"/></svg></button>' +
-            '<button class="swatch warn" data-color="warn" type="button" title="Yellow"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 12h12"/></svg></button>' +
-            '<button class="swatch crit" data-color="crit" type="button" title="Red"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
-          '</div>' +
-        '</div>';
-      }).join("") + '</div>' : "";
+      directIntroHtml + '<div class="direct-list">' + directDims.map(directRowHtml).join("") + '</div>' : "";
     el.innerHTML =
-      '<h2 dir="auto">You&rsquo;re joining '+esc(sess.squadName||"the squad")+'&rsquo;s retro</h2>' +
-      '<p class="hint">Retro: &ldquo;'+esc(sess.templateName||"Custom")+'&rdquo;. Answer honestly &mdash; your answers are anonymous, and only your squad&rsquo;s combined result is ever shown.</p>' +
+      '<h2>'+esc(t("join.joiningHeading", {squad: sess.squadName||"the squad"}))+'</h2>' +
+      '<p class="hint">'+esc(t("join.retroLabel", {name: sess.templateName||"Custom"}))+' '+esc(t("join.formHint"))+'</p>' +
       '<div id="stmtForm">' + statementListHtml + directListHtml + '</div>' +
-      '<button class="btn primary" id="stmtSubmitBtn" type="button" disabled>Submit</button>';
+      '<button class="btn primary" id="stmtSubmitBtn" type="button" disabled>'+esc(t("join.submitButton"))+'</button>';
     bindStatementForm(stmtDims, directDims);
     return;
   }
 
   // template has no dimensions at all -- nothing for anyone to rate
   el.innerHTML =
-    '<h2 dir="auto">You&rsquo;re joining '+esc(sess.squadName||"the squad")+'&rsquo;s retro</h2>' +
-    '<p class="hint">This retro doesn&rsquo;t have any dimensions set up yet.</p>';
+    '<h2>'+esc(t("join.joiningHeading", {squad: sess.squadName||"the squad"}))+'</h2>' +
+    '<p class="hint">'+esc(t("join.noDimensionsHint"))+'</p>';
 }
 
 // Wires up both flavors of retro answer at once: the 1/2/3 scale buttons
@@ -265,37 +399,18 @@ function renderJoinScreen(){
 function bindStatementForm(stmtDims, directDims){
   stmtDims = stmtDims || [];
   directDims = directDims || [];
+  // RETRO-2: no early return when this is null -- a paced render (see
+  // renderJoinScreen()) shows one question at a time with NO Submit
+  // button at all (advancement is facilitator-controlled), but its one
+  // rendered row still needs its click handler bound the same as any
+  // other. Every draft was already initialized by renderJoinScreen()
+  // before calling this, whether or not a row for every dim got rendered
+  // this pass, so nothing here depends on `submitBtn` existing.
   var submitBtn = document.getElementById("stmtSubmitBtn");
-  if(!submitBtn) return;
-
-  var drafts = {};
-  stmtDims.forEach(function(dim){
-    // NOTE: must fill with an explicit sentinel, not leave a sparse array --
-    // Array.prototype.every() skips holes in a sparse array (vacuously
-    // true), which would let an unanswered draft read as "complete" and
-    // enable Submit before every statement has a real answer.
-    drafts[dim.key] = state.joinDraftAnswers[dim.key] ||
-      (state.joinDraftAnswers[dim.key] = new Array(dim.statements.length).fill(null));
-  });
-  // A direct-rating dimension's draft is just the picked color (or null
-  // until picked), not an array -- same joinDraftAnswers map, keyed by
-  // dimension key same as the statement dimensions above, since a session
-  // never has two dimensions sharing a key.
-  directDims.forEach(function(dim){
-    if(!Object.prototype.hasOwnProperty.call(state.joinDraftAnswers, dim.key)) state.joinDraftAnswers[dim.key] = null;
-  });
 
   function refreshSubmitEnabled(){
-    var stmtsComplete = stmtDims.every(function(dim){
-      var draft = drafts[dim.key];
-      return draft.length===dim.statements.length &&
-        draft.every(function(v){ return v===1 || v===2 || v===3; });
-    });
-    var directComplete = directDims.every(function(dim){
-      var v = state.joinDraftAnswers[dim.key];
-      return v==="good" || v==="warn" || v==="crit";
-    });
-    submitBtn.disabled = !(stmtsComplete && directComplete);
+    if(!submitBtn) return;
+    submitBtn.disabled = !isJoinDraftComplete(stmtDims, directDims);
   }
 
   // Statement rows are interleaved across dimensions in one flat list (see
@@ -304,7 +419,7 @@ function bindStatementForm(stmtDims, directDims){
   document.querySelectorAll('#stmtForm .stmt-list .stmt-row').forEach(function(row){
     var dimKey = row.getAttribute("data-dim");
     var idx = Number(row.getAttribute("data-idx"));
-    var draft = drafts[dimKey];
+    var draft = state.joinDraftAnswers[dimKey];
     if(!draft) return;
     row.querySelectorAll(".scale-btn").forEach(function(btn){
       var val = Number(btn.getAttribute("data-value"));
@@ -336,52 +451,40 @@ function bindStatementForm(stmtDims, directDims){
 
   refreshSubmitEnabled();
 
-  submitBtn.addEventListener("click", function(){
+  if(submitBtn) submitBtn.addEventListener("click", function(){
     submitBtn.disabled = true;
-    submitBtn.textContent = "Submitting…";
-    var results = {};
-    var payload = { answers:{}, submittedAt: nowIso() };
-    stmtDims.forEach(function(dim){
-      var draft = drafts[dim.key];
-      var sum = draft.reduce(function(a,b){ return a+b; }, 0);
-      results[dim.key] = { sum: sum, band: bandForScore(sum, dim.scoreBands) };
-      payload.answers[dim.key] = draft.slice();
+    submitBtn.textContent = t("join.submittingButton");
+    submitJoinAnswers(stmtDims, directDims).catch(function(){
+      submitBtn.disabled = false;
+      submitBtn.textContent = t("join.submitButton");
     });
-    directDims.forEach(function(dim){
-      var val = state.joinDraftAnswers[dim.key];
-      results[dim.key] = { band: val };
-      payload.answers[dim.key] = val;
-    });
-    var afterSubmit = function(){
-      Object.keys(results).forEach(function(k){ state.joinSubmittedResults[k] = results[k]; });
-      renderJoinScreen();
-    };
-    liveOr(function(){
-      return state.db.collection("sessions").doc(state.joinSessionId).collection("responses").add(payload)
-        .then(afterSubmit)
-        .catch(function(err){
-          diag("Submit answer failed: " + (err && err.code ? err.code : String(err)));
-          submitBtn.disabled = false;
-          submitBtn.textContent = "Submit";
-        });
-    }, afterSubmit);
   });
 }
 
+// SEC-2: state.joinSessionId holds the session's SECRET (from ?session=
+// in the URL), not its relay room id any more -- resolve the room id
+// first (the same async step board-sync.js's own hydrate/subscribe do),
+// then subscribe with both, exactly like startSession()/
+// coFacilitateSessionByCode() in retro-facilitator.js.
 function listenJoinSession(){
-  state.db.doc("sessions/" + state.joinSessionId).onSnapshot(function(snap){
-    state.joinSession = snap.exists ? Object.assign({ id: snap.id }, snap.data()) : null;
-    // `unavailable` (relay-client.js only -- local-store.js's other,
-    // non-session snapshots never set it, so this is falsy/absent there)
-    // means this device never reached the relay at all, as distinct from
-    // reaching it and finding no such document -- see renderJoinScreen()
-    // above.
-    state.joinUnavailable = !!snap.unavailable;
-    diag("Join session snapshot: " + (state.joinSession ? state.joinSession.status : (state.joinUnavailable ? "relay unavailable" : "not found")));
-    renderJoinScreen();
-  }, function(err){
-    diag("Join session listener error: " + (err && err.code ? err.code : String(err)));
-    state.joinSession = null;
-    renderJoinScreen();
+  var secret = state.joinSessionId;
+  SquadPulseCrypto.roomIdFor(secret).then(function(roomId){
+    if(state.joinSessionId !== secret) return; // superseded before this resolved
+    state.joinRoomId = roomId;
+    state.db.doc("sessions/" + roomId, secret).onSnapshot(function(snap){
+      state.joinSession = snap.exists ? Object.assign({ id: snap.id }, snap.data()) : null;
+      // `unavailable` (relay-client.js only -- local-store.js's other,
+      // non-session snapshots never set it, so this is falsy/absent there)
+      // means this device never reached the relay at all, as distinct from
+      // reaching it and finding no such document -- see renderJoinScreen()
+      // above.
+      state.joinUnavailable = !!snap.unavailable;
+      diag("Join session snapshot: " + (state.joinSession ? state.joinSession.status : (state.joinUnavailable ? "relay unavailable" : "not found")));
+      renderJoinScreen();
+    }, function(err){
+      diag("Join session listener error: " + (err && err.code ? err.code : String(err)));
+      state.joinSession = null;
+      renderJoinScreen();
+    });
   });
 }

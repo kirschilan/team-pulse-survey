@@ -42,6 +42,17 @@ relay_proc = subprocess.Popen(
 
 try:
     if not wait_for_port(RELAY_PORT):
+        # Must kill the process (closing its stdout) BEFORE reading it --
+        # .read() blocks until EOF, and a relay that's still alive (just
+        # slow to bind, e.g. under CPU contention from parallel test jobs)
+        # never sends EOF, so this used to deadlock the whole suite instead
+        # of raising the intended error. Found via a real hang in CI/local
+        # runs: this exact test process stuck for 50+ minutes.
+        relay_proc.terminate()
+        try:
+            relay_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            relay_proc.kill()
         out = relay_proc.stdout.read() if relay_proc.stdout else ""
         raise RuntimeError("relay server never opened port %d\n%s" % (RELAY_PORT, out))
 
@@ -56,10 +67,15 @@ try:
         a_errors = []
         a.on("pageerror", lambda e: a_errors.append(str(e)))
         a.goto(INDEX_URL, wait_until="domcontentloaded")
-        a.wait_for_timeout(300)
+        # eval_on_selector()/query_selector() below don't auto-wait --
+        # renderAdminSquadList() only populates this once the async store load +
+        # first render() pass lands, so this is the real boot-complete marker
+        # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+        a.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
+        # ensureDefaultTeamSecret()/renderTeamSyncStatus() (board-sync.js) both
+        # run synchronously at script-load time -- device A's team link is
+        # already populated the instant goto() returns, no wait needed.
         a.click('.view-btn[data-view="admin"]')
-        a.wait_for_timeout(100)
-        a.wait_for_timeout(300)  # step 7: default-on -- device A already has its own team link, no click needed
         team_link = a.eval_on_selector("#teamLinkInput", "el=>el.value")
 
         # ============ device B: opens the SAME team link, both devices open
@@ -70,13 +86,16 @@ try:
         b_errors = []
         b.on("pageerror", lambda e: b_errors.append(str(e)))
         b.goto(team_link, wait_until="domcontentloaded")
-        b.wait_for_timeout(400)
+        b.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
+        # autoConnectFromLink()/renderTeamSyncStatus() are both synchronous
+        # at script-load time -- no wait needed after this click.
         b.click('.view-btn[data-view="admin"]')
-        b.wait_for_timeout(100)
 
         print("=== both devices connected via the same link; device A adds a squad -- device B should see it LIVE, no reload ===")
         a.click("#addSquadBtn")
-        a.wait_for_timeout(600)  # give the relay round trip + B's live callback time, but no reload/navigation at all
+        # real relay round trip + B's live callback -- wait for the actual
+        # result B is about to be checked for, not a guessed delay
+        b.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).some(i => i.value === 'New squad')")
 
         b_squad_names = b.eval_on_selector_all("#adminSquadList input.admin-squad-name", "els=>els.map(e=>e.value)")
         print("device B's board, without ever reloading:", b_squad_names)
@@ -84,16 +103,24 @@ try:
 
         print("=== the reverse direction also works live: device B adds a squad, device A sees it live ===")
         b.click("#addSquadBtn")
-        a.wait_for_timeout(600)
+        a.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).filter(i => i.value === 'New squad').length === 2")
         a_squad_names = a.eval_on_selector_all("#adminSquadList input.admin-squad-name", "els=>els.map(e=>e.value)")
         print("device A's board, without ever reloading:", a_squad_names)
         assert a_squad_names.count("New squad") == 2, "device A should now see BOTH squads (its own + B's), live"
 
         print("=== disconnecting stops live updates too, not just pushes ===")
+        # stopTeamBoardSubscription()/setTeamSecret("")/renderTeamSyncStatus()
+        # (board-sync.js) are all synchronous -- no wait needed after this click.
         b.click("#teamDisconnectBtn")
-        b.wait_for_timeout(150)
         a.click("#addSquadBtn")
-        a.wait_for_timeout(600)
+        # A's own optimistic local update confirms this third write was
+        # actually initiated -- a real signal, not a guess.
+        a.wait_for_function("() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).filter(i => i.value === 'New squad').length === 3")
+        # There's no real signal for "this message never reaches B" (proving
+        # a negative) -- give it a fixed window it would have arrived in if
+        # the disconnect hadn't been respected, a rainy-day check rather
+        # than a guess about how long the real happy-path round trips above take.
+        b.wait_for_timeout(600)
         b_squad_names_after_disconnect = b.eval_on_selector_all("#adminSquadList input.admin-squad-name", "els=>els.map(e=>e.value)")
         print("device B's board after disconnecting, following another change on A:", b_squad_names_after_disconnect)
         assert b_squad_names_after_disconnect.count("New squad") == 2, "B disconnected BEFORE this third squad add -- it must not have arrived"

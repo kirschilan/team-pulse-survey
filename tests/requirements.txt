@@ -1,0 +1,9 @@
+# Pinned so every environment running this suite uses the same Chromium
+# build -- Playwright ties browser binaries to the exact package version,
+# so pinning this one line pins Chromium too (currently 151.0.7922.34).
+# See docs/DefinitionOfDone.md's cross-machine test-timing note for why
+# this matters: an unpinned Playwright let two real investigations into
+# the same reported test failure (2026-09-15, see STATUS.md) run against
+# silently different Chromium builds with no way to tell from the repo
+# alone.
+playwright==1.62.0

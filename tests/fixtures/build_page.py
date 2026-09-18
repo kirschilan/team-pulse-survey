@@ -36,7 +36,36 @@ _TEST_INDEX_HTML = re.sub(
 assert _TEST_INDEX_HTML != INDEX_HTML, "expected to find and strip the Google Fonts <link> in index.html"
 
 
-def build_page(extra_seed_js="", out_name="_test_preview.html"):
+def _extract_script_body(html_or_script):
+    """Pulls the JS out of a string that's either a bare script body or one
+    (or more) full <script>...</script> block(s), concatenated in order --
+    the inverse of wrapping JS in <script> tags. Used by the sibling-.js-file
+    writers below (see their own comment) so callers can keep passing the
+    same `<script>...</script>` strings they always have.
+    """
+    blocks = re.findall(r"<script\b[^>]*>(.*?)</script>", html_or_script, re.S)
+    return "\n".join(blocks) if blocks else html_or_script
+
+
+def _write_sibling_script(out_name, suffix, script_html):
+    """Writes the JS inside `script_html` (a `<script>...</script>` string,
+    or several) to a sibling file next to out_name's own .html output, and
+    returns a `<script src="...">` tag referencing it.
+    SEC-3 (STATUS.md's "Security hardening backlog"): the real app's own CSP
+    is script-src 'self' with no 'unsafe-inline' (see index.html's own CSP
+    meta tag) -- an inline <script> spliced directly into a test page's HTML
+    would violate that same policy the moment a test page carries it too,
+    so every one of this fixture's test-only script injections goes through
+    this instead of string-concatenating a literal <script> tag into <head>.
+    'self' already covers a same-directory sibling file, so this needs no
+    CSP relaxation, in test pages or in the real app.
+    """
+    js_name = out_name[:-len(".html")] + "." + suffix + ".js"
+    (PUBLIC_DIR / js_name).write_text(_extract_script_body(script_html), encoding="utf-8")
+    return '<script src="' + js_name + '"></script>'
+
+
+def build_page(extra_seed_js="", out_name="_test_preview.html", show_welcome=False):
     """Write a test copy of index.html into public/, with the fake store
     injected into <head> (so window.claude exists before app.js loads).
 
@@ -59,7 +88,10 @@ def build_page(extra_seed_js="", out_name="_test_preview.html"):
         marker = "seed();"
         idx = fake.index(marker) + len(marker)
         fake = fake[:idx] + "\n  " + extra_seed_js + "\n" + fake[idx:]
-    html = _TEST_INDEX_HTML.replace("</head>", fake + "\n</head>")
+    fake_script_tag = _write_sibling_script(out_name, "store", fake)
+    html = _TEST_INDEX_HTML.replace("</head>", fake_script_tag + "\n</head>")
+    if not show_welcome:
+        html = returning_visitor(html, out_name)
     out_path = PUBLIC_DIR / out_name
     out_path.write_text(html, encoding="utf-8")
     return out_path
@@ -82,7 +114,8 @@ def build_custom_page(extra_head_html, out_name):
     out_name: as build_page() -- must start with "_test_".
     """
     assert out_name.startswith("_test_"), "test preview files must match the _test_* .gitignore pattern"
-    html = _TEST_INDEX_HTML.replace("</head>", extra_head_html + "\n</head>")
+    custom_script_tag = _write_sibling_script(out_name, "custom", extra_head_html)
+    html = returning_visitor(_TEST_INDEX_HTML.replace("</head>", custom_script_tag + "\n</head>"), out_name)
     out_path = PUBLIC_DIR / out_name
     out_path.write_text(html, encoding="utf-8")
     return out_path
@@ -98,7 +131,7 @@ def write_plain_index(out_name):
     public/index.html directly."""
     assert out_name.startswith("_test_"), "test preview files must match the _test_* .gitignore pattern"
     out_path = PUBLIC_DIR / out_name
-    out_path.write_text(_TEST_INDEX_HTML, encoding="utf-8")
+    out_path.write_text(returning_visitor(_TEST_INDEX_HTML, out_name), encoding="utf-8")
     return out_path
 
 
@@ -107,6 +140,17 @@ OUTPUT_DIR = REPO_ROOT / "tests" / "output"
 
 def test_output_path(name):
     """Path under tests/output/ (gitignored) for any test-run artifact --
-    a verification screenshot, a scratch CSV fixture for an import test, etc."""
+    a verification screenshot, a scratch JSON fixture for an import test, etc."""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     return OUTPUT_DIR / name
+
+
+def returning_visitor(html, out_name):
+    """Existing feature tests start as returning visitors; welcome has its own test.
+    Seed only the production preference, not a production-only test switch.
+    """
+    tag = _write_sibling_script(
+        out_name, "returning-visitor",
+        "<script>try { localStorage.setItem('squadpulse:welcomeSeen', '1'); } catch(e) {}</script>",
+    )
+    return html.replace("</head>", tag + "\n</head>")

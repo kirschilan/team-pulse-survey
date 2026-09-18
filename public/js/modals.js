@@ -48,13 +48,13 @@ function openEditor(squadId, dimKey){
   state.editingOverride = null;
   state.editingCell = { squadId:squadId, dimKey:dimKey, color: cell.color||"unscored", trend: cell.trend||"flat", note: cell.note||"" };
 
-  document.getElementById("modalTitle").textContent = d.label;
+  document.getElementById("modalTitle").textContent = localizedDimText(d, "label");
   document.getElementById("modalSquadline").textContent = sq.name;
-  document.getElementById("modalGreen").textContent = d.green;
-  document.getElementById("modalRed").textContent = d.red;
+  document.getElementById("modalGreen").textContent = localizedDimText(d, "green");
+  document.getElementById("modalRed").textContent = localizedDimText(d, "red");
   var noteBox = document.getElementById("modalNote");
   noteBox.value = state.editingCell.note;
-  noteBox.placeholder = "Why this rating? What's driving it?";
+  noteBox.placeholder = t("ratingModal.notePlaceholder");
   document.getElementById("modalResetOverride").hidden = true;
   updateSwatchSelection();
   updateTrendSelection();

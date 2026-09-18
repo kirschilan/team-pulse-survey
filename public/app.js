@@ -52,9 +52,8 @@ document.addEventListener("keydown", function(e){
   if(!backdrop.hidden) closeModal();
   if(!dimBackdrop.hidden) closeDimManager();
   if(!templatesBackdrop.hidden) closeTemplates();
-  if(!importBackdrop.hidden) closeImport();
+  if(!importJsonBackdrop.hidden) closeSquadImport();
   if(!confirmBackdrop.hidden) closeConfirm();
-  if(!document.getElementById("joinCodeBackdrop").hidden) closeJoinCodeModal();
 });
 
 // ---------- boot ----------
@@ -66,6 +65,7 @@ function start(){
     renderAll();
   }
   initDb();
+  showWelcomeOnFirstVisit();
 }
 
 if(window.claude && window.claude.hot){

@@ -1,25 +1,22 @@
 "use strict";
 
-// Client-side encryption for retro sessions, per the locked decision in
-// STATUS.md: the relay stores and rebroadcasts ciphertext only. AES-256-GCM
-// via the browser's native Web Crypto API (available over file://, http://
-// and https:// alike -- verified before building this, since file:// has
-// already surprised this project once with ES modules).
+// Client-side encryption for retro sessions AND team boards, per the locked
+// decision in STATUS.md: the relay stores and rebroadcasts ciphertext only.
+// AES-256-GCM via the browser's native Web Crypto API (available over
+// file://, http:// and https:// alike -- verified before building this,
+// since file:// has already surprised this project once with ES modules).
 //
-// The key is deliberately DERIVED FROM THE SESSION CODE (SHA-256 of the
-// 6-character code) rather than an independent random secret in a URL
-// fragment. That's a departure from the original standalone-plan.md sketch,
-// made because this app's PRIMARY join path is typing the code by hand (the
-// fix for a real iPhone QR-handoff bug already in this codebase) -- a join
-// path with no fragment to carry a separate key. Deriving the key from the
-// code keeps both join paths (typed code, and the link/QR) working
-// identically, at a real and honest cost: since the room id IS the code,
-// anyone who can compute SHA-256 of a code -- including whoever operates
-// the relay -- can derive the same key. This still means real protection
-// against passive network eavesdropping, and against answers sitting in
-// plaintext in relay logs, memory dumps, or backups; it is NOT protection
-// against a relay operator who deliberately decides to snoop. See
-// docs/standalone-plan.md for the full writeup.
+// SEC-2 (STATUS.md's "Security hardening backlog"): retro sessions used to
+// derive their key from the 6-character session CODE itself -- the same
+// value used as the relay room id -- because the app's original primary
+// join path was typing that code by hand. The PO decision recorded in
+// STATUS.md dropped that typed-code join path entirely (link/QR only), which
+// retired the reason the two roles were ever combined. Retro sessions now
+// use the exact same split as team boards already did (see generateSecret()/
+// roomIdFor() below): a high-entropy secret, never typed, carried only in a
+// join/co-facilitate link or QR, is what the encryption key derives from,
+// while a SEPARATE, one-way-derived room id is all the relay ever sees for
+// routing. See docs/standalone-plan.md for the full writeup.
 
 var SquadPulseCrypto = (function(){
 

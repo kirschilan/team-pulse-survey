@@ -5,6 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Squad Pulse</title>
 <meta name="description" content="A no-database team pulse survey and facilitated retro tool, with customizable predefined templates (Five Dysfunctions of a Team, Spotify Squad Health Check, Tuckman's stages).">
+<!-- SEC-3 (STATUS.md's "Security hardening backlog"): scoped to what this
+     app actually loads -- see relay-client.js/crypto.js for why connect-src
+     needs the ws:/wss: schemes rather than a specific host (the relay's
+     origin is deployment-configurable, set via SQUAD_PULSE_RELAY_URL, not
+     knowable at build time -- see relay/README.md), and index.html's own
+     extensive `style="..."` attributes on JS-generated markup for why
+     style-src needs 'unsafe-inline' (rewriting every one to a class is a
+     separate, much larger change, not part of this security pass).
+     Deliberately NOT setting frame-ancestors here: unlike every other
+     directive below, the PO backlog item this satisfies (SEC-3) explicitly
+     flagged permitted embedding origins as an OPEN PRODUCT DECISION, not an
+     implementer's call -- and README.md's own "Deploying for real" section
+     lists "embedding this somewhere public (e.g. a subdomain + iframe on a
+     website)" as one of exactly two intended deployment shapes, so shipping
+     a default here risks silently breaking that. See STATUS.md's locked
+     decisions for the full writeup and what an operator who KNOWS their own
+     embedding origins should do meanwhile. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws: wss:; img-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';">
+<meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -12,63 +31,63 @@
 
 <div class="wrap">
 
-  <header class="top">
+  <header class="top" id="appHeader">
     <div class="title-block">
-      <h1>Squad Pulse</h1>
+      <h1 data-i18n="header.appName">Squad Pulse</h1>
       <p id="tagline">A fast, visual health snapshot across your squads &mdash; so you can see at a glance where things are strong and where to invest next.</p>
       <span class="model-badge" id="modelBadge" hidden></span>
     </div>
     <div class="actions">
-      <span class="sync-note" id="syncNote"><span class="sync-dot" id="syncDot"></span><span id="syncText">Connecting&hellip;</span></span>
-      <button class="btn ghost" id="joinCodeBtn" type="button">Join a retro</button>
-      <button class="btn ghost" id="backToRetroBtn" type="button" hidden>&larr; Back to my retro</button>
-      <div class="view-switch" role="tablist" aria-label="View">
-        <button class="view-btn" data-view="tribe" type="button" role="tab">Tribe view</button>
-        <button class="view-btn" data-view="squad" type="button" role="tab">Squad view</button>
-        <button class="view-btn" data-view="admin" type="button" role="tab">Admin</button>
+      <span class="sync-note" id="syncNote"><span class="sync-dot" id="syncDot"></span><span id="syncText" data-i18n="header.syncConnecting">Connecting&hellip;</span></span>
+      <button class="btn ghost" id="aboutHelpBtn" type="button" data-i18n="about.open">About &amp; help</button>
+      <button class="btn ghost" id="backToRetroBtn" type="button" hidden data-i18n="header.backToRetro">&larr; Back to my retro</button>
+      <div class="view-switch" role="tablist" aria-label="View" data-i18n-aria-label="header.viewSwitchAriaLabel">
+        <button class="view-btn" data-view="tribe" type="button" role="tab" data-i18n="header.viewTribe">Tribe view</button>
+        <button class="view-btn" data-view="squad" type="button" role="tab" data-i18n="header.viewSquad">Squad view</button>
+        <button class="view-btn" data-view="admin" type="button" role="tab" data-i18n="header.viewAdmin">Admin</button>
       </div>
     </div>
   </header>
 
   <!-- ================= TRIBE VIEW ================= -->
   <section id="viewTribe">
-    <section class="stats" aria-label="Snapshot at a glance">
+    <section class="stats" aria-label="Snapshot at a glance" data-i18n-aria-label="tribe.stats.sectionAriaLabel">
       <div class="stat">
         <div class="label" id="statAssessedLabel">Squads assessed</div>
-        <div class="value" id="statAssessed">&mdash;</div>
+        <div class="value" id="statAssessed" dir="ltr">&mdash;</div>
         <div class="sub" id="statAssessedSub">of the dimensions scored, on average</div>
       </div>
       <div class="stat">
-        <div class="label">Items at risk</div>
+        <div class="label" data-i18n="tribe.stats.riskLabel">Items at risk</div>
         <div class="value crit" id="statRisk">&mdash;</div>
-        <div class="sub" id="statRiskSub">dimensions marked red across all squads</div>
+        <div class="sub" data-i18n="tribe.stats.riskSub" id="statRiskSub">dimensions marked red across all squads</div>
       </div>
       <div class="stat">
-        <div class="label">Top systemic hotspot</div>
+        <div class="label" data-i18n="tribe.stats.hotspotLabel">Top systemic hotspot</div>
         <div class="value" id="statHotspot" style="font-size:19px;">&mdash;</div>
         <div class="sub" id="statHotspotSub">the dimension struggling most, org&#8209;wide</div>
       </div>
     </section>
 
     <div class="card">
-      <h2>Cross-squad hotspots</h2>
-      <p class="hint">Dimensions where trouble shows up in more than one squad &mdash; likely worth an org-level fix, not a squad-by-squad one. Shown in aggregate; no squad is named here by default.</p>
+      <h2 data-i18n="tribe.hotspots.heading">Cross-squad hotspots</h2>
+      <p class="hint" data-i18n="tribe.hotspots.hint">Dimensions where trouble shows up in more than one squad &mdash; likely worth an org-level fix, not a squad-by-squad one. Shown in aggregate; no squad is named here by default.</p>
       <div class="legend-mini">
-        <span class="sw"><i style="background:var(--crit)"></i>Red</span>
-        <span class="sw"><i style="background:var(--warn)"></i>Yellow</span>
-        <span class="sw"><i style="background:var(--good)"></i>Green</span>
-        <span class="sw"><i style="background:var(--unscored)"></i>Not yet scored</span>
+        <span class="sw"><i style="background:var(--crit)"></i><span data-i18n="common.color.crit">Red</span></span>
+        <span class="sw"><i style="background:var(--warn)"></i><span data-i18n="common.color.warn">Yellow</span></span>
+        <span class="sw"><i style="background:var(--good)"></i><span data-i18n="common.color.good">Green</span></span>
+        <span class="sw"><i style="background:var(--unscored)"></i><span data-i18n="common.color.unscored">Not yet scored</span></span>
       </div>
       <div id="hotspotList"></div>
     </div>
 
     <details class="legend" id="squadBreakdown">
-      <summary>Squad-by-squad breakdown <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <summary><span data-i18n="tribe.breakdown.summary">Squad-by-squad breakdown</span> <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
       <div style="padding:0 18px 18px;">
-        <p class="hint" style="margin:0 0 14px;">Collapsed by default so the headline view stays about patterns, not individual squads &mdash; expand any time to see or drill into a specific squad. Read-only here; squads enter their own ratings from Squad view.</p>
+        <p class="hint" style="margin:0 0 14px;" data-i18n="tribe.breakdown.hint">Collapsed by default so the headline view stays about patterns, not individual squads &mdash; expand any time to see or drill into a specific squad. Read-only here; squads enter their own ratings from Squad view.</p>
         <div class="card" style="margin-bottom:16px;">
-          <h2>Where to invest first</h2>
-          <p class="hint">Squads ranked by weighted risk (red counts double). Highest first.</p>
+          <h2 data-i18n="tribe.ranking.heading">Where to invest first</h2>
+          <p class="hint" data-i18n="tribe.ranking.hint">Squads ranked by weighted risk (red counts double). Highest first.</p>
           <div id="rankList"></div>
         </div>
         <div class="table-scroll">
@@ -87,8 +106,8 @@
   <!-- ================= SQUAD VIEW ================= -->
   <section id="viewSquad" hidden>
     <div class="card">
-      <h2>Choose your squad</h2>
-      <p class="hint">Pick your squad to enter or update this check-in&rsquo;s ratings. Only this squad&rsquo;s own data is shown here.</p>
+      <h2 data-i18n="squad.picker.heading">Choose your squad</h2>
+      <p class="hint" data-i18n="squad.picker.hint">Pick your squad to enter or update this check-in&rsquo;s ratings. Only this squad&rsquo;s own data is shown here.</p>
       <div class="squad-picker" id="squadPicker"></div>
     </div>
     <div id="squadDetail" style="margin-top:16px;"></div>
@@ -97,39 +116,51 @@
   <!-- ================= ADMIN VIEW ================= -->
   <section id="viewAdmin" hidden>
     <div class="card">
-      <h2>Board setup</h2>
-      <p class="hint">Manage the survey model and squad list. Changes here apply to everyone viewing this board.</p>
-      <div class="actions" style="margin-bottom:4px;">
-        <button class="btn" id="dimManageBtn" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="1.6" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="10" cy="18" r="1.6" fill="currentColor" stroke="none"/></svg>
-          Edit dimensions
-        </button>
-        <button class="btn" id="templatesBtn" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16"/></svg>
-          Templates
-        </button>
-        <button class="btn" id="importCsvBtn" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3m0 0L8 7m4-4l4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-          Import CSV
-        </button>
-        <button class="btn" id="exportBtn" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
-          Export CSV
-        </button>
-        <input type="file" id="csvFileInput" accept=".csv,text/csv" hidden>
+      <h2 class="heading-with-badge">
+        <span data-i18n="admin.language.heading">Language</span>
+        <span class="beta-badge" data-i18n="admin.language.betaBadge">Beta</span>
+      </h2>
+      <p class="hint" data-i18n="admin.language.hint">Choose the language for the Admin panel. More of the app will follow as translation coverage grows.</p>
+      <div class="view-switch lang-switch" role="tablist" aria-label="Language" data-i18n-aria-label="admin.language.ariaLabel">
+        <button class="lang-btn" data-lang="en" type="button" role="tab">English</button>
+        <button class="lang-btn" data-lang="he" type="button" role="tab">עברית</button>
       </div>
     </div>
 
     <div class="card" style="margin-top:14px;">
-      <h2>Team sync</h2>
-      <p class="hint">This board syncs, live, with every other device that opens the link below
+      <h2 data-i18n="admin.boardSetup.heading">Board setup</h2>
+      <p class="hint" data-i18n="admin.boardSetup.hint">Manage the survey model and squad list. Changes here apply to everyone viewing this board.</p>
+      <div class="actions" style="margin-bottom:4px;">
+        <button class="btn" id="dimManageBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="1.6" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="10" cy="18" r="1.6" fill="currentColor" stroke="none"/></svg>
+          <span data-i18n="admin.boardSetup.editDimensions">Edit dimensions</span>
+        </button>
+        <button class="btn" id="templatesBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16"/></svg>
+          <span data-i18n="admin.boardSetup.templates">Templates</span>
+        </button>
+        <button class="btn" id="exportJsonBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
+          <span data-i18n="admin.boardSetup.exportJson">Export JSON (beta)</span>
+        </button>
+        <button class="btn" id="importJsonBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3m0 0L8 7m4-4l4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          <span data-i18n="admin.boardSetup.importJson">Import JSON (beta)</span>
+        </button>
+        <input type="file" id="jsonFileInput" accept=".json,application/json" hidden>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <h2 data-i18n="admin.teamSync.heading">Team sync</h2>
+      <p class="hint" data-i18n="admin.teamSync.hint">This board syncs, live, with every other device that opens the link below
         &mdash; over the same encrypted relay retro sessions already use. Nobody without the link can
         read or change it.</p>
 
       <div id="teamSyncNotConnected" hidden>
-        <p class="hint" style="margin:0 0 10px;">Syncing is off for this device.</p>
+        <p class="hint" style="margin:0 0 10px;" data-i18n="admin.teamSync.notConnectedHint">Syncing is off for this device.</p>
         <div class="actions">
-          <button class="btn primary" id="teamCreateBtn" type="button">Start a new team link</button>
+          <button class="btn primary" id="teamCreateBtn" type="button" data-i18n="admin.teamSync.startLink">Start a new team link</button>
         </div>
       </div>
 
@@ -138,37 +169,37 @@
         <div class="join-row">
           <div class="qr-box" id="teamQr"></div>
           <div class="join-link-col">
-            <div class="field-label" style="margin-top:0;">Team link</div>
+            <div class="field-label" style="margin-top:0;" data-i18n="admin.teamSync.linkLabel">Team link</div>
             <div class="join-link-row">
-              <input class="join-link-input" id="teamLinkInput" type="text" readonly aria-label="Team link">
-              <button class="btn" id="teamCopyLinkBtn" type="button">Copy</button>
+              <input class="join-link-input" id="teamLinkInput" type="text" readonly aria-label="Team link" data-i18n-aria-label="admin.teamSync.linkLabel">
+              <button class="btn" id="teamCopyLinkBtn" type="button" data-i18n="admin.teamSync.copy">Copy</button>
             </div>
           </div>
         </div>
-        <button class="btn ghost" id="teamDisconnectBtn" type="button" style="margin-top:10px;">Stop syncing</button>
+        <button class="btn ghost" id="teamDisconnectBtn" type="button" style="margin-top:10px;" data-i18n="admin.teamSync.stopSyncing">Stop syncing</button>
       </div>
 
-      <p class="hint" style="margin:14px 0 6px;">Have a team link from a teammate? Opening it connects
+      <p class="hint" style="margin:14px 0 6px;" data-i18n="admin.teamSync.joinHint">Have a team link from a teammate? Opening it connects
         automatically &mdash; or paste it here to join (or switch to) their team:</p>
       <div class="actions">
-        <input type="text" id="teamJoinInput" placeholder="Paste a team link" dir="auto">
-        <button class="btn" id="teamJoinBtn" type="button">Join</button>
+        <input type="text" id="teamJoinInput" placeholder="Paste a team link" data-i18n-placeholder="admin.teamSync.joinPlaceholder" dir="auto">
+        <button class="btn" id="teamJoinBtn" type="button" data-i18n="admin.teamSync.join">Join</button>
       </div>
     </div>
 
     <div class="card" style="margin-top:14px;">
-      <h2>Squads</h2>
-      <p class="hint">Add, rename or remove squads. Ratings live with the squad, not the name &mdash; renaming is safe.</p>
+      <h2 data-i18n="admin.squads.heading">Squads</h2>
+      <p class="hint" data-i18n="admin.squads.hint">Add, rename or remove squads. Ratings live with the squad, not the name &mdash; renaming is safe.</p>
       <div class="tpl-list" id="adminSquadList"></div>
       <button class="addrow-btn" id="addSquadBtn" type="button">+ Add squad</button>
     </div>
 
     <details class="legend" id="diagPanel" style="margin-top:14px;">
-      <summary>Diagnostics (temporary — for troubleshooting save issues) <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <summary><span data-i18n="admin.diagnostics.summary">Diagnostics (temporary — for troubleshooting save issues)</span> <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
       <div style="padding:0 18px 16px;">
-        <p class="hint" style="margin:0 0 8px;">If saving isn't working, open this, try rating a cell, then copy or screenshot what appears below.</p>
+        <p class="hint" style="margin:0 0 8px;" data-i18n="admin.diagnostics.hint">If saving isn't working, open this, try rating a cell, then copy or screenshot what appears below.</p>
         <pre id="diagLog" class="mono diag-log" style="margin:0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:11px;line-height:1.6;max-height:160px;overflow:auto;white-space:pre-wrap;">(no activity yet)</pre>
-        <button class="btn ghost copy-diag-btn" type="button" data-diag-target="diagLog" style="margin-top:8px;">Copy diagnostics</button>
+        <button class="btn ghost copy-diag-btn" type="button" data-diag-target="diagLog" style="margin-top:8px;" data-i18n="admin.diagnostics.copyButton">Copy diagnostics</button>
       </div>
     </details>
   </section>
@@ -176,10 +207,10 @@
   <!-- ================= JOIN SCREEN (participant device, via ?session=) ================= -->
   <section id="viewJoin" hidden>
     <div class="card" id="joinCard">
-      <h2>Connecting&hellip;</h2>
+      <h2 data-i18n="join.connectingHeading">Connecting&hellip;</h2>
     </div>
     <div class="actions" style="margin-top:12px;">
-      <button class="btn ghost" id="exitJoinBtn" type="button">&larr; Back to Squad Pulse</button>
+      <button class="btn ghost" id="exitJoinBtn" type="button" data-i18n="join.backButton">&larr; Back to Squad Pulse</button>
     </div>
     <!-- "Back to Squad Pulse" above only TOGGLES this screen's visibility
          (see retro-join.js's exitJoinScreen()/returnToJoinScreen()) --
@@ -191,11 +222,11 @@
          forever, or "isn't open") without this -- see helpers.js's diag(),
          which updates every ".diag-log". -->
     <details class="legend" id="joinDiagPanel" style="margin-top:14px;">
-      <summary>Trouble joining? Tap for diagnostics <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <summary><span data-i18n="join.diagSummary">Trouble joining? Tap for diagnostics</span> <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></summary>
       <div style="padding:0 18px 16px;">
-        <p class="hint" style="margin:0 0 8px;">If this isn't connecting, copy or screenshot what appears below and send it to whoever's running the retro.</p>
+        <p class="hint" style="margin:0 0 8px;" data-i18n="join.diagHint">If this isn't connecting, copy or screenshot what appears below and send it to whoever's running the retro.</p>
         <pre id="joinDiagLog" class="mono diag-log" style="margin:0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:11px;line-height:1.6;max-height:160px;overflow:auto;white-space:pre-wrap;">(no activity yet)</pre>
-        <button class="btn ghost copy-diag-btn" type="button" data-diag-target="joinDiagLog" style="margin-top:8px;">Copy diagnostics</button>
+        <button class="btn ghost copy-diag-btn" type="button" data-diag-target="joinDiagLog" style="margin-top:8px;" data-i18n="admin.diagnostics.copyButton">Copy diagnostics</button>
       </div>
     </details>
   </section>
@@ -208,36 +239,36 @@
     <h3 id="modalTitle" dir="auto">Dimension</h3>
     <div class="squadline" id="modalSquadline" dir="auto">Squad</div>
     <div class="anchor-pair">
-      <p><b>Green looks like:</b> <span id="modalGreen" dir="auto"></span></p>
-      <p><b>Red looks like:</b> <span id="modalRed" dir="auto"></span></p>
+      <p><b data-i18n="ratingModal.greenLabel">Green looks like:</b> <span id="modalGreen" dir="auto"></span></p>
+      <p><b data-i18n="ratingModal.redLabel">Red looks like:</b> <span id="modalRed" dir="auto"></span></p>
     </div>
-    <div class="field-label">Health</div>
+    <div class="field-label" data-i18n="ratingModal.healthLabel">Health</div>
     <div class="swatches" id="swatches">
-      <button class="swatch" data-color="unscored" type="button" title="Not yet scored">
+      <button class="swatch" data-color="unscored" type="button" title="Not yet scored" data-i18n-title="common.color.unscored">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>
       </button>
-      <button class="swatch good" data-color="good" type="button" title="Green">
+      <button class="swatch good" data-color="good" type="button" title="Green" data-i18n-title="common.color.good">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 13l4 4 10-10"/></svg>
       </button>
-      <button class="swatch warn" data-color="warn" type="button" title="Yellow">
+      <button class="swatch warn" data-color="warn" type="button" title="Yellow" data-i18n-title="common.color.warn">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 12h12"/></svg>
       </button>
-      <button class="swatch crit" data-color="crit" type="button" title="Red">
+      <button class="swatch crit" data-color="crit" type="button" title="Red" data-i18n-title="common.color.crit">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
-    <div class="field-label">Trend since last check</div>
+    <div class="field-label" data-i18n="ratingModal.trendLabel">Trend since last check</div>
     <div class="trendsel" id="trendsel">
-      <button data-trend="up" type="button" title="Improving"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 15l7-7 7 7"/></svg></button>
-      <button data-trend="flat" type="button" title="Steady"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 12h14"/></svg></button>
-      <button data-trend="down" type="button" title="Declining"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 9l7 7 7-7"/></svg></button>
+      <button data-trend="up" type="button" title="Improving" data-i18n-title="common.trend.up"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 15l7-7 7 7"/></svg></button>
+      <button data-trend="flat" type="button" title="Steady" data-i18n-title="common.trend.flat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 12h14"/></svg></button>
+      <button data-trend="down" type="button" title="Declining" data-i18n-title="common.trend.down"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><path d="M5 9l7 7 7-7"/></svg></button>
     </div>
-    <div class="field-label">Note (optional)</div>
-    <textarea class="note" id="modalNote" placeholder="Why this rating? What's driving it?" dir="auto"></textarea>
+    <div class="field-label" data-i18n="ratingModal.noteLabel">Note (optional)</div>
+    <textarea class="note" id="modalNote" placeholder="Why this rating? What's driving it?" data-i18n-placeholder="ratingModal.notePlaceholder" dir="auto"></textarea>
     <div class="modal-actions">
       <button class="btn ghost" id="modalResetOverride" type="button" style="margin-right:auto;" hidden>Use consolidated result</button>
-      <button class="btn ghost" id="modalCancel" type="button">Cancel</button>
-      <button class="btn primary" id="modalSave" type="button">Save</button>
+      <button class="btn ghost" id="modalCancel" type="button" data-i18n="ratingModal.cancel">Cancel</button>
+      <button class="btn primary" id="modalSave" type="button" data-i18n="ratingModal.save">Save</button>
     </div>
   </div>
 </div>
@@ -245,12 +276,12 @@
 <!-- ---------- dimension manager modal ---------- -->
 <div class="backdrop" id="dimBackdrop" hidden>
   <div class="modal wide" role="dialog" aria-modal="true">
-    <h3>Edit dimensions</h3>
-    <p class="hint">These are the columns of your snapshot grid. Add, rename, reorder or remove them &mdash; changes apply to everyone viewing this board. Ratings for a removed dimension are hidden, not lost, unless you add a dimension back with the same purpose.</p>
+    <h3 data-i18n="dimManager.title">Edit dimensions</h3>
+    <p class="hint" data-i18n="dimManager.hint">These are the columns of your snapshot grid. Add, rename, reorder or remove them &mdash; changes apply to everyone viewing this board. Ratings for a removed dimension are hidden, not lost, unless you add a dimension back with the same purpose.</p>
     <div class="dim-list" id="dimList"></div>
     <div class="modal-actions split">
-      <button class="btn" id="addDimBtn" type="button">+ Add dimension</button>
-      <button class="btn primary" id="dimDoneBtn" type="button">Done</button>
+      <button class="btn" id="addDimBtn" type="button" data-i18n="dimManager.addButton">+ Add dimension</button>
+      <button class="btn primary" id="dimDoneBtn" type="button" data-i18n="dimManager.doneButton">Done</button>
     </div>
   </div>
 </div>
@@ -258,29 +289,24 @@
 <!-- ---------- templates modal ---------- -->
 <div class="backdrop" id="templatesBackdrop" hidden>
   <div class="modal wide" role="dialog" aria-modal="true">
-    <h3>Survey templates</h3>
-    <p class="hint">Swap in a ready-made set of dimensions, or save your current setup so you (or a teammate) can reuse it later.</p>
+    <h3 data-i18n="templates.title">Survey templates</h3>
+    <p class="hint" data-i18n="templates.hint">Swap in a ready-made set of dimensions, or save your current setup so you (or a teammate) can reuse it later.</p>
     <div class="tpl-list" id="tplList"></div>
+    <p class="hint error" id="tplLoadErrorHint" hidden></p>
     <div class="tpl-save-row">
-      <input type="text" id="tplNameInput" placeholder="Name this setup, e.g. &quot;My team's checklist&quot;" maxlength="80" dir="auto">
-      <button class="btn" id="tplSaveBtn" type="button">Save current as template</button>
+      <input type="text" id="tplNameInput" data-i18n-placeholder="templates.namePlaceholder" placeholder="Name this setup, e.g. &quot;My team's checklist&quot;" maxlength="80" dir="auto">
+      <button class="btn" id="tplSaveBtn" type="button" data-i18n="templates.saveButton">Save current as template</button>
     </div>
     <div class="modal-actions">
-      <button class="btn ghost" id="tplCloseBtn" type="button">Close</button>
+      <button class="btn ghost" id="tplCloseBtn" type="button" data-i18n="templates.closeButton">Close</button>
     </div>
   </div>
 </div>
 
-<!-- ---------- CSV import preview modal ---------- -->
-<div class="backdrop" id="importBackdrop" hidden>
+<!-- ---------- JSON board import (beta) preview modal: squads, dimensions, templates & board settings, Story 13 items 3a+3b ---------- -->
+<div class="backdrop" id="importJsonBackdrop" hidden>
   <div class="modal wide" role="dialog" aria-modal="true">
-    <h3>Import CSV</h3>
-    <p class="hint">Expects the same columns as Export CSV: <span id="importUnitLabel">Squad</span>, Dimension, Health, Trend, Note, Template, Dimension Key. The first column must stay the <span id="importUnitLabel2">Squad</span> name; the rest can be renamed or reordered freely — matching falls back to the original column order if no header names are recognized. The Dimension Key column is what keeps rows matching correctly even after a dimension's name has been edited or translated; without it (older exports), matching falls back to the Dimension name text. The Template column is how a mismatched dimension set gets flagged below.</p>
-    <div id="importSummary"></div>
-    <div class="modal-actions">
-      <button class="btn ghost" id="importCancel" type="button">Cancel</button>
-      <button class="btn primary" id="importApplyBtn" type="button">Import</button>
-    </div>
+    <div id="importJsonBody"></div>
   </div>
 </div>
 
@@ -290,27 +316,17 @@
     <h3 id="confirmTitle">Are you sure?</h3>
     <p class="hint" id="confirmMessage" style="margin-bottom:4px;"></p>
     <div class="modal-actions">
-      <button class="btn ghost" id="confirmCancel" type="button">Cancel</button>
+      <button class="btn ghost" id="confirmCancel" type="button" data-i18n="common.cancel">Cancel</button>
       <button class="btn primary danger" id="confirmOk" type="button">Confirm</button>
     </div>
   </div>
 </div>
 
-<!-- ---------- join-with-code modal ---------- -->
-<div class="backdrop" id="joinCodeBackdrop" hidden>
-  <div class="modal" role="dialog" aria-modal="true">
-    <h3>Join a retro</h3>
-    <p class="hint">Enter the session code your Scrum Master shared. Answering a survey? Tap
-      Join. Co-facilitating (you'll see the live results and can finish the retro too)? Tap
-      Co-facilitate instead.</p>
-    <input type="text" id="joinCodeInput" class="join-code-input" placeholder="e.g. 7K4QXB" maxlength="40" autocapitalize="characters" autocomplete="off" spellcheck="false">
-    <div class="modal-actions">
-      <button class="btn ghost" id="joinCodeCancel" type="button">Cancel</button>
-      <button class="btn ghost" id="coFacilitateGo" type="button">Co-facilitate</button>
-      <button class="btn primary" id="joinCodeGo" type="button">Join</button>
-    </div>
-  </div>
-</div>
+<!-- SEC-2 (STATUS.md's locked PO decision): the join-with-code modal that
+     used to live here is gone -- a retro session is joined only by
+     scanning its QR code or opening its link (see retro-facilitator.js's
+     renderSessionCardHtml() and helpers.js's joinUrlFor()/
+     coFacilitateUrlFor()). -->
 
 <!-- ---------- dimension header tooltip (shared, JS-positioned) ---------- -->
 <div class="dim-tooltip" id="dimTooltip" hidden></div>
@@ -322,44 +338,87 @@
     <div id="busyText">Working&hellip;</div>
   </div>
 </div>
-<script src="vendor/qrcode.js"></script>
-<script src="relay-config.js"></script>
-<script>
-  // Where retro sessions actually live-sync (relay-client.js + crypto.js
-  // below) -- ws:// for a plain local relay, wss:// once it's deployed
-  // somewhere real. relay-config.js (above) sets window.SQUAD_PULSE_RELAY_URL
-  // directly when a Vercel deployment has the SQUAD_PULSE_RELAY_URL
-  // environment variable set (see scripts/generate-relay-config.js and
-  // relay/README.md) -- the `||` below only kicks in when that didn't
-  // happen. Only defaults to a locally-run relay when this PAGE ITSELF is
-  // local (file:// or localhost) -- a real deployment with no relay
-  // configured must NOT silently fall back to "ws://localhost:8787", since
-  // that means the VISITOR'S OWN machine: Chrome flags that as a
-  // cross-context private-network request (a scary permission prompt for a
-  // connection that can never succeed), and relay-client.js would then
-  // retry forever. Leave it explicitly null instead so relay-client.js can
-  // recognize "no relay configured" and fail fast with one clear message.
-  window.SQUAD_PULSE_RELAY_URL = window.SQUAD_PULSE_RELAY_URL || (
-    (location.protocol === "file:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")
-      ? "ws://localhost:8787"
-      : null
-  );
-</script>
-<script src="js/crypto.js"></script>
-<script src="js/relay-client.js"></script>
-<script src="local-store.js"></script>
-<script src="js/state.js"></script>
-<script src="js/helpers.js"></script>
-<script src="js/render.js"></script>
-<script src="js/modals.js"></script>
-<script src="js/squads.js"></script>
-<script src="js/retro-facilitator.js"></script>
-<script src="js/retro-join.js"></script>
-<script src="js/dimensions.js"></script>
-<script src="js/templates.js"></script>
-<script src="js/csv.js"></script>
-<script src="js/board-sync.js"></script>
-<script src="js/db.js"></script>
-<script src="app.js"></script>
+<!-- PERF: all app scripts below use `defer` so the browser fetches them in
+     parallel over HTTP/2 instead of one-at-a-time (measured ~2.5s of pure
+     serialized round-trip latency across these ~28 files with no defer,
+     since a plain <script src> blocks the parser until it's fetched AND
+     executed before the next one is even requested). `defer` still
+     guarantees document-order execution before DOMContentLoaded, so the
+     existing load-order dependencies (state.js before anything using it,
+     etc.) are unaffected. -->
+<script src="vendor/qrcode.js" defer></script>
+<script src="relay-config.js" defer></script>
+<!-- SEC-3: was an inline <script> here -- moved to js/relay-url-fallback.js
+     so the page's CSP can use script-src 'self' with no 'unsafe-inline'. -->
+<script src="js/relay-url-fallback.js" defer></script>
+<script src="js/crypto.js" defer></script>
+<script src="js/relay-client.js" defer></script>
+<script src="local-store.js" defer></script>
+<script src="js/state.js" defer></script>
+<script src="js/locales/en.js" defer></script>
+<script src="js/locales/he.js" defer></script>
+<script src="js/i18n.js" defer></script>
+<script src="js/helpers.js" defer></script>
+<script src="js/render.js" defer></script>
+<script src="js/modals.js" defer></script>
+<script src="js/squads.js" defer></script>
+<script src="js/retro-facilitator.js" defer></script>
+<script src="js/retro-join.js" defer></script>
+<script src="js/dimensions.js" defer></script>
+<script src="js/templates.js" defer></script>
+<script src="js/board-export.js" defer></script>
+<script src="js/board-import-validate.js" defer></script>
+<script src="js/board-import-plan.js" defer></script>
+<script src="js/board-import-preview.js" defer></script>
+<script src="js/board-import-apply.js" defer></script>
+<script src="js/board-import-ui.js" defer></script>
+<script src="js/board-sync.js" defer></script>
+<script src="js/db.js" defer></script>
+<dialog id="aboutDialog" aria-labelledby="aboutTitle" aria-describedby="aboutIntro">
+  <p class="about-brand" data-i18n="header.appName">Squad Pulse</p>
+  <h2 id="aboutTitle" tabindex="-1" autofocus data-i18n="about.title">Welcome to Squad Pulse</h2>
+  <p class="about-tagline" data-i18n="about.tagline">Understand your team. Choose what to improve.</p>
+  <p id="aboutIntro" data-i18n="about.intro">Take a quick team health check, guide a retrospective, and spot patterns across squads.</p>
+  <div class="about-summary">
+    <p data-i18n="about.squad">Squad view brings a team's health ratings and retrospective together.</p>
+    <p data-i18n="about.tribe">Tribe view highlights shared challenges across squads to help focus improvement.</p>
+    <p data-i18n="about.admin">Admin lets you set up squads and customize assessment templates.</p>
+  </div>
+<div class="about-guides">
+<details id="about-participant"><summary data-i18n="about.participantTitle">Joining a retro?</summary><div class="about-guide-body"><p data-i18n="about.participantText">Open your facilitator’s invitation link, or scan their QR code. Answer each statement or choose a color, then submit. Follow the discussion; results may be held until the facilitator reveals them.</p><button class="btn" id="aboutJoinBtn" type="button" hidden>Join a retro</button></div></details>
+<details id="about-facilitator"><summary data-i18n="about.facilitatorTitle">Running a retro?</summary><div class="about-guide-body"><ol><li data-i18n="about.setup">In Admin, set up your squads and choose or customize a template.</li><li data-i18n="about.start">In Squad view, choose a squad and start a retro. Share the participant link or QR code.</li><li data-i18n="about.discuss">Choose live or held results. Discuss the responses, adjust the consolidated rating if needed, and record an improvement experiment.</li><li data-i18n="about.finish">Finish retro & apply results saves the consolidated ratings to the squad’s board.</li></ol><p data-i18n="about.links">A team link shares the board for ongoing collaboration. A retro invitation opens a particular session; participant invitations also carry the team link when team sync is enabled. Use the separate co-facilitator invitation for someone helping run the session.</p></div></details>
+<details id="about-results"><summary data-i18n="about.resultsTitle">How to read the results</summary><div class="about-guide-body"><p data-i18n="about.colors">Green: going well. Yellow: mixed or needs attention. Red: a challenge to discuss. Gray: not yet scored. Read the selected template’s dimension descriptions: some assessments use score bands with their own meaning.</p><p data-i18n="about.trends">Trend arrows record whether things are improving or declining; they are separate from the current color.</p><p data-i18n="about.views">Squad view focuses on one team. Tribe view highlights dimensions that are red or yellow across squads; expand the squad breakdown for details. Use these signals to start a conversation and choose where to help.</p></div></details>
+<details id="about-credits"><summary data-i18n="about.creditsTitle">Credits &amp; licenses</summary><div class="about-guide-body">
+    <p data-i18n="about.creditProduct">Squad Pulse is built by Dr. Agile. The app’s aggregation, weighting, investment ranking, and facilitator workflow are adaptations for this tool.</p>
+    <p><a href="licenses/Apache-2.0.txt" target="_blank" rel="noopener noreferrer" data-i18n="about.appLicense">Application license — Apache 2.0</a></p>
+    <p data-i18n="about.creditSpotify">Spotify Squad Health Check: Henrik Kniberg and Spotify. This project also credits Ben Linders’ agile self-assessment resources.</p>
+    <p><a href="https://engineering.atspotify.com/2014/9/squad-health-check-model" target="_blank" rel="noopener noreferrer" data-i18n="about.spotifySource">Spotify model source</a></p>
+    <p><a href="https://www.benlinders.com/agile-self-assessments/" target="_blank" rel="noopener noreferrer" data-i18n="about.benSource">Ben Linders — self-assessment resources</a></p>
+    <p data-i18n="about.creditFive">The Five Dysfunctions of a Team: Patrick Lencioni / The Table Group. This app is an adaptation, not the official assessment.</p>
+    <p><a href="https://fivedysfunctions.tablegroup.com/" target="_blank" rel="noopener noreferrer" data-i18n="about.fiveSource">The Table Group — original model</a></p>
+    <p data-i18n="about.creditTuckman">Team development stages: Bruce W. Tuckman (1965), with Mary Ann C. Jensen (1977), for the underlying model. This app’s 20-statement assessment itself was authored by Dr. Agile using Claude, deliberately following the same 3-point scale and summed-band format as this app’s Five Dysfunctions adaptation — not copied from any third-party instrument.</p>
+    <p><a href="https://doi.org/10.1037/h0022100" target="_blank" rel="noopener noreferrer" data-i18n="about.tuckmanSource">Tuckman — 1965 paper</a></p>
+    <p><a href="https://doi.org/10.1177/105960117700200404" target="_blank" rel="noopener noreferrer" data-i18n="about.jensenSource">Tuckman & Jensen — 1977 paper</a></p>
+    <p data-i18n="about.creditRights">Model names and assessment materials belong to their respective rights holders. Attribution does not grant permission to reproduce them or imply endorsement. The app’s Apache license does not relicense third-party assessment content.</p>
+    <p data-i18n="about.creditFonts">Fonts: Public Sans and Archivo, served by Google Fonts under the SIL Open Font License 1.1.</p>
+    <p><a href="licenses/PublicSans-OFL.txt" target="_blank" rel="noopener noreferrer">Public Sans — OFL 1.1</a> · <a href="licenses/Archivo-OFL.txt" target="_blank" rel="noopener noreferrer">Archivo — OFL 1.1</a></p>
+    <p data-i18n="about.creditQr">QR generation: qrcode-generator, copyright © 2009 Kazuhiko Arase, MIT License.</p>
+    <p><a href="licenses/qrcode-generator.txt" target="_blank" rel="noopener noreferrer" data-i18n="about.qrLicense">QR generator — full MIT notice</a></p>
+</div></details>
+<details id="about-terms"><summary data-i18n="about.termsTitle">Terms of use</summary><div class="about-guide-body">
+    <p data-i18n="about.termsVersion">Draft v0.1 • 2026-09-15 • Pending owner approval; no effective date yet.</p>
+    <p data-i18n="about.termsPurpose">Squad Pulse supports team reflection and improvement. Results are discussion prompts, not validated individual performance measures or professional advice. Facilitators and participants remain responsible for how they interpret and use results.</p>
+    <p data-i18n="about.termsUse">Use the app lawfully and with permission to share the information you enter. Respect participants and third-party rights. Do not use it to harass people, access boards without authorization, or disrupt the service.</p>
+    <p data-i18n="about.termsData">Board data is stored in your browser. When sync is enabled, an encrypted copy is sent to the configured relay and may be retained there. Anyone with a team link can access and change that board — possessing the link is what grants access, the same as a password. Retro invitation links and QR codes grant access to retro sessions the same way; participant links can also share the team board. Share them only with intended collaborators, and only over a secure channel.</p>
+    <p data-i18n="about.termsPrivacy">Avoid entering sensitive personal information. Encryption does not make shared links private: anyone who has the link or scans the QR code can see the data it grants access to. A team link's secret is carried after the # in its address (never sent to any server), which keeps it out of server request logs — but that is not protection against a malicious script running on this page, and it does not stop the link itself from being forwarded to someone else. Board data, including any connected team's secret, is kept in this browser's local storage, which any script running on this site can read. Hosting providers may receive connection metadata. Ask the operator of your deployment about retention and deletion; clearing browser storage does not delete relay copies.</p>
+    <p data-i18n="about.termsAvailability">The software is provided as is under its applicable licenses, without guarantees of availability, accuracy, or preservation of data. Keep copies of information you need. Nothing in this notice excludes rights or liabilities that cannot lawfully be excluded.</p>
+    <p data-i18n="about.termsAcceptance">Closing this introduction only remembers your display preference on this browser. It does not record acceptance of these draft terms. You can reopen them at any time through About & help.</p>
+</div></details>
+</div>
+  <p class="hint" data-i18n="about.credit">Built by Dr. Agile</p>
+  <button class="btn" id="aboutCloseBtn" type="button" data-i18n="about.close">Back to the app</button>
+</dialog>
+<script src="js/about.js" defer></script>
+<script src="app.js" defer></script>
 </body>
 </html>

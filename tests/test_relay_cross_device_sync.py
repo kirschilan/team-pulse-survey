@@ -1,5 +1,6 @@
 from playwright.sync_api import sync_playwright
 import pathlib, subprocess, os, time, socket
+from urllib.parse import urlparse, parse_qs
 import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import write_plain_index
@@ -46,6 +47,17 @@ relay_proc = subprocess.Popen(
 
 try:
     if not wait_for_port(RELAY_PORT):
+        # Must kill the process (closing its stdout) BEFORE reading it --
+        # .read() blocks until EOF, and a relay that's still alive (just
+        # slow to bind, e.g. under CPU contention from parallel test jobs)
+        # never sends EOF, so this used to deadlock the whole suite instead
+        # of raising the intended error. Found via a real hang in CI/local
+        # runs: this exact test process stuck for 50+ minutes.
+        relay_proc.terminate()
+        try:
+            relay_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            relay_proc.kill()
         out = relay_proc.stdout.read() if relay_proc.stdout else ""
         raise RuntimeError("relay server never opened port %d\n%s" % (RELAY_PORT, out))
 
@@ -61,39 +73,43 @@ try:
         fac_errors = []
         fac.on("pageerror", lambda e: fac_errors.append(str(e)))
         fac.goto(INDEX_URL, wait_until="domcontentloaded")
-        fac.wait_for_timeout(500)
+        # eval_on_selector()/query_selector() below don't auto-wait --
+        # renderAdminSquadList() only populates this once the async store load +
+        # first render() pass lands, so this is the real boot-complete marker
+        # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+        fac.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
+        # setView()/selectSquad() are both synchronous (established across
+        # this pass) -- no wait needed for either of these two clicks.
         fac.click('.view-btn[data-view="squad"]')
-        fac.wait_for_timeout(100)
         fac.click('.squad-pick-btn[data-id="squad-1"]')
-        fac.wait_for_timeout(150)
         fac.click('#startSessionBtn')
-        fac.wait_for_selector('.session-code')  # real relay round trip -- wait for it, don't guess how long
+        # real relay round trip (generateSecret()/roomIdFor() are real
+        # crypto.subtle calls too) -- wait for it, don't guess how long.
+        fac.wait_for_function("() => document.getElementById('sessionJoinLink') && document.getElementById('sessionJoinLink').value.length > 0")
 
-        code = fac.eval_on_selector('.session-code', 'el=>el.textContent')
+        join_link = fac.eval_on_selector('#sessionJoinLink', 'el=>el.value')
+        # Codex review on PR #14 (P1): the session secret rides in the URL
+        # FRAGMENT now, not the query string (helpers.js's joinUrlFor()).
+        secret = parse_qs(urlparse(join_link).fragment)["session"][0]
         print("=== facilitator started a session ===")
-        print("session code:", code)
-        assert code and len(code) == 6
+        print("join link:", join_link)
+        assert secret
         print("errors so far:", fac_errors)
 
         # ============ participant device: a SEPARATE browser context (own
-        # localStorage/board), joining purely by the code, exactly as a
-        # teammate on their own laptop would ============
+        # localStorage/board), joining purely by opening the real join link
+        # -- SEC-2: the only way a teammate on their own laptop can join now
+        # ============
         participant_ctx = browser.new_context(viewport={"width":420,"height":1400})
         participant_ctx.add_init_script(point_at_test_relay)
         team = participant_ctx.new_page()
         team_errors = []
         team.on("pageerror", lambda e: team_errors.append(str(e)))
-        team.goto(INDEX_URL, wait_until="domcontentloaded")
-        team.wait_for_timeout(400)
-
-        team.click('#joinCodeBtn')
-        team.wait_for_timeout(100)
-        team.fill('#joinCodeInput', code)
-        team.click('#joinCodeGo')
+        team.goto(join_link, wait_until="domcontentloaded")
         team.wait_for_selector('#joinCard .direct-row')  # real relay round trip -- wait for it, don't guess how long
 
-        print("=== participant joined by code, over the real relay ===")
+        print("=== participant joined via the real link, over the real relay ===")
         heading = team.eval_on_selector('#joinCard h2', 'el=>el.textContent')
         print("join screen heading:", heading)
         assert "retro" in heading.lower()
@@ -103,15 +119,16 @@ try:
         print("errors so far:", team_errors)
 
         # participant answers every dimension: last one red, rest green
+        # refreshSubmitEnabled() (retro-join.js) runs synchronously inside
+        # each swatch's own click handler, so no wait is needed between
+        # clicks or before reading it right after.
         rows = team.query_selector_all('.direct-row')
         for row in rows[:-1]:
             row.query_selector('.swatch.good').click()
-            team.wait_for_timeout(20)
         rows[-1].query_selector('.swatch.crit').click()
-        team.wait_for_timeout(50)
         assert team.eval_on_selector('#stmtSubmitBtn', 'el=>el.disabled') == False
         team.click('#stmtSubmitBtn')
-        team.wait_for_timeout(500)
+        team.wait_for_selector('.personal-result .pill')
 
         print("=== participant sees their own personal results ===")
         pills = team.eval_on_selector_all('.personal-result .pill', 'els=>els.map(e=>e.textContent.trim())')
@@ -123,7 +140,7 @@ try:
         # the real submission that just came in over the relay ============
         print("=== facilitator flips to live reveal and sees the real submission ===")
         fac.click('.reveal-btn[data-reveal="live"]')
-        fac.wait_for_timeout(600)
+        fac.wait_for_function("() => Array.from(document.querySelectorAll('.live-dim-row')).some(el => el.textContent.includes('Red'))")
         row_texts = fac.eval_on_selector_all('.live-dim-row', 'els=>els.map(e=>e.textContent)')
         print("facilitator's live rows:", row_texts)
         assert len(row_texts) == len(row_labels)
@@ -132,9 +149,9 @@ try:
 
         print("=== facilitator finishes the retro; results land in their own squad ===")
         fac.click('#finishSessionBtn')
-        fac.wait_for_timeout(150)
+        fac.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
         fac.click('#confirmOk')
-        fac.wait_for_timeout(500)
+        fac.wait_for_selector('#startSessionBtn')
         assert fac.query_selector('#startSessionBtn') is not None, "the session card should show 'start a new session' again once finished"
         print("errors:", fac_errors)
 
@@ -153,8 +170,8 @@ try:
         late = late_ctx.new_page()
         late_errors = []
         late.on("pageerror", lambda e: late_errors.append(str(e)))
-        late.goto(INDEX_URL + "?session=" + code, wait_until="domcontentloaded")
-        late.wait_for_timeout(600)
+        late.goto(INDEX_URL + "#session=" + secret, wait_until="domcontentloaded")
+        late.wait_for_function("() => { var h = document.querySelector('#joinCard h2'); return h && h.textContent.indexOf('Connecting') === -1; }")
         late_heading = late.eval_on_selector('#joinCard h2', 'el=>el.textContent')
         print("late joiner heading:", late_heading)
         assert "ended" in late_heading.lower()
@@ -167,7 +184,7 @@ try:
         never_errors = []
         never.on("pageerror", lambda e: never_errors.append(str(e)))
         never.goto(INDEX_URL + "?session=NEVER01", wait_until="domcontentloaded")
-        never.wait_for_timeout(600)
+        never.wait_for_function("() => { var h = document.querySelector('#joinCard h2'); return h && h.textContent.indexOf('Connecting') === -1; }")
         never_heading = never.eval_on_selector('#joinCard h2', 'el=>el.textContent')
         print("never-existed code heading:", never_heading)
         assert "isn" in never_heading.lower() and "open" in never_heading.lower()

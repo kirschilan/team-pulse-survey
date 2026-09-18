@@ -32,7 +32,10 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(INDEX_URL)
-    page.wait_for_timeout(500)
+    # #syncText starts as the static "Connecting..." placeholder until
+    # db.js's setSyncStatus() resolves it one way or the other -- wait for
+    # that real transition instead of a guessed delay
+    page.wait_for_function("() => !document.getElementById('syncText').textContent.includes('Connecting')")
 
     print("=== first load: local-store.js resolves the db capability and seeds a board ===")
     sync_text = page.eval_on_selector("#syncText", "el=>el.textContent")
@@ -48,23 +51,28 @@ with sync_playwright() as p:
     assert ls_raw
 
     # ---- rate a cell, then reload: the rating must survive via localStorage ----
+    # setView()/selectSquad() are both synchronous (established across this
+    # pass) -- no wait needed for either of these two clicks.
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
     page.click('#squadDetail .cell-btn[data-squad="squad-1"][data-dim="release"]')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#backdrop', state="visible")  # real modal-open signal, not a guess
     page.click('.swatch.crit')
     page.click('#modalSave')
-    page.wait_for_timeout(300)
+    # evaluate() below doesn't auto-wait -- local-store.js's docRef.update()
+    # mutates its in-memory STORE and re-renders synchronously within this
+    # same tab (same shape as fake_store.html), but poll for the real class
+    # change rather than assume that timing.
+    page.wait_for_function("() => document.querySelector('#squadDetail .cell-btn[data-squad=\"squad-1\"][data-dim=\"release\"]').className.indexOf('crit') !== -1")
 
     print("=== reload: rating persists ===")
     page.reload()
-    page.wait_for_timeout(600)
+    # .squad-pick-btn is rendered from state.squads, not static HTML -- its
+    # existence is the real signal that post-reload boot (db.js's squads
+    # listener) has fired at least once, not a guessed delay
+    page.wait_for_selector('.squad-pick-btn[data-id="squad-1"]', state="attached")
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
     cell_class = page.eval_on_selector('#squadDetail .cell-btn[data-squad="squad-1"][data-dim="release"]', 'el=>el.className')
     print("release cell class after reload (should include crit):", cell_class)
     assert "crit" in cell_class
@@ -77,35 +85,37 @@ with sync_playwright() as p:
     errors2 = []
     page2.on("pageerror", lambda e: errors2.append(str(e)))
     page2.goto(INDEX_URL)
-    page2.wait_for_timeout(500)
+    page2.wait_for_selector('.squad-pick-btn[data-id="squad-1"]', state="attached")
     page2.click('.view-btn[data-view="squad"]')
-    page2.wait_for_timeout(100)
     page2.click('.squad-pick-btn[data-id="squad-1"]')
-    page2.wait_for_timeout(150)
     cell_class2 = page2.eval_on_selector('#squadDetail .cell-btn[data-squad="squad-1"][data-dim="release"]', 'el=>el.className')
     print("tab 2 sees tab 1's rating on load:", cell_class2)
     assert "crit" in cell_class2
 
     page2.click('#squadDetail .cell-btn[data-squad="squad-1"][data-dim="release"]')
-    page2.wait_for_timeout(150)
+    page2.wait_for_selector('#backdrop', state="visible")  # real modal-open signal, not a guess
     page2.click('.swatch.good')
     page2.click('#modalSave')
-    page2.wait_for_timeout(300)
-    page.wait_for_timeout(300)
+    # Same same-tab synchronicity reasoning as tab 1's rating save above.
+    page2.wait_for_function("() => document.querySelector('#squadDetail .cell-btn[data-squad=\"squad-1\"][data-dim=\"release\"]').className.indexOf('good') !== -1")
+    # tab 1 only picks this up via the browser's native `storage` event,
+    # which never fires in the tab that made the write and only fires
+    # asynchronously in others -- a genuine cross-tab async gap, unlike
+    # every same-tab write above, so this one keeps a real wait.
+    page.wait_for_function("() => document.querySelector('#squadDetail .cell-btn[data-squad=\"squad-1\"][data-dim=\"release\"]').className.indexOf('good') !== -1")
     cell_class_live = page.eval_on_selector('#squadDetail .cell-btn[data-squad="squad-1"][data-dim="release"]', 'el=>el.className')
     print("tab 1 live-updates after tab 2's write (storage event):", cell_class_live)
     assert "good" in cell_class_live
     print("errors2:", errors2)
 
-    # ---- CSV export triggers a real browser download, not the old fallback tab ----
-    print("=== CSV export downloads a real file ===")
-    page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
+    # ---- JSON export triggers a real browser download, not the old fallback tab ----
+    print("=== JSON export downloads a real file ===")
+    page.click('.view-btn[data-view="admin"]')  # setView() is synchronous
     with page.expect_download() as dl_info:
-        page.click("#exportBtn")
+        page.click("#exportJsonBtn")
     download = dl_info.value
     print("download filename:", download.suggested_filename)
-    assert download.suggested_filename == "squad-pulse-snapshot.csv"
+    assert download.suggested_filename == "squad-pulse-board.json"
 
     # ---- a real window.claude (Claude Artifact-shaped) must be left alone ----
     print("=== local-store.js does not override a real window.claude ===")
@@ -114,7 +124,7 @@ with sync_playwright() as p:
     errors3 = []
     page3.on("pageerror", lambda e: errors3.append(str(e)))
     page3.goto(INDEX_URL)
-    page3.wait_for_timeout(500)
+    page3.wait_for_function("() => !document.getElementById('syncText').textContent.includes('Connecting')")
     claude_use_src = page3.evaluate("window.claude.use.toString()")
     print("window.claude.use still the injected stub:", "Promise.resolve(null)" in claude_use_src)
     assert "Promise.resolve(null)" in claude_use_src

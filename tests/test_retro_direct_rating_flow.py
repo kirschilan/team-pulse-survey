@@ -26,14 +26,19 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(400)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
     page.click('#startSessionBtn')
-    page.wait_for_timeout(250)
+    # evaluate() below doesn't auto-wait -- the fake store's set() writes
+    # into __FAKE_STORE__ synchronously, but poll for the real condition
+    # rather than assume that timing.
+    page.wait_for_function("() => Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/')).length === 1")
 
     session_info = page.evaluate("""
       (function(){
@@ -42,6 +47,9 @@ with sync_playwright() as p:
       })();
     """)
     sid = session_info["id"]
+    # SEC-2: joining uses the session's SECRET (?session=<secret>), not its
+    # relay room id.
+    secret = page.evaluate("SquadPulseRelay.secretForRoom(%r)" % sid)
     dims = session_info["doc"]["dimensions"]
     dim_keys = [d["key"] for d in dims]
     print("=== session started on the default Spotify-style template ===", sid, dim_keys)
@@ -60,8 +68,11 @@ with sync_playwright() as p:
     pageA = browser.new_page(viewport={"width":420,"height":2600})
     errorsA = []
     pageA.on("pageerror", lambda e: errorsA.append(str(e)))
-    pageA.goto("file://" + str(join_out.resolve()) + "?session=" + sid)
-    pageA.wait_for_timeout(500)
+    pageA.goto("file://" + str(join_out.resolve()) + "?session=" + secret)
+    # query_selector() below doesn't auto-wait -- wait for the real "join
+    # screen rendered the direct-rating form" signal (a genuine async gap:
+    # listenJoinSession()'s onSnapshot first delivery) instead of guessing.
+    pageA.wait_for_selector('.direct-row', state="attached")
 
     print("=== participant: no statement list at all, one direct-rating row per dimension, openly labeled ===")
     assert pageA.query_selector('.stmt-list') is None, "this template has no statement dimensions -- no blind survey block should render"
@@ -75,9 +86,11 @@ with sync_playwright() as p:
 
     # answer every dimension except leave the last one blank, to confirm
     # Submit stays disabled until every direct pick is made too
+    # refreshSubmitEnabled() (retro-join.js) runs synchronously inside each
+    # swatch's own click handler, so no wait is needed between clicks or
+    # before reading it right after.
     for row in direct_rows[:-1]:
         row.query_selector('.swatch.good').click()
-        pageA.wait_for_timeout(15)
     print("submit still disabled with one dimension unanswered:", pageA.eval_on_selector('#stmtSubmitBtn', 'el => el.disabled'))
     assert pageA.eval_on_selector('#stmtSubmitBtn', 'el => el.disabled') == True
 
@@ -85,12 +98,13 @@ with sync_playwright() as p:
     last_row = direct_rows[-1]
     last_dim_key = last_row.get_attribute("data-dim")
     last_row.query_selector('.swatch.crit').click()
-    pageA.wait_for_timeout(50)
     print("submit enabled once every dimension has a pick:", pageA.eval_on_selector('#stmtSubmitBtn', 'el => el.disabled') == False)
     assert pageA.eval_on_selector('#stmtSubmitBtn', 'el => el.disabled') == False
 
     pageA.click('#stmtSubmitBtn')
-    pageA.wait_for_timeout(250)
+    # eval_on_selector()/evaluate() below don't auto-wait -- wait for the
+    # real "personal results rendered" signal instead of guessing.
+    pageA.wait_for_selector('.personal-result', state="attached")
 
     stored = pageA.evaluate("""
       (function(){
@@ -124,9 +138,15 @@ with sync_playwright() as p:
         window.__NOTIFY__('sessions/%s/responses');
       })();
     """ % (sid, json.dumps(stored), sid))
-    page.wait_for_timeout(100)
+    # No wait needed here -- window.__NOTIFY__() calls the fake store's
+    # notify() SYNCHRONOUSLY (unlike a real onSnapshot's first delivery,
+    # which the fixture delays), which synchronously updates
+    # state.sessionResponses inside retro-facilitator.js's listener before
+    # this evaluate() call even returns.
     page.click('.reveal-btn[data-reveal="live"]')
-    page.wait_for_timeout(200)
+    # eval_on_selector_all() below doesn't auto-wait -- wait for the real
+    # "live rows rendered" signal instead of guessing.
+    page.wait_for_selector('.live-dim-row', state="attached")
 
     print("=== facilitator sees consolidated direct-rating results, can still override by hand ===")
     row_texts = page.eval_on_selector_all('.live-dim-row', 'els => els.map(e => e.textContent)')
@@ -136,13 +156,16 @@ with sync_playwright() as p:
     assert any(last_dim_label in t and "Red" in t for t in row_texts)
 
     page.click('.override-btn[data-override-dim="' + last_dim_key + '"]')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#backdrop', state="visible")  # real modal-open signal, not a guess
     squadline = page.eval_on_selector('#modalSquadline', 'el => el.textContent')
     print("override modal squadline:", squadline)
     assert "overrid" in squadline.lower()
     page.click('.swatch[data-color="warn"]')
     page.click('#modalSave')
-    page.wait_for_timeout(150)
+    # eval_on_selector_all() below doesn't auto-wait -- poll for the real
+    # write landing (setSessionOverride() writes to the store and
+    # re-renders synchronously) instead of guessing.
+    page.wait_for_function("() => { var o = window.__FAKE_STORE__['sessions/%s'].overrides['%s']; return o && o.color === 'warn'; }" % (sid, last_dim_key))
     row_texts_after_override = page.eval_on_selector_all('.live-dim-row', 'els => els.map(e => e.textContent)')
     print("row after override:", [t for t in row_texts_after_override if last_dim_label in t])
     assert any(last_dim_label in t and "Overridden" in t and "Yellow" in t for t in row_texts_after_override)
@@ -150,12 +173,14 @@ with sync_playwright() as p:
 
     print("=== finishing the retro writes the direct-rating results into the squad's real ratings ===")
     page.click('#finishSessionBtn')
-    page.wait_for_timeout(150)
+    page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess
     confirm_msg = page.eval_on_selector('#confirmMessage', 'el => el.textContent')
     print("confirm message:", confirm_msg)
     assert last_dim_label + ": Yellow (overridden)" in confirm_msg
     page.click('#confirmOk')
-    page.wait_for_timeout(250)
+    # evaluate() below doesn't auto-wait -- poll for the real
+    # "finishRetroAndApply() landed" signal instead of guessing.
+    page.wait_for_function("() => { var d = window.__FAKE_STORE__['squads/squad-1'].dimensions['%s']; return d && d.color === 'warn'; }" % last_dim_key)
 
     final_dims = page.evaluate("window.__FAKE_STORE__['squads/squad-1'].dimensions")
     print("squad-1 dimensions after finishing:", final_dims)

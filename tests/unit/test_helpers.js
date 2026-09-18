@@ -129,6 +129,34 @@ test("retroDimensions/statementDimensions/directRatingDimensions split a session
   assert.deepEqual(helpers.directRatingDimensions(dims).map((d) => d.key), ["release"]);
 });
 
+test("pacingSequence() interleaves statement dimensions round-robin, then appends direct-rating dimensions", () => {
+  const dims = [
+    { key: "trust", order: 1, statements: ["t1", "t2"] },
+    { key: "comm", order: 2, statements: ["c1"] },
+    { key: "release", order: 3 },
+    { key: "morale", order: 4 },
+  ];
+  assert.deepEqual(helpers.pacingSequence(dims), [
+    { kind: "stmt", dimKey: "trust", idx: 0 },
+    { kind: "stmt", dimKey: "comm", idx: 0 },
+    { kind: "stmt", dimKey: "trust", idx: 1 },
+    { kind: "direct", dimKey: "release" },
+    { kind: "direct", dimKey: "morale" },
+  ]);
+});
+
+test("pacingSequence() returns an empty array for a template with no dimensions", () => {
+  assert.deepEqual(helpers.pacingSequence([]), []);
+});
+
+test("pacingSequence() with only direct-rating dimensions skips the statement phase entirely", () => {
+  const dims = [{ key: "release", order: 1 }, { key: "morale", order: 2 }];
+  assert.deepEqual(helpers.pacingSequence(dims), [
+    { kind: "direct", dimKey: "release" },
+    { kind: "direct", dimKey: "morale" },
+  ]);
+});
+
 test("liveOr() runs the live branch when connected, local branch otherwise", () => {
   global.state = { live: true, db: {} };
   assert.equal(helpers.liveOr(() => "live", () => "local"), "live");
@@ -177,4 +205,77 @@ test("sortedDimensions/sortedSquads/dimByKey/findSquad/squadScore read from glob
   assert.equal(score.scored, 2);
   assert.equal(score.total, 2);
   assert.deepEqual(score.counts, { good: 1, warn: 0, crit: 1, unscored: 0 });
+});
+
+test("openRetroSessionsInfo() lists only open sessions, with each one's squad name", () => {
+  global.state = {
+    squads: [
+      { id: "sq-1", name: "Squad One" },
+      { id: "sq-2", name: "Squad Two" },
+    ],
+    sessions: [
+      { id: "sess-1", squadId: "sq-1", status: "open" },
+      { id: "sess-2", squadId: "sq-2", status: "closed" },
+      { id: "sess-3", squadId: "sq-missing", status: "open" },
+    ],
+  };
+  assert.deepEqual(helpers.openRetroSessionsInfo(), [
+    { id: "sess-1", squadName: "Squad One" },
+    { id: "sess-3", squadName: "sq-missing" },
+  ]);
+});
+
+test("openRetroSessionsInfo() returns an empty array when no session is open", () => {
+  global.state = {
+    squads: [{ id: "sq-1", name: "Squad One" }],
+    sessions: [{ id: "sess-1", squadId: "sq-1", status: "closed" }],
+  };
+  assert.deepEqual(helpers.openRetroSessionsInfo(), []);
+});
+
+// SEC-4 (STATUS.md's "Security hardening backlog"): a retro join/
+// co-facilitate link's piggybacked team secret (see this file's own header
+// comment on why one link now carries both) moved from a query param to
+// the URL fragment, same as the standalone team link (board-sync.js) --
+// never sent to a server at all, unlike a query param.
+test("teamHashFor() builds a #team= fragment when a team secret is connected, empty otherwise", () => {
+  global.getTeamSecret = () => "the-team-secret";
+  assert.equal(helpers.teamHashFor(), "#team=the-team-secret");
+  global.getTeamSecret = () => "";
+  assert.equal(helpers.teamHashFor(), "", "no team connected -- omit the fragment entirely, don't force one on");
+});
+
+// Codex review on PR #14 (P1): joinUrlFor()/coFacilitateUrlFor() were still
+// putting the SESSION's own secret in the query string (?session=/
+// ?cofacilitate=) -- only the piggybacked team secret had moved to the
+// fragment. A query param is sent in the initial HTTP navigation request
+// (can land in the app host's own access logs, gets echoed in a Referer
+// header on the next click) exactly the exposure SEC-4 set out to close --
+// so both the session/co-facilitate secret AND the team secret now ride in
+// the fragment together; only the non-secret `lang` stays in the query
+// string, since it's not sensitive and IS meant to be visible/bookmarkable.
+test("joinUrlFor()/coFacilitateUrlFor() put lang= in the query string, and session=/cofacilitate=+team= together in the fragment -- never a secret in the query string", () => {
+  global.state = { ui: { locale: "he" } };
+  global.getTeamSecret = () => "the-team-secret";
+  const joinUrl = helpers.joinUrlFor("abc123");
+  assert.equal(joinUrl, "http://localhost/?lang=he#session=abc123&team=the-team-secret");
+  assert.ok(!joinUrl.includes("?session="), "the session secret must never appear in the query string");
+  const cofacUrl = helpers.coFacilitateUrlFor("abc123");
+  assert.equal(cofacUrl, "http://localhost/?lang=he#cofacilitate=abc123&team=the-team-secret");
+  assert.ok(!cofacUrl.includes("?cofacilitate="), "the co-facilitate secret must never appear in the query string");
+
+  // no team connected -- just the session secret in the fragment
+  global.getTeamSecret = () => "";
+  assert.equal(helpers.joinUrlFor("abc123"), "http://localhost/?lang=he#session=abc123");
+
+  // English (default) locale -- no query string at all, just the fragment
+  global.state = { ui: { locale: "en" } };
+  assert.equal(helpers.joinUrlFor("abc123"), "http://localhost/#session=abc123");
+});
+
+test("buildFragment() joins non-empty pairs into one '#'-prefixed fragment, in order, omitting empty values and the '#' itself when nothing qualifies", () => {
+  assert.equal(helpers.buildFragment([["session", "abc"], ["team", "xyz"]]), "#session=abc&team=xyz");
+  assert.equal(helpers.buildFragment([["session", "abc"], ["team", ""]]), "#session=abc");
+  assert.equal(helpers.buildFragment([["session", ""], ["team", ""]]), "");
+  assert.equal(helpers.buildFragment([]), "");
 });

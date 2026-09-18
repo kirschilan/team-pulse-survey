@@ -63,8 +63,8 @@ try:
     CONFIG_OUT.write_text(injected_config, encoding="utf-8")
 
     index_html = (REPO_ROOT / "public" / "index.html").read_text(encoding="utf-8")
-    start = index_html.index("<script src=\"vendor/qrcode.js\"></script>")
-    end = index_html.index("<script src=\"js/crypto.js\"></script>")
+    start = index_html.index("<script src=\"vendor/qrcode.js\" defer></script>")
+    end = index_html.index("<script src=\"js/crypto.js\" defer></script>")
     snippet = index_html[start:end]
     assert "relay-config.js" in snippet, "expected relay-config.js to load before the smart-default block"
 
@@ -82,7 +82,9 @@ try:
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.goto("file://" + str(harness_path.resolve()))
-        page.wait_for_timeout(100)
+        # No wait needed -- these scripts use `defer`, and page.goto()'s
+        # default waitUntil="load" already guarantees deferred scripts have
+        # all executed (in order) by the time it returns.
         value = page.evaluate("window.SQUAD_PULSE_RELAY_URL")
         print("resolved SQUAD_PULSE_RELAY_URL on a file:// (would-otherwise-default) page:", value)
         assert value == "wss://relay.example.com", "the build-injected value must win over the file://-is-local default"

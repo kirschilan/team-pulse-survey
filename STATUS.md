@@ -1,8 +1,16 @@
 # Squad Pulse — Status
 
-One-page entry point for picking this project up cold. Update the session log at the bottom
-whenever you finish a chunk of work — this is the one place "what's outstanding" lives; the other
-docs in `docs/` are reference material this file points to, not duplicates of it.
+One-page entry point for picking this project up cold: current state, locked-in decisions, and the
+open backlog — this is the one place "what's outstanding" lives. The dated session log of past
+work lives in **[`docs/session-log.md`](docs/session-log.md)** (split out 2026-09-18, REF-11, to
+keep this file itself actually one page); append a dated entry there, not here, whenever you finish
+a chunk of work. The other docs in `docs/` are reference material this file points to, not
+duplicates of it.
+
+Before calling any change done, check it against **`docs/DefinitionOfDone.md`** — the standing
+quality bar (testing, multi-language support, delivery workflow) that applies regardless of which
+feature or story a change belongs to. This file's own "Decisions locked in" below is a different
+thing: specific architecture/product choices already made, not the bar every change clears.
 
 ## What's real right now
 
@@ -20,10 +28,11 @@ docs in `docs/` are reference material this file points to, not duplicates of it
 - Two-tier regression coverage under `tests/`, all passing as of the last run (2026-09-13) — see
   `tests/README.md`. **`tests/unit/`**: 3 plain-Node files (`node:test`, nothing to install) for
   pure logic with no DOM dependency — consolidation/scoring math, CSV parsing/column-matching —
-  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: 31 Playwright files
-  (named for the feature/flow each one covers) for everything that needs a real browser, running in
-  around 2 minutes total after two 2026-09-12 perf passes (see the session log below) — zero JS errors on
-  the last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
+  running in ~0.1s total (see `tests/unit/README.md`). **`tests/test_*.py`**: one Playwright file
+  per feature/flow (`ls tests/test_*.py | wc -l` for the current count — deliberately not
+  hardcoded here) for everything that needs a real browser, run via `tests/run_all.sh`'s parallel
+  workers after three 2026-09-12/13 perf passes (see the session log below) — zero JS errors on the
+  last run. Most drive the app through a fake in-memory store (`tests/fixtures/fake_store.html`
   + `tests/fixtures/build_page.py`) standing in for the real backend, for speed and determinism; a
   handful deliberately bypass it because they exist specifically to test what it stands in for —
   `test_local_store.py` (the real `localStorage` board), `test_relay_cross_device_sync.py` (the real
@@ -31,17 +40,22 @@ docs in `docs/` are reference material this file points to, not duplicates of it
   failure modes). Both tiers run automatically on every push/PR via `.github/workflows/tests.yml`.
 - `vercel.json` is in place for zero-config static hosting (`outputDirectory: "public"`), and the
   repo **is now connected to Vercel** — feature branches deploy to preview URLs (confirmed
-  2026-09-12 via real testing on one).
-- **Retro sessions and board sync now work end to end on real deployments.** `relay/` is a small
-  standalone Node/`ws` WebSocket server; `public/js/relay-client.js` + `public/js/crypto.js` route
-  every `sessions`- and `boards`-rooted `db` call to it (encrypted, per the decision below) instead
-  of `localStorage`. **The relay is deployed (Render) and `SQUAD_PULSE_RELAY_URL` is set in
-  Vercel** — confirmed as of 2026-09-18 (the product owner confirmed it's set; a live retro
-  couldn't otherwise have worked). Both Vercel Preview and Production point at the **same** Render
-  relay instance rather than separate ones per environment — see "Suggested next step" below for
-  the one tradeoff that's worth knowing about, not fixing. Verified end to end pre-deployment by
-  `tests/test_relay_cross_device_sync.py` (real relay process, two independent browser contexts,
-  real WebSocket, real AES-GCM) and confirmed on the real deployed preview 2026-09-12.
+  2026-09-12 via real testing on one). **The relay is deployed on Render.com** (confirmed by the PO
+  2026-09-17 — this was done at the very start of implementing the retro feature, but never got
+  logged here at the time; see the relay bullet below and `relay/README.md` for the deploy shape).
+  The actual `SQUAD_PULSE_RELAY_URL` value isn't hardcoded here — it's a real, live Vercel env var
+  that differs per environment (Production/Preview) and would go stale the moment it's rotated;
+  `relay/README.md` documents how to find/set it. (Not a secrets concern — a Codex review on PR #25
+  caught this file, and `ETHICS.md`, both drawing the wrong conclusion about why: the URL is a
+  public, build-time-emitted service endpoint, not a credential — see `ETHICS.md`'s own corrected
+  Section 1.)
+- **Retro sessions now sync across real devices.** `relay/` is a small standalone Node/`ws`
+  WebSocket server; `public/js/relay-client.js` + `public/js/crypto.js` route every
+  `sessions`-rooted `db` call to it (encrypted, per the decision below) instead of `localStorage`,
+  while squads/dimensions/templates/config stay local as before. Verified end to end — real relay
+  process, two independent browser contexts, real WebSocket, real AES-GCM — by
+  `tests/test_relay_cross_device_sync.py`. Deployed on Render.com and wired to the Vercel deployment
+  via its own env var (see above) — see `relay/README.md` for the deploy/wiring steps this followed.
 
 ## The app's file layout
 
@@ -52,7 +66,9 @@ along the seams the original file already had (`// ---------- section ----------
 
 | File | Covers |
 |---|---|
-| `state.js` | Shared `state` object, starter templates, placeholder squads/dimensions, initial UI-prefs load. Loads first. |
+| `state.js` | Shared `state` object, starter templates, placeholder squads/dimensions, initial UI-prefs load (including `ui.locale`). Loads first. |
+| `locales/en.js`, `locales/he.js` | Multi-language support: the English source-of-truth string table and its Hebrew translation (plain `key: "text"` objects, no build step -- see `he.js`'s own header comment on how a human corrects a translation). Loads right after `state.js`, before anything that calls `t()`. |
+| `i18n.js` | `t(key, vars)`/`setLocale()` -- looks up the active locale (falling back to English for any missing key), interpolates `{word}` tokens, applies `[data-i18n]`/`[data-i18n-placeholder]` markup, and scopes `dir`/`lang` to `#viewAdmin` only (Story 1: Admin panel translated, the rest of the app not yet). |
 | `helpers.js` | Pure helpers used everywhere: `esc`, `diag`, banding/consolidation math, `colorWord`/`trendWord`, `isStatementDimension`, `sortedSquads`/`sortedDimensions`, `findSquad`, unit-label helpers, and the `liveOr`/`syncLiveIfConnected` write-shape helpers every mutator uses. |
 | `render.js` | `renderAll` and everything it drives — header/stats/ranking/hotspots/grid/legend, grid tooltip. |
 | `modals.js` | The generic confirm modal, the cell-rating modal, and the busy overlay — shared widgets several features reuse. |
@@ -61,7 +77,12 @@ along the seams the original file already had (`// ---------- section ----------
 | `retro-join.js` | The PARTICIPANT half: the join screen, the blind interleaved statement survey, direct-rating swatches, submission, and the personal-result view. Shares almost no code with `retro-facilitator.js` (different device, different role) — that's what made the split clean. |
 | `dimensions.js` | The dimension manager (add/rename/reorder/remove). Split out of a combined `dimensions-templates.js` on 2026-09-12. |
 | `templates.js` | Template save/load/delete. Split out of the same combined file, same day. |
-| `csv.js` | CSV export and import (parsing, column matching, preview, apply). |
+| `board-export.js` | JSON board export (squads/ratings, dimensions, templates, board settings) — the only board export format; CSV's own runtime code was deleted, and this whole area was renamed from `csv.js` to match, in Story 13 item 4. |
+| `board-import-validate.js` | JSON board import's parse boundary — `parseBoardImportFile()` and every `isValid*` shape check a file must pass before anything downstream trusts it. |
+| `board-import-plan.js` | JSON board import's pure merge/replace planning — given a parsed file and the board's current state, returns what WOULD change, without touching anything. |
+| `board-import-preview.js` | JSON board import's own preview modal rendering — turns a plan into the chips/warnings/diff HTML the facilitator reviews before Apply. |
+| `board-import-apply.js` | JSON board import's persistence execution — the only one of these six that actually writes; `board-import-preview.js`'s Apply button is its only caller. |
+| `board-import-ui.js` | JSON board import's modal open/close lifecycle — the file picker, parse-and-dispatch, and the pending-plan state the other import files above share. |
 | `db.js` | `initDb()` — the Firestore-shaped snapshot listeners that wire `db` writes into `state` and back into a render. |
 | `crypto.js` | AES-256-GCM encrypt/decrypt. For a retro session, the key derives from the session code itself; for a team board, `generateSecret()`/`roomIdFor()` split a high-entropy secret (the key) from a separate one-way-derived room id (routing only) — see "Board sync" below. |
 | `relay-client.js` | The other half of `local-store.js`'s router: a `collection()`/`doc()` implementation for `sessions`- and `boards`-rooted paths, backed by a real WebSocket to `relay/server.js` instead of `localStorage`. `doc(path, secret)`/`collection(path, secret)` take an optional second argument so a caller (board-sync.js) can supply the encryption key separately from the path's own routing id; omitted, behavior is unchanged (the path's own code IS the key, as sessions have always used). |
@@ -74,7 +95,7 @@ suite (every test navigates via `file://`) and the README's "open `index.html` d
 handful of top-level `document.getElementById(...)` lookups each file does for elements that are
 already in the DOM by the time these scripts run (they sit at the end of `<body>`) — every actual
 cross-file *call* happens inside a function body triggered later (an event handler, or `start()`),
-by which point every file has finished loading, so the specific order between the thirteen files
+by which point every file has finished loading, so the specific order between the eighteen files
 doesn't otherwise matter.
 
 ## The one thing to know before touching the app
@@ -100,7 +121,7 @@ whole board too, genuinely sync across different devices/browsers** through the 
 bullet above, `relay/README.md`, and "Board sync" below. `localStorage` is still each device's own
 source of truth (nothing here changes that), but by default it now also stays in sync, live, with
 every other device on the same team link.
-(There's one other `window.claude.use(...)` call, for `"downloads"` in `public/js/csv.js`, and a
+(There's one other `window.claude.use(...)` call, for `"downloads"` in `public/js/board-export.js`/`board-import-preview.js`, and a
 `window.claude.hot` hot-reload guard at the bottom of `app.js` that already degrades safely with no
 `window.claude` present — neither of those blocks anything.)
 
@@ -119,20 +140,16 @@ every other device on the same team link.
   ephemeral, in-memory, per-session-code relay (dimensions snapshot + responses + status/
   revealMode/overrides/experimentNote), forgotten once the room empties. No database.
 - **Self-hosted relay + client-side encryption**, chosen deliberately over Firebase/Supabase.
-  Built 2026-09-11 — see `relay/` and `public/js/crypto.js`/`relay-client.js`. One deviation from
-  the original sketch, made deliberately: the encryption key is **derived from the session code
-  itself** (`SHA-256(code)`), not an independent random secret in a URL fragment. The reason is the
-  app's *primary* join path is typing the 6-character code by hand (the fix for a real iPhone
-  QR-handoff bug already in this codebase) — a path with no fragment to carry a separate key.
-  Deriving the key from the code keeps both join paths working. Be honest about what this does and
-  doesn't buy: real protection against passive network eavesdropping and against answers sitting in
-  plaintext in relay logs/memory/backups — but NOT protection against a relay operator who
-  deliberately computes the same public hash, since the code and the room id are the same value.
-  Full rationale and the researched Excalidraw/Vercel architecture this is based on:
-  `docs/standalone-plan.md`. **This code-is-the-key tradeoff is scoped to retro sessions
-  specifically** (app-generated random code, forgotten within minutes) — a team board's link-based
-  secret is deliberately NOT this model; see "Board sync"'s "Security fix" for why a persistent,
-  user-chosen team code would have been the wrong tradeoff there.
+  Built 2026-09-11 — see `relay/` and `public/js/crypto.js`/`relay-client.js`. Originally (until
+  SEC-2, below) the encryption key was **derived from the session code itself**
+  (`SHA-256(code)`), not an independent random secret in a URL fragment — because the app's
+  *primary* join path was typing the 6-character code by hand (the fix for a real iPhone QR-handoff
+  bug already in this codebase), a path with no fragment to carry a separate key. **SEC-2 (2026-09-16)
+  retired that premise**: the typed-code join path is gone, so retro sessions now use the exact
+  same secret/room-id split team boards already used (see the "Board sync" security fix below) —
+  a high-entropy secret, never typed, is what the key derives from, and the relay only ever sees a
+  separate, one-way-derived room id. Full rationale and the researched Excalidraw/Vercel
+  architecture this is based on: `docs/standalone-plan.md`.
 - **The relay is a plain standalone Node process, deployed as a genuinely separate small service —
   deliberately NOT a Vercel Function**, even though Vercel Functions gained native WebSocket support
   in 2026. Verified against Vercel's own docs before deciding: a new connection there isn't
@@ -148,6 +165,129 @@ every other device on the same team link.
 - **Retro-session feature behavior** (consolidation rule, anonymity model, per-template scoring)
   is specified and versioned in `docs/facilitated-retro-spec.md` — that file has its own session
   log for that feature's history; don't duplicate it here.
+- **SEC-1 (STATUS.md's "Security hardening backlog"), DONE as of 2026-09-17: bound relay
+  abuse with configurable connection/message limits.** `relay/server.js` had only total-count
+  caps (`MAX_ROOMS`/`MAX_DOCS_PER_ROOM`) and a per-envelope size check made *after*
+  `JSON.parse` — no rate limiting, no cap on clients per room, no cap on connections per
+  address, so one abusive source could exhaust capacity for everyone else. Added five
+  independent, `DEFAULT_LIMITS`-configurable bounds, each a throttle a client recovers from
+  rather than a ban: a transport payload ceiling (`ws`'s own `maxPayload`, enforced before this
+  file's `JSON.parse` ever runs), a per-room concurrent-client cap, a per-address
+  concurrent-connection cap, a global new-connection rate limit, a global room-creation rate
+  limit (existing rooms are never subject to it), and a per-connection write-rate limit sized
+  for real UI bursts (a full-board JSON import, a many-dimension starter template). Deployment-
+  layer protection (hosting provider DDoS mitigation, CORS/Origin checks) is explicitly out of
+  scope — this closes the application-layer gap only, per the backlog item's own acceptance
+  criteria. Covered by six new tests in `relay/test/rate-limits.test.js`. This was implemented
+  once already on an orphaned branch (`sec-1-relay-abuse-bounds`) that never got a PR opened
+  against trunk and sat undiscovered until a full branch audit surfaced it — ported into trunk
+  as-is (cherry-picked, verified against the current full suite) rather than redone, then the
+  orphan branch deleted. See the session log entry below for the audit that found it.
+- **PERF-1 (STATUS.md's "Runtime performance backlog"), DONE as of 2026-09-17: idle cross-tab
+  sync feedback loop.** Two tabs of the same browser sharing `localStorage`, both team-synced
+  and sitting idle, fell into a self-sustaining loop: `local-store.js`'s native `storage` event
+  handler re-fired every listener on every event regardless of whether that path's data
+  actually changed, and each of `db.js`'s listeners unconditionally re-pushes a board snapshot —
+  so a pure echo still produced a fresh push, which the live subscription echoed back as a
+  "newer" remote snapshot, applied locally, re-firing another `storage` event in the other tab,
+  forever (reproduced independently: pinned a renderer badly enough that a trivial
+  `evaluate("1+1")` took 21+ seconds). Two-part fix: (1) `local-store.js` only notifies
+  listeners whose path genuinely changed since the last load, instead of blindly notifying
+  everyone; (2) `board-sync.js` skips a board push when the board's actual content
+  (squads/dimensions/config) hasn't changed since the last push, since
+  `applyRemoteBoardSnapshot()` bakes a fresh `updatedAt` into each local doc on every apply,
+  which defeated fix 1 alone. Covered by a new `tests/test_idle_tab_sync_loop.py` plus a unit
+  test on `boardContentSignature()`. Same story as SEC-1 above: implemented once on an orphaned
+  branch (`perf-1-idle-tab-sync-loop`), never merged, found by the same audit, ported as-is, and
+  that branch deleted.
+  - **Codex review fix on PR #15 (2026-09-17): the dedup baseline this fix introduced
+    (`lastPushedBoardContent`) was only ever updated by THIS device's own pushes, never by a
+    remote snapshot applied via `maybeApplyRemote()`** — shared by both the boot-time hydrate and
+    the live subscription. A real cross-device repro found it: device A sets a squad name to
+    "Original," device B changes it to "Remote change" and A receives it live, A reverts to
+    "Original" — that revert was silently skipped, because A's baseline still read "Original"
+    from ITS OWN earlier push, never having been told the board had since moved to "Remote
+    change" and back. Fixed by updating `lastPushedBoardContent` to the just-applied remote
+    content's signature inside `maybeApplyRemote()` itself, so the baseline always tracks the
+    board's actual last-known-shared content, not just this device's own push history. New
+    `tests/test_board_sync_revert_after_remote_change.py` proves the exact repro across two real
+    devices sharing only the relay; `test_idle_tab_sync_loop.py` re-verified unaffected (the fix
+    only corrects a stale baseline, it doesn't force extra pushes). Also fixed, found while
+    working in this area: `test_idle_tab_sync_loop.py`'s `RELAY_PORT` (8799) collided with
+    `test_relay_legacy_known_codes.py`'s, introduced by the same port not being re-checked when
+    the orphaned PERF-1 branch was cut against an older trunk — moved to 8801.
+- **PERF-2 (STATUS.md's "Runtime performance backlog"), DONE as of 2026-09-17: render
+  amplification on a multi-doc write.** Separate from PERF-1's unbounded idle LOOP: profiling a
+  single multi-doc write (a remote board snapshot applying N squads + M dimensions, or a local
+  starter-template load) found `renderAll()` firing once per INDIVIDUAL doc written, not once for
+  the whole batch. Root cause: `local-store.js`'s `set()` calls `notify(collectionPath)`
+  synchronously per doc, and `db.js`'s squads/dimensions/config listeners each called
+  `renderAll()` unconditionally on every notify — all 8 sub-renders, including every hidden view,
+  on every single doc. Measured at two documented sizes with a real Playwright profiling
+  harness: the app's own real default board (3 squads, 12 dimensions) cost **31** full
+  `renderAll()` passes for one remote snapshot apply; a generous stress board (40 squads, 25
+  dimensions) cost **66** — scaling with board size, not a fixed cost. (**Correction, Codex
+  review on PR #17**: the first published version of this measurement reported 132 for the
+  stress case — the profiling harness re-wrapped `window.renderAll` on every measurement instead
+  of once, so the 2nd and later measurements in a run double-counted; re-verified directly
+  against the pre-fix code with the harness fixed to install its counter exactly once: 66, not
+  132. The small-board figure (31) was the FIRST measurement in the run, so it was never
+  affected — unchanged.) One `renderAll()` pass at the stress size measured in the tens of
+  milliseconds on its own (fast in isolation, but 66 of them back-to-back would still have
+  blocked the main thread for over a second of real jank). Fixed by having `db.js`'s three
+  listeners skip `renderAll()` while `hydrating` (a remote apply) or `suppressingLocalRewrite`
+  (a local multi-doc rewrite) is set — `state` still updates on every fire either way, so nothing
+  goes stale — and rendering exactly once when each of those windows closes (`board-sync.js`'s
+  `maybeApplyRemote()` and `suppressBoardPushDuring()`), the same "coalesce, don't drop" pattern
+  already used there for `pushBoardSnapshotIfConnected()`. Post-fix, both documented sizes
+  measured **exactly 1** render for the same batch (re-verified with the corrected harness — the
+  1/2 split in the original write-up was the same double-counting artifact), and an ordinary
+  single edit measured **4** renders (not 12, same artifact) — a small constant, not proportional
+  to board size. Deliberately did NOT attempt per-view conditional rendering (skip
+  hidden-view sub-renders entirely) — riskier, and this exact class of bug (a view showing stale
+  data after switching to it) has bitten this app before (see `test_view_switch_refreshes_stale_state.py`);
+  the call-count fix alone addresses the measured amplification without touching that surface.
+  New `tests/test_render_batching_on_multi_doc_apply.py` proves both documented sizes, confirms
+  an ordinary single edit still renders normally (batching only targets the known-multi-doc
+  windows), and records the per-call timing claim above.
+- **SEC-5 (STATUS.md's "Security hardening backlog"), DONE as of 2026-09-17: documented the
+  static-hosting wildcard CORS header — no code change.** Confirmed live against the deployed
+  Vercel preview (`curl -I`, both an HTML page and a `.js` asset): `access-control-allow-origin: *`
+  is present on every static asset, injected by Vercel's own static-hosting layer — neither
+  `vercel.json` nor any app code sets it. Determined this needs no restriction: every asset this
+  origin serves over HTTP is public application code (HTML/CSS/JS/fonts/the bundled QR library),
+  never anything served with cookies or session credentials, and a permissive wildcard on public
+  static assets is standard practice (the same as any CDN-hosted library) — restricting it would
+  only break the app's own explicitly-supported embedding/self-host deployment shapes without
+  protecting anything real. The one component that actually handles session/board data — the
+  relay (`relay/server.js`) — speaks WebSocket only, which CORS doesn't govern at all (a browser's
+  same-origin policy for `fetch`/`XHR` is a different mechanism than the WebSocket handshake); the
+  relay does no `Origin` checking today, by the same already-locked-in design as the CSP
+  `frame-ancestors` question ("CORS/Origin checks are not authentication" — see the SEC-1 comment
+  in `relay/server.js`). Forward-looking guidance, per the backlog item's own acceptance criteria:
+  any FUTURE sensitive HTTP endpoint (none exist today — the relay has no HTTP routes at all, only
+  a WebSocket upgrade) must NOT inherit this static-asset default; it needs its own explicit,
+  restrictive CORS and auth policy from day one.
+- **SEC-2 (split from SEC-1), PO decision, DONE as of 2026-09-16: dropped the typed
+  6-character join code, QR/link only.** Product owner call: the "type this code in" join path
+  (the join-code modal, and the code front-and-center on the session card — see Story 3 in
+  `docs/facilitated-retro-spec.md`) is gone entirely. A retro session is joined only by scanning
+  its QR code or opening its link — the "Or scan/share a link" fallback that used to sit behind a
+  collapsed `<details>` is now the *only* path, and is shown directly on the session card.
+  Implementer's call on the question the PO decision left open (whether the session key stays
+  code-derived or moves to a separate secret): moved to a separate secret, to match the board-sync
+  model exactly — see the "Self-hosted relay + client-side encryption" decision above. `crypto.js`'s
+  already-existing `generateSecret()`/`roomIdFor()` (built for board sync) are reused as-is, no new
+  crypto primitives needed. A security notice is shown wherever a join or co-facilitate link/QR is
+  shown (the join-link block and the co-facilitator `<details>` section — the session card's own raw
+  code display this originally also applied to is gone, so that's now two places, not three):
+  > Note: Anyone with this link — or who scans this QR code — can see the data in this Squad Pulse
+  > session. Share it only over a secure channel, and make sure the QR code itself is visible only
+  > to people who should have access.
+
+  (Tightened from the PO's original draft — "secure media" → "secure channel," and calling out that
+  the link and the QR grant identical access rather than treating them as separately risky.) Full
+  implementation notes in this session's log entry below.
 - **"This retro has ended" vs. "this retro isn't open" is a real distinction, but only within the
   relay's own room lifetime — not indefinitely.** `closeSession()` writes `status:"closed"` instead
   of deleting the doc, so the join screen can say "ended" for as long as that doc still exists (the
@@ -156,6 +296,55 @@ every other device on the same team link.
   and a code that never existed are the same thing again — there is no way to keep that distinction
   forever without adding real persistence, which is exactly the trade-off already rejected for the
   relay itself (see the Vercel Function decision above). This is the deliberate stopping point.
+- **SEC-3 (STATUS.md's "Security hardening backlog"), DONE as of 2026-09-16, except one directive
+  left OPEN on purpose: browser-hardening headers.** Added a Content-Security-Policy (as a `<meta
+  http-equiv>` in `index.html`, not just a `vercel.json` header, so it's enforced over `file://` and
+  on a plain self-hosted static server too, not only on Vercel), `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy`, and a `Permissions-Policy` locking down camera/microphone/geolocation/payment/
+  usb/magnetometer/gyroscope/accelerometer (`vercel.json` — these three have no meta-tag equivalent,
+  so a self-hoster serving `public/` from their own web server needs to set them there themselves;
+  `relay/README.md`'s deployment docs are the place to point them if this ever comes up).
+  `frame-ancestors`/`X-Frame-Options` are **deliberately NOT set** — unlike the crypto question SEC-2
+  left for its own implementer to decide, the SEC-3 backlog item explicitly named permitted embedding
+  origins an **open product decision**, not an implementer's call, and `README.md`'s own "Deploying
+  for real" section lists "embedding this somewhere public (e.g. a subdomain + iframe on a website)"
+  as one of exactly two intended deployment shapes — shipping any default here (even `SAMEORIGIN`)
+  risks silently breaking that for every deployment. Whoever the PO designates should decide which
+  origins (if any) are allowed to embed this, then add `frame-ancestors <origins>` to both the CSP
+  meta tag and a `X-Frame-Options` header compatible with it (see the SEC-3 backlog item's own
+  wording in the PR that recorded it for the exact acceptance criteria). Getting the CSP's
+  `script-src 'self'` to hold with zero `'unsafe-inline'`/hashes required moving `index.html`'s one
+  inline `<script>` (the relay-URL fallback) into `public/js/relay-url-fallback.js` — a pure move, no
+  behavior change. `style-src` still needs `'unsafe-inline'`: the app's JS-generated markup uses
+  `style="..."` attributes extensively (rewriting all of them to CSS classes is a separate, much
+  larger change, out of scope here). `connect-src` allows the `ws:`/`wss:` schemes rather than a
+  specific host, since the relay's origin is deployment-configurable (`SQUAD_PULSE_RELAY_URL`), not
+  knowable at build time.
+- **Assessment-content rights (Introduction & help backlog, Story 5/6 "Credits and licenses"): Five
+  Dysfunctions is a knowingly accepted risk (PO decision, 2026-09-17); Tuckman's provenance is
+  RESOLVED (2026-09-17) — original work, not a third-party copy.** The Table Group's own published
+  FAQ states its Five Dysfunctions assessment (online and book/field-guide) is copyrighted and may
+  not be reproduced or transmitted — this app's 15-statement adaptation is exactly that, and
+  attribution alone does not establish reuse permission. The PO has reviewed this and is
+  **knowingly accepting the risk** rather than removing or re-licensing the content; the credits UI
+  already states the adaptation honestly rather than implying permission (`about-credits` in
+  `index.html`: "This app is an adaptation, not the official assessment"). Tuckman's 20-statement
+  questionnaire was a **separate, initially-unresolved question** — contrary to an earlier guess in
+  this doc that the documented record contradicted the PO's recollection of it being developed in
+  this project, the PO located and supplied the actual source conversation, which settles it fully
+  in the PO's favor: a **shared Claude.ai chat** (`https://claude.ai/share/b4751645-1989-45db-8015-1e16cc2eceee`,
+  ~2026-09-03/04) shows the PO asking Claude to "find or create" a Tuckman questionnaire; Claude
+  found two existing published instruments (a 40-item one and a 32-item one) and explicitly
+  **declined to use either**, instead offering to build a new 15–20 item version "closer to the
+  Lencioni format" — the PO asked for "3-5 items per stage," and Claude wrote fresh statement text
+  and built the 20-item/4-per-stage structure itself, delivered as the `.docx` the PO then supplied
+  to this project. Full transcript excerpts and reasoning: `docs/credits-and-terms-review.md`'s
+  "Tuckman 20-statement questionnaire — provenance" section. Conclusion: original content, not a
+  copy of either instrument Claude found and declined to use — only the assessment *format* (3-point
+  scale, summed bands) deliberately mirrors the Lencioni structure, by explicit design choice, not
+  content copying. The "has not yet been verified" hedge is removed from the credits UI
+  (`about.creditTuckman` in `public/js/locales/en.js`/`he.js` and `public/index.html`), replaced
+  with the attribution above.
 
 ## Board sync (major change, DONE — default-on as of 2026-09-13)
 
@@ -428,560 +617,398 @@ the right secret would otherwise mask the check). `tests/unit/test_board_sync.js
 `parseTeamSecretInput()`/`teamLinkFor()` instead of the retired `normalizeTeamCode()`. Full 25-file
 Playwright + 38-test unit suite passing.
 
+### SEC-4 (2026-09-16, STATUS.md's "Security hardening backlog"): team link secret moved to the URL fragment
+
+The 2026-09-12 fix above still shared the secret as `?team=<secret>` — a query param, sent to
+whatever's actually hosting `index.html` on every single request that carries it, landing in that
+host's own access logs (and, on the very next click to somewhere else, a Referer header) before this
+page's own JS ever ran to strip it. A URL **fragment** (`#team=<secret>`) is never sent to any server
+at all — the browser keeps it client-side, full stop — so `teamLinkFor()`/`parseTeamSecretInput()`/
+`autoConnectFromLink()` (board-sync.js) and `joinUrlFor()`/`coFacilitateUrlFor()` (helpers.js, a
+join/co-facilitate link's own piggybacked team secret — see the 2026-09-16 join-link-carries-
+team-sync fix above) all moved to it. Old links already shared/bookmarked before this change keep
+working: `parseTeamSecretInput()` checks the fragment first, then falls back to the legacy `?team=`
+query form.
+
+**A real, pre-existing bug got fixed along the way, not just the query→fragment move**:
+`autoConnectFromLink()`'s cleanup (stripping the secret from the visible URL/history) used to be
+skipped ENTIRELY whenever the URL's secret already matched what this device had already stored — an
+early `return` before the history rewrite ever ran. Re-opening the same bookmarked/shared link a
+second time, or simply reloading, left the secret sitting in the visible URL indefinitely (and, for
+the old query-string form, sent to the server again on that very reload). Cleanup now always runs
+whenever the URL carries a team param at all; only the (idempotent) `setTeamSecret()` call itself is
+skipped when there's nothing new to store.
+
+Also fixed: `state.js`'s `openedFromInvitation` (what suppresses the first-visit welcome dialog for
+someone arriving via a real invitation, not a plain fresh visit) only ever checked the QUERY string
+for `session`/`cofacilitate`/`team` — a bare team link with nothing else in its query string (now
+entirely possible, since the secret itself no longer lives there) would have gone undetected,
+incorrectly showing the welcome dialog to someone who just opened a real team invitation. Now also
+checks the fragment for `team=`.
+
+**Per this backlog item's own acceptance criteria, explicitly did NOT overclaim what this buys**:
+the About dialog's terms text now says plainly that a fragment being off the wire is not protection
+against a malicious script already running on this page, and doesn't stop the link itself from being
+forwarded to someone else — and that board data (including any connected team's secret) lives in
+this browser's own `localStorage`, readable by any same-origin script. Test-first per this repo's TDD
+skill: `tests/unit/test_board_sync.js` (fragment vs. legacy-query vs.-both precedence) and
+`tests/unit/test_helpers.js` (the new `teamHashFor()`, and that `joinUrlFor()`/`coFacilitateUrlFor()`
+put the fragment LAST, after every query param) cover the pure logic; the existing Playwright board-
+sync/join-link suite was updated in place (assertions on the literal `?team=`/`#team=` shape) rather
+than rewritten, plus one new case in `test_welcome_first_visit.py` for the `openedFromInvitation` fix
+(verified it would have failed pre-fix by temporarily reverting the check and confirming the welcome
+dialog wrongly appeared). Full suite green: 144/144 unit tests, all 48 Playwright files (47s, under
+the 78s baseline), relay's protocol + storage suites passing.
+
+### Codex review fixes on PR #14 (2026-09-16): the join/co-facilitate secret itself was still in the query string, a legacy-storage crash, and a CSP-unsafe test wait
+
+A Codex review of the combined security-hardening PR (#14, bundling SEC-2/SEC-3/SEC-4 above) found
+three real issues, all fixed here:
+
+**P1 — `joinUrlFor()`/`coFacilitateUrlFor()` (helpers.js) still put the SESSION's own secret in the
+query string** (`?session=<secret>`/`?cofacilitate=<secret>`) even after SEC-4 moved the piggybacked
+TEAM secret to the fragment — the exact exposure SEC-4 closed for one secret but missed for the
+other. Fixed by moving session/co-facilitate into the fragment too, combined with `team` into one
+fragment via a new `buildFragment()` helper (a URL only has one `#`; `teamHashFor()`'s own
+`#team=...` can't just be concatenated with a second `#session=...`). `state.js`'s boot-time
+`getLinkParam()` (new — fragment-first, falls back to the legacy query form) replaces the old
+query-only `getQueryParam("session")`/`getQueryParam("cofacilitate")` reads, same precedence
+`parseTeamSecretInput()` already used for a pasted team link. `lang` is the only thing left in the
+query string now, since it isn't a secret and is meant to be visible/bookmarkable. Legacy
+`?session=`/`?cofacilitate=`/`?team=` links (shared/bookmarked before this fix) still work.
+Test-first: `tests/unit/test_helpers.js` (`buildFragment()`, the new fragment shape, asserting
+`?session=`/`?cofacilitate=` never appear), `tests/unit/test_state.js` (new — `getLinkParam()`
+precedence), and a new **request-level** Playwright test,
+`tests/test_join_link_secret_not_in_http_request.py`, that serves a built test page over a real
+local HTTP server (not `file://` — this is what actually proves nothing lands in a server's access
+log) and captures every real HTTP request Playwright fires while navigating to a freshly-generated
+join/co-facilitate link, asserting neither secret ever appears in a request's query string.
+
+**A genuinely new class of test fragility, found fixing the above**: two URLs that differ only in
+their fragment (e.g. a stale `#cofacilitate=BAD&team=X` vs. the real `#cofacilitate=GOOD&team=X`)
+trigger a same-document "fragment navigation" per the HTML spec when navigated between on an
+ALREADY-OPEN page — true in every real browser, not a Playwright quirk — so the page never actually
+reloads and never reruns its boot-time fragment parsing. This silently broke two existing tests that
+reused one page/context across two different session-scoped links
+(`test_cofacilitator_join.py`, `test_board_sync_finish_retro_convergence.py`); fixed by forcing a
+real reload via an intermediate `about:blank` navigation between the two `goto()` calls. A brand-new
+page/tab opening a link for the first time is never affected (there's no prior document to
+fragment-navigate from), which is the overwhelmingly common real case — this is a same-tab,
+sequential-different-link edge case already latent for the team link since SEC-4 shipped it to the
+fragment first, not a new risk introduced here.
+
+**P2 — a device with a session saved under the OLDER `knownCodes` localStorage shape (a bare code
+string, from before SEC-2's redesign above) crashed `relay-client.js`'s reconnect logic**: `getRoom()`
+received `{roomId: undefined, secret: undefined}` and opened a WebSocket asking the relay to route
+`?code=undefined`, every single reload, forever. **Migration decision, per
+`docs/DefinitionOfDone.md`'s "new data shape" rule — RETIRE, don't migrate**: a legacy entry's bare
+string WAS the human-typed code itself; there is no secret to derive it into under the new
+`{roomId, secret}` shape, and a typed-code session was already short-lived by design (forgotten
+within minutes of the retro ending). Any such saved entry, by the time this ships, is for a retro
+that ended long ago. `loadKnownCodes()` now filters out anything that isn't a well-formed
+`{roomId, secret}` pair on every read — never attempting to reconnect it, never crashing, and never
+affecting any OTHER, well-formed entry sitting next to it in the same array. Test-first:
+`tests/test_relay_legacy_known_codes.py` (new) — a real relay + the same crypto.js/relay-client.js
+isolation harness `test_relay_error_handling.py` already uses, seeding a legacy bare-string entry
+alongside a well-formed one and confirming the legacy entry is silently dropped (no `?code=undefined`
+connection, no crash) while the well-formed one still reconnects.
+
+**P3 — `tests/test_welcome_first_visit.py`'s two `wait_for_function()` calls used a bare expression
+string** (`"localStorage.getItem(...) === '1'"`, no `() => ...`), which Codex's own repro (matching
+this repo's pinned Playwright/Chromium versions) hit as a CSP `unsafe-eval` violation — every OTHER
+`wait_for_function()` call in this suite already uses an explicit arrow-function predicate, so these
+two were the outliers. Fixed to match the rest of the suite; did not reproduce locally (this
+environment's Chromium build didn't trigger it), but the fix is a strict, zero-risk improvement that
+matches the suite's own established convention regardless.
+
+Full suite green: 154/154 unit tests, all 51 Playwright files (54s, under the 78s baseline — 2 more
+files than the PR's own last entry, both new tests from this fix), relay's protocol + storage suites
+passing.
+
+**Follow-up P2 (2026-09-16, same PR, next round of review) — a same-document navigation gap, found by
+the SAME test workaround that avoided it**: the P1 fix above moved session/co-facilitate/team
+secrets into the URL fragment, but `state.js` only ever read the fragment ONCE, at initial script
+load. Opening a DIFFERENT invitation link in the SAME already-open tab is a same-document "fragment
+navigation" per the HTML spec — true in every real browser, not a Playwright quirk (confirmed with a
+tiny probe: navigating from `url#a` to `url#b` fires no `load` event and leaves `state.*` untouched;
+navigating to a bare `url` with no fragment at all DOES force a real reload — the two cases behave
+differently). The regression tests written for the P1 fix's own test-fragility fallout
+(`test_cofacilitator_join.py`, `test_board_sync_finish_retro_convergence.py`) used an intermediate
+`about:blank` navigation to force a clean reload between two session-scoped links — a legitimate
+technique for THOSE tests' own actual subject, but it also happened to dodge the real gap rather than
+covering it, which the next review round correctly called out. Fixed with a `hashchange` listener in
+`state.js`: on any fragment-only URL change, re-derive `session`/`cofacilitate`/`team` via
+`getLinkParam()` and, only if what they NAME actually differs from what's currently active, reload
+the page — letting the file's own existing boot-time parsing (a few lines above) do the real work,
+rather than hand-rolling partial re-initialization of listeners/subscriptions. Narrow on purpose: an
+unrelated hash change never forces a reload. Test-first: `tests/test_invitation_hashchange.py` (new)
+— a real relay, one facilitator starting two distinct sessions, then a participant device and a
+co-facilitator device each navigating DIRECTLY between two different invitations (no `about:blank`
+detour) and confirming the app switches to the new one — covering a plain link-to-link case and a
+bad-link-then-corrected-link case, exactly the two the review named. (Also fixed a real port
+collision found while adding this: `tests/test_relay_legacy_known_codes.py` and
+`tests/test_relay_board_path_sync.py` had both landed on `RELAY_PORT = 8793`; moved the former to
+8799.) Full suite green: 154/154 unit tests, all 52 Playwright files, relay's protocol + storage
+suites — reliable at this repo's documented default concurrency (`tests/run_all.sh`, unset
+`TEST_JOBS`, defaults to 2); two of the relay-heavy files in this batch showed CPU-contention
+flakiness at `TEST_JOBS=4` specifically (consistent timeouts, not logic failures — both pass
+reliably standalone and at the documented default), matching `run_all.sh`'s own documented caution
+about parallelism exceeding a runner's headroom, not a functional regression.
+
+## Multi-language rollout backlog
+
+The product owner is driving Hebrew/RTL support in one story at a time on this branch (see the
+Session log's "Multi-language support, Story N" entries for what each one actually did). This table
+is the persisted list — it previously only existed in conversation, which made "what's left" a
+recall exercise instead of something anyone could just read.
+
+| # | Story | Status |
+|---|---|---|
+| 1 | Hardened Hebrew/RTL test coverage (foundation, no user-visible change) | **DONE** (2026-09-13) |
+| 2 | i18n infrastructure (`t()`, `setLocale()`, `locales/en.js`+`he.js`) + Admin panel translated | **DONE** (2026-09-13) |
+| 3 | Formalized the Definition of Done (`docs/DefinitionOfDone.md`) | **DONE** (2026-09-13) |
+| 4 | Tribe view, Squad view, and the shared rating modal's UI chrome translated | **DONE** (2026-09-13) |
+| 5 | Spotify Squad Health Check template's dimension content (label/green/red/attribution) translated, live at render time | **DONE** (2026-09-13) |
+| 6 | Application header/nav chrome: `h1` "Squad Pulse", the tagline, the model-name badge, "Live — synced across viewers", the "Join a retro" button, and the Tribe view/Squad view/Admin switcher — currently untranslated and not scoped to any prior story (flagged when reviewing a screenshot of it) | **DONE** (2026-09-13) |
+| 7 | Tuckman's Team Development Stages template's dimension content translated | **DONE** (2026-09-13) |
+| 8 | The Five Dysfunctions of a Team template's dimension content translated | **DONE** (2026-09-13) |
+| 9 | Templates modal's own chrome (list labels, "Load"/"Delete" buttons, save-as-template form) — the template NAMES themselves (e.g. "Spotify Squad Health Check") stay English by design, same call already made for Story 5 | **DONE** (2026-09-13) |
+| 10 | Retro join flow (participant-facing screens) | **DONE** (2026-09-14) |
+| 11 | Retro facilitation flow (facilitator-facing screens, session cards, overrides) | **DONE** (2026-09-14) |
+| 12 | Dimension detail and Edit Dimensions modal (Admin) | **DONE** (2026-09-14) |
+| 13 | CSV import/export chrome — deliberately last: `csv.js`'s column-matching and re-import logic key off raw English labels, so this needs its own careful design pass, not just a translation pass. Redesigned as a full JSON board export/import replacing CSV (see session log): (1) JSON board export (beta), additive — **DONE** (2026-09-15); (2) JSON import — squads/ratings — **DONE** (2026-09-15); (3) JSON import — dimensions/templates/board settings — **DONE** (2026-09-15); (4) delete the CSV runtime code, rename `csv.js` → `board-export-import.js` — **DONE** (2026-09-16) | **DONE** |
+
+## Runtime performance backlog (2026-09-16)
+
+These items concern the running app, separate from test-suite execution time.
+Evidence was gathered against shared preview commit `763bb45`, using an isolated
+Chromium browser, the real local store, and a local WebSocket relay. The reported
+Chrome warning occurred while idle; the user's exact tab count was not confirmed.
+
+| Priority | Story | User value and acceptance criteria | Status |
+|---|---|---|---|
+| P1 — next runtime fix | PERF-1 — Stop idle cross-tab sync feedback | As a facilitator with two app tabs open in the same browser, keep an idle board responsive without repeated uploads. Reproduce with two same-origin pages in ONE browser context and a real relay; distinguish storage/remote notifications from new local edits so they cannot circulate as fresh changes. After boot and after an edit has converged, render/upload/remote-apply counters stop increasing during a bounded idle observation window. A real edit in either tab still reaches the other tab and a separate browser context; reload and reconnect preserve convergence and data. Add a regression that fails on the current implementation and run the full unit, browser (`tests/run_all.sh`), and relay suites. | **DONE (2026-09-17)** — see "Decisions locked in" above. |
+| P2 — after PERF-1 | PERF-2 — Measure render amplification during sync | As a facilitator receiving board updates, keep the UI responsive as the board grows. Profile a single edit and a remote snapshot at documented squad/dimension counts; record render counts, main-thread work, and any long tasks, including work on hidden views. Use measurements to decide whether batching writes/renders or skipping unchanged sections is warranted; preserve immediate visible updates, view-switch freshness, and live-sync correctness. | **DONE (2026-09-17)** — see "Decisions locked in" above. Real amplification found and fixed (batching, not per-view skipping); measurements and reasoning recorded there. |
+
+### PERF-1 evidence and implementation guidance
+
+- **Single idle tab:** about 3 ms of renderer main-thread work over 5 seconds;
+  zero `renderAll()` calls, board uploads, or remote-board applications.
+- **Two idle tabs sharing storage:** OS samples showed the two isolated renderer
+  processes at approximately 128% and 138% CPU (process percentages can exceed
+  100% across cores). One became unresponsive to browser evaluation and had to be
+  terminated. This is a local reproduction, not a measurement of the user's tab.
+- **Cause:** `public/local-store.js`'s `storage` handler calls `notifyEverything()`;
+  `public/js/db.js`'s squad/dimension/config listeners each render and request a
+  board push. A remote apply rewrites local storage, waking the other tab, which
+  republishes the board with a fresh timestamp. The hydration guard is tab-local
+  and does not stop the other tab from restarting the cycle.
+- **Diagnostic confirmation:** suppressing board pushes while processing storage
+  notifications, only in a temporary copy, reduced both tabs to about 1 ms of
+  main-thread work each over 5 seconds with zero renders/uploads/remote applies.
+  This proves the feedback path; that prototype is not a production fix and still
+  needs the convergence/error-path coverage in PERF-1.
+- The existing live-subscription test opens separate browser contexts; it does
+  not cover two tabs sharing local storage. Use the real store for this regression.
+  A fixed, documented observation interval is appropriate for proving idle
+  inactivity; readiness and convergence waits must use causal conditions.
+- Repeated full `renderAll()` calls and per-document persistence amplify the loop.
+  Investigate their separate cost under PERF-2 after stopping the loop first.
+- Temporary workaround: keep one app tab open per browser profile. A warning with
+  only one app tab remains unconfirmed and needs a separate trace if it recurs.
+- No runtime fix or stored-data shape change is included in this backlog update;
+  no migration is required.
+- **Fixed (2026-09-17)** — see "Decisions locked in" above for the shipped fix
+  (`local-store.js` change-detection + `board-sync.js` content-signature dedup) and
+  `tests/test_idle_tab_sync_loop.py` for the regression this row asked for.
+
+## Security hardening backlog (2026-09-16)
+
+Reviewed the product owner's supplied Copilot pentest against shared preview
+commit `763bb45` and passively rechecked the reported Preview's response headers.
+Backlog priorities below are delivery priorities, not claims of demonstrated
+exploitation. No live room guessing, destructive relay probes, or access to other
+users' data was performed.
+
+| Priority | Story | User value and acceptance criteria | Status |
+|---|---|---|---|
+| P1 | SEC-1 — Bound relay abuse | As a facilitator, keep sessions available despite abusive connections or writes. Add configurable connection, concurrent-client, room-creation and message/write budgets, plus a transport payload ceiling before JSON parsing. Define per-client, per-room and global bounds; account for trusted proxy/IP handling and shared-office NAT. Test throttling, oversized frames, cleanup and recovery on a local relay, while normal participant bursts/reconnects work. Verify hosting-layer protections separately; CORS and Origin checks are not authentication. | **DONE (2026-09-17)** — see "Decisions locked in" above. Deployment-layer limits (hosting provider DDoS mitigation) remain out of scope, as written. |
+| P2 | SEC-2 — Harden retro join credentials | As a participant, retain usable code/link entry with explicit confidentiality and write-access guarantees. Replace `Math.random()` session-code generation with unbiased Web Crypto randomness. Document the roughly 29.7-bit code space and that the room code also derives the encryption key. Evaluate guessing resistance and room-enumeration exposure with SEC-1; review any separation of routing ID, encryption secret and write capability with the product owner before changing the locked typed-code flow. Cover code/link/QR compatibility and define existing-session migration if the protocol changes. | **DONE (2026-09-16)**, via a full redesign rather than the narrower fix this row describes — see "Decisions locked in" above. The typed code is gone entirely (QR/link only); the session key now derives from a separate `crypto.getRandomValues()` secret, not the code, so the `Math.random()`/29.7-bit-code-space concerns this row raised no longer apply to the shipped design. |
+| P2 | SEC-3 — Define and enforce browser hardening policy | As a user, avoid unauthorized framing and reduce the impact of future injection mistakes. Decide the permitted embedding origins before enforcing `frame-ancestors` (embedding remains an open product decision), with compatible X-Frame-Options where appropriate. Add a tested CSP covering actual scripts, styles, fonts and relay connections; explicitly set nosniff, Referrer-Policy and required Permissions-Policy directives. Verify deployed headers, EN/HE flows, QR/downloads and relay use; test a disallowed cross-origin parent with browser frame/navigation evidence, plus an allowed parent if embedding is supported. | **DONE (2026-09-16)**, except `frame-ancestors`/`X-Frame-Options` — left OPEN on purpose pending a PO decision on permitted embedding origins. See "Decisions locked in" above. |
+| P2 | SEC-3a — Approved-embedding requirement (YAGNI until a real embed path exists) | As a maintainer, if this app is ever embedded in another site, only approved parent origins may frame it. Requirement: the app must deny all origins by default and allow only explicitly approved domains (for example, the Dr. Agile site and any approved subdomains) via a browser-enforced `Content-Security-Policy: frame-ancestors <approved-origins>` plus a compatible `X-Frame-Options` header. This requirement is not active until the product decides to ship an embedding deployment; until then, it is intentionally YAGNI and no public embed route is in scope. | **YAGNI for now** — no embed deployment is active today; implement only when an actual embedding contract is approved. |
+| P2 | SEC-4 — Reduce team-link secret exposure | As a facilitator, share a sensitive team link without sending its secret in the initial HTTP query. Plan fragment-based team links and QR codes, retaining legacy query-link compatibility; scrub a consumed secret even when it already matches localStorage. Verify initial requests contain no secret for new links, URL cleanup for new and returning users, reload/paste/join flows, and no secret-bearing diagnostics. Explain that possession grants board access and that localStorage remains readable by same-origin scripts; do not claim fragment links prevent XSS or accidental sharing. | **DONE (2026-09-16)** — see the "SEC-4" section below "Board sync" for the fragment-move writeup, and the "Codex review fixes on PR #14" section for two follow-up leaks (session/co-facilitate links, a legacy localStorage shape) fixed before merge. |
+| P3 | SEC-5 — Document static CORS requirements | As a maintainer, distinguish public asset sharing from access to sensitive endpoints. Identify which hosting layer adds wildcard ACAO, document whether consumers need it, and remove/restrict it only where appropriate. Verify headers and legitimate integrations after any change; require a separate explicit CORS/auth policy for future sensitive endpoints. | **DONE (2026-09-17)** — see "Decisions locked in" above. Documentation only, by design: no restriction is appropriate today. |
+
+### Review evidence and qualifications
+
+- Copilot assessed the immutable Preview at
+  `https://team-pulse-survey-ibkehdp81-ilan-kirschenbaums-projects.vercel.app/`.
+  A fresh passive GET returned 200, HSTS and `Access-Control-Allow-Origin: *`,
+  but no CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy or
+  Permissions-Policy headers. `vercel.json` also defines no such policy.
+  The local source review is pinned independently to `763bb45`; the report does
+  not establish that every deployed asset came from that exact commit.
+- `relay/server.js` bounds room/document counts and envelope size, so the relay
+  is not wholly unbounded. It has no application-level rate limiter or write
+  authorization beyond knowing the room routing code; envelope validation happens
+  after JSON parsing. Snapshot delivery reveals stored ciphertext to a client
+  knowing that code. Rate limiting mitigates abuse, but does not by itself provide
+  read/write authorization or eliminate the room-existence signal.
+- `SESSION_CODE_ALPHABET` has 31 symbols: 31^6 = 887,503,681 possible retro codes.
+  `generateSessionCode()` uses `Math.random()`; `crypto.js` derives the AES key
+  from that same code. This is an existing documented tradeoff for typed-code
+  entry, not proof that any live session was guessed or decrypted. Team boards
+  instead use a separate 128-bit random secret and derived routing ID; knowledge
+  of their routing ID does not provide the decryption key, but the relay still
+  does not authenticate destructive writes by possession of that secret.
+- Copilot's cross-origin `iframe.contentDocument` probe is inconclusive: the
+  same-origin policy itself prevents reading a cross-origin frame. Missing
+  framing policy is confirmed; successful clickjacking was not demonstrated.
+- Team secrets in localStorage are intentional bearer credentials, not a finding
+  of secret theft. New query links are normally scrubbed by `autoConnectFromLink()`
+  after load, too late to remove them from the initial HTTP request. Its early
+  return when the secret already matches localStorage skips URL cleanup entirely.
+- Wildcard CORS on public static content is a configuration decision, not an
+  authentication bypass. Copilot's reported squad-name injection probe did not
+  execute and its common secret-file probes returned 404; these limited negative
+  checks do not establish that every input or deployed path is safe.
+- These are backlog entries only. No runtime, deployment or protocol changes are
+  included; no stored-data migration is needed for this documentation update.
+
 ## Deliberately not built yet (and why)
 
 | Not built | Why it's cut for now | What would trigger building it |
 |---|---|---|
-| Save-board / Load-board-to-file (manual export/import over `localStorage`) | **Cut, not deferred — product-owner call, 2026-09-18.** Board sync (default-on, "Board sync" above) already moves a board between browsers/devices for the case that matters — live, automatic, over the relay. A manual file-based export/import would only add value for a device that's deliberately disconnected from team sync *and* needs to move a board without ever reconnecting — a narrow, unrequested case. | A real user hits that specific narrow case and asks for it — not before |
-| Relay deployed on Vercel itself (one deployment, not two) | **Rejected, not deferred** — see the locked decision above and `relay/README.md`'s "Why not a Vercel Function". Reconfirmed 2026-09-18: "we have a free working solution" (Render). | Only if Vercel's WebSocket support later guarantees same-instance routing without an external store, which would remove the reason this was rejected |
-| Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing. Reconfirmed 2026-09-18 as YAGNI until required — this originated as a PT item from Copilot, not a real near-term need. | Once the marketing site (separate Claude Code project) is further along, or a real embedding need shows up |
+| Save-board / Load-board-to-file | `local-store.js` already persists the board via `localStorage`, which covers the same browser/device | Once someone needs a board to move between browsers/devices without a relay |
+| Relay deployed on Vercel itself (one deployment, not two) | Deliberately rejected, not just deferred — see the locked decision above and `relay/README.md`'s "Why not a Vercel Function" | Only if Vercel's WebSocket support later guarantees same-instance routing without an external store, which would remove the reason this was rejected |
+| Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing | Once the marketing site (separate Claude Code project) is further along |
+| A third UI language (beyond English/Hebrew) | YAGNI, per the product owner's own call (2026-09-14) — `SUPPORTED_LOCALES`/`t()`'s fallback (i18n.js) are already written generically enough to add one without a redesign, and the bilingual-dimensions editor (see the session log) is a per-dimension `i18n` object keyed by locale code, not hardcoded to exactly two languages, so neither needs rework specifically to add a third | A real request for a specific third language — at that point, design its own toggle/picker UX (today's per-dimension editor hardcodes one Hebrew panel) rather than assuming the two-language shape generalizes without a look |
 
-## Suggested next step
+## Introduction and help backlog (2026-09-15)
 
-**Relay is deployed and wired (Render + `SQUAD_PULSE_RELAY_URL` in Vercel) — confirmed
-2026-09-18.** Nothing left to unblock cross-device retro/board-sync testing on real deployments.
+Priority is separate from the stable story ID. Each story ships English/Hebrew,
+RTL, keyboard support, and focused regression coverage. Story 1 merged through PR #2; stories 2–6
+and outside-click dismissal merged through PR #3 (`codex/about-guides`) and PR #5
+(`codex/welcome-credits-terms`) — all verified present in current trunk (2026-09-17).
 
-One accepted tradeoff worth naming, not fixing: Preview and Production both point at the **same**
-Render relay instance rather than one each. Two real consequences, both currently low-stakes for a
-single-team internal tool: (1) no isolated place to test a `relay/server.js`/wire-protocol change
-before it's live for Production traffic — everyone touching a Preview deploy shares the exact relay
-process real users are on; (2) a runaway Preview branch (e.g. a reconnect-storm bug like the one
-fixed 2026-09-12) could degrade the relay for Production users too, since there's no resource
-isolation between environments. Both are non-issues for read/write-a-few-docs-per-room traffic at
-current scale, and the fix (a second free Render instance + a second `SQUAD_PULSE_RELAY_URL`
-scoped to Preview) is cheap whenever it stops being a non-issue — e.g. the first time a relay-side
-change actually needs a safe place to test against real traffic patterns before shipping. Not
-worth doing preemptively.
+| Priority | Story | User value and acceptance criteria | Status |
+|---|---|---|---|
+| 1 | 1 — On-demand introduction | As a visitor, open About & help from every view, including participant mode, understand the app's purpose, and close back to the same context without changing data or drafts. | **DONE** — merged via PR #2 (2026-09-15) |
+| 2 | 6 — First-visit introduction | As a first-time visitor, see an introduction on an ordinary visit. Remember dismissal locally; bypass it for participant/co-facilitator/team links; retain manual access; storage failure never blocks entry. | **DONE** — merged via PR #5 (`codex/welcome-credits-terms`) |
+| 3 | 2 — Participant guide | As a participant, understand code/link entry and answering; open the existing join flow or return to an active retro without losing answers. | **DONE** — merged via PR #3 (`codex/about-guides`) |
+| 4 | 3 — Facilitator guide | As a facilitator, follow setup, template and squad selection, start, invite, discuss, and finish/apply; distinguish team and session links. | **DONE** — merged via PR #3 (`codex/about-guides`) |
+| 5 | 4 — Reading results | As a viewer, understand colors, trends, Squad/Tribe views, and hotspots through expandable guidance matching actual behavior. | **DONE** — merged via PR #3 (`codex/about-guides`) |
+| 6 | 5 — Credits and licenses | As a user, inspect verified model sources, Dr. Agile contributions, application license, and third-party notices; preserve contextual board credits. Verify the source of Tuckman assessment scoring. | **DONE** — merged via PR #5. Five Dysfunctions reuse risk knowingly accepted (PO decision); Tuckman's 20-statement questionnaire's provenance is now fully resolved (original work, not a third-party copy) — see `docs/credits-and-terms-review.md` and "Decisions locked in" below. |
+| 7 | 7 — Terms and conditions of use | As a user, read terms before choosing to use the app and reopen them from About & help. Publish owner-approved English/Hebrew terms covering permitted use, responsibilities, data/sharing behavior, and limitations; show effective date/version and accessible links. Explicitly decide whether acceptance tracking is needed before implementation; do not imply consent through mere dismissal. | **UI DONE, content approval OUTSTANDING** (corrected, Codex review on PR #17 — a prior version of this row said DONE, which overstated it). Informational/no-tracking model confirmed by owner; the mechanism (panel, reopen access, EN/HE, no implied consent) is fully built and live. But the acceptance criteria calls for *owner-approved* terms with a real effective date, and the shipped text is explicitly a draft awaiting that: `index.html`'s own `about.termsVersion` string reads "Draft v0.1 • 2026-09-15 • **Pending owner approval; no effective date yet**." Content sign-off is a separate, still-open step for the owner — same shape as Story 5/6's rights question above, not a code task. |
+
+Stories are small independently testable UI increments; stories 2–5 and 7 can
+be ordered independently once the common panel is available. Story 6 was moved
+to priority 2 by the product owner. Terms are a separate content/behavior story,
+not implicit acceptance added to story 1.
+
+## Facilitated retro backlog (2026-09-17)
+
+New feature requests for the facilitated live-retro flow (`docs/facilitated-retro-spec.md` covers
+Stories 1–9, already DONE; these are new, not part of that closed backlog). None started yet.
+
+| Priority | Story | User value and acceptance criteria | Status |
+|---|---|---|---|
+| P1 | RETRO-1 — Carry latest retro results into board export/import | As a facilitator, back up or migrate a board without losing its most recently finished retro. Extend the JSON board export (`board-export-import.js`, later split by REF-4 into `board-export.js`/`board-import-*.js`) to also capture, per squad, the latest finished retro session's per-dimension result (consolidated or overridden), sprint experiment note, and finish timestamp, and restore it on import alongside the existing squads/ratings/dimensions/templates/settings. Define what happens when an imported snapshot's dimensions no longer match the target board (e.g. a renamed/removed dimension) instead of silently dropping or misapplying data. | **Merged (2026-09-17, PR #21)** — see session log. New squad field `lastRetro` (finishedAt/experimentNote/dimensions incl. `overridden`), written by `finishRetroAndApply()` (retro-facilitator.js) via `persistDimensionRatings()`'s new optional `extraFields` param, carried through `db.js`'s squad listener, and exported/imported by `board-export.js`/`board-import-validate.js`/`board-import-plan.js`/`board-import-apply.js` (validated, matched/skipped the same way ratings already are). |
+| P2 | RETRO-2 — Facilitation option: progress one question at a time | As a facilitator running a live session, optionally pace the group through statements one at a time instead of everyone seeing the full survey at once. Add a session-level toggle (default off, preserving today's all-at-once survey) that, when on, shows each participant only the current question and advances everyone together as the facilitator moves forward; revisiting an earlier question doesn't discard that participant's existing answer to it. | **Merged (2026-09-18, PR #30)** — see session log (corrected here: a prior row said "PR open, not yet merged", stale after the PR merged without this row being updated). A session-level `pacingEnabled`/`currentQuestionIndex` pair, chosen once via a checkbox at "Start retro session" (default off). `helpers.js`'s new `pacingSequence(dims)` (pure, order-matched to the existing `interleavedStatements()`) gives every device the same ordered list of individually-answerable items independently, so nothing about the sequence itself needs to be stored — only the shared index into it. The facilitator's session card gets Previous/Next controls (`setCurrentQuestionIndex()`, same `liveOr()`/`.update()` shape `setRevealMode()` already uses); a participant's join screen shows exactly the one item at that index, retaining (never discarding) whatever they'd already answered on an earlier visit to it, and auto-submits the whole draft, unchanged atomic-submission shape, once the facilitator advances past the last question — a participant who hasn't finished answering by then sees a friendly wait state instead of a silent partial submit. **PO review follow-up (2026-09-18)**: two gaps fixed, see session log — (1) the facilitator's own card only showed a bare "Question X of N" counter with no way to know what that question actually asks; `pacingQuestionText()` now shows the exact same text a participant sees. (2) the sprint-experiment note's "Saved" confirmation was a 1.8s timed flash that could be missed, and could even be wiped out mid-flash by an unrelated re-render (any live sessions/responses update re-renders the whole card); it's now a durable, state-derived indicator (`savedExperimentNoteFor`) that survives re-renders and only clears once the note is actually edited again. A Codex review of that same follow-up then found "Saved" could still show for a write that never landed (the click handler didn't await the save's promise, and the promise itself swallowed errors); fixed by returning/rejecting the promise properly and adding a render-time-derived failure hint (`noteSaveFailedFor`), same pattern as `savedExperimentNoteFor` — see session log. |
+| P3 | RETRO-3 — Facilitation option: choose which questions to include | As a facilitator, exclude statements/dimensions from the active template that don't apply to this particular retro. Let the facilitator deselect specific questions/dimensions when starting (or before opening) a session, without altering the saved template itself; excluded ones are omitted from the join survey and from that session's consolidation/results. | **Merged (2026-09-18, PR #34)** — see session log (corrected here: this row still said "PR open, not yet merged" after the PR merged, the same stale-status pattern RETRO-2's own row above needed corrected twice already). Scoped to whole-DIMENSION exclusion, not individual statements within a statement dimension (a statement dimension's `scoreBands` are calibrated against summing ALL of its statements — dropping only some would silently shift what "good"/"warn"/"crit" mean; excluding the whole dimension has no such problem, and a direct-rating dimension IS already a single "question"). The "no session" card gets a collapsible checklist (`.dim-include-checkbox` per board dimension, checked/included by default); `startSession()` filters the dimension snapshot by the unchecked keys BEFORE it's ever written into the session doc, so the join survey, `pacingSequence()`, the live tally, and `finishRetroAndApply()` all correctly skip an excluded dimension with zero changes of their own — it was simply never in `sess.dimensions` to begin with. Start is disabled (with an inline hint) if every dimension is unchecked. A Codex review found the checklist's selection was pure DOM state with nothing backing it: `state.dimensions` changing AT ALL (even an unrelated dimension, from this device or a co-facilitator's) fires `db.js`'s own dimensions listener, which calls `renderAll()` and rebuilds this whole card from scratch, silently resetting every checkbox to checked -- reproduced exactly as described (exclude a dimension, trigger a board snapshot, the exclusion vanished). Fixed by adding `pendingDimExclusionsFor`, a squad-keyed draft object outside the DOM (same shape/reasoning as this file's own pre-existing `startingSessionFor`), updated on each checkbox's `change` and read back by `renderSessionCardHtml()` to restore exactly what the facilitator chose instead of defaulting to "everything included"; cleared once a session actually starts. |
+
+## Code quality & refactoring backlog (2026-09-17)
+
+Reviewed against a Copilot refactoring assessment (with two PO comments), re-verified directly
+against the actual implementation and tests at the current tip of `claude/optimistic-keller-holuql`
+(fresh `git fetch --all --prune` + `git status --short --branch` run first, HEAD confirmed one
+commit ahead of `origin/main` with nothing stale) — not taken at face value. Cross-references
+`docs/refactoring-report.md` (written 2026-09-12) rather than duplicating it: that report's own
+"Status, 2026-09-12" note says every item there is DONE except naming/abbreviation consistency
+(deliberately deferred, incremental-only) — confirmed still true (`colorWord`/`trendWord`,
+`isStatementDimension`, the `esc()` audit are all present in `helpers.js` today). Nothing below
+reopens anything that report already marked done. This review does **not** touch the
+embedding/framing decision (SEC-3a, above) — it stays YAGNI and PO-gated, not an active engineering
+task.
+
+Grouped per the review's own ground rules: correctness/reliability first, then structural
+refactors, then repo/tooling improvements, then what's intentionally deferred.
+
+### Correctness / reliability
+
+| Priority | Story | Problem, value, and acceptance criteria | Status | Dependencies / blast radius |
+|---|---|---|---|---|
+| P1 | REF-1 — JSON import writes are fire-and-forget; success is reported before the backend confirms anything | **Problem** (confirmed in `board-export-import.js` + `helpers.js`): every live write in `applySquadImportPlan()`/`applyDimensionTemplateConfigImportPlan()` routes through `syncLiveIfConnected()` (`helpers.js:360-365`), which calls `writeFn()`, attaches a `.catch()` for diagnostics, and returns nothing — no caller can await it. The import modal closes and the "JSON import applied…" diagnostic + `renderAll()` fire synchronously right after issuing these writes, not after the relay/board acknowledges them; a later write failure only ever surfaces as an unprompted diagnostic-log line indistinguishable from any other message, with no rollback and no visible partial-failure state. One ordering concern is already handled correctly and should be preserved: new-dimension/new-template/new-squad creation uses real `Promise.all(...).then()` chains that resolve *before* the dependent rating writes that reference them run (`applyDimensionTemplateConfigImportPlan`'s `onDone` callback; `applySquadImportPlan`'s new-squad branch) — it's specifically the matched-entity update writes and the squad-ratings write path that are fire-and-forget. `tests/test_json_import.py` only drives the fake-store harness; no real-relay coverage exists for JSON import. **Value**: a facilitator applying a JSON import gets an honest, ordered completion signal instead of an optimistic one. **Acceptance criteria**: persistence operations invoked from the import executor return awaitable promises (today only new-entity creation does); import completion (modal close, "applied" diagnostic) is reported only after all intended writes for that operation settle; a write failure is visible and distinguishable from success; the already-correct creation-before-rating-import ordering is preserved and stays covered; add real-relay import coverage (fake-store only today); do not promise atomicity unless the implementation actually moves to a transactional/single-document write — call that out explicitly if deferred, don't imply it. | **Merged (2026-09-17, PR #20)** — see session log. Implementation note: squads/dimensions/templates/config are NEVER relay-routed (only `sessions`/`boards` paths are, per `local-store.js`'s `isRelayPath()`), so "real backend, not fake-store" for this specific flow means real `local-store.js` (`write_plain_index()`), not a real relay — the original "real-relay coverage" wording undersold what actually needed proving. New coverage: `tests/test_json_import_write_completion.py`. Now split across `board-import-apply.js` (the two apply functions)/`board-import-preview.js` (the Apply button) by REF-4. | Touches (now) `board-import-apply.js`'s two apply functions and `helpers.js`'s `syncLiveIfConnected`, which is also used 12+ places elsewhere (`squads.js`/`dimensions.js`/`templates.js`/`retro-facilitator.js` — see `docs/refactoring-report.md`'s Open/Closed finding); making it return a promise is additive (existing fire-and-forget callers can simply not await it) but it's a widely-shared helper, so run the full regression suite plus new relay-backed coverage before merging. Does not overlap with RETRO-1 above (RETRO-1 is new export/import *data*; this is the existing import mechanism's write-completion correctness). |
+
+### Structural refactoring opportunities
+
+| Priority | Story | Problem, value, and acceptance criteria | Status | Dependencies / blast radius |
+|---|---|---|---|---|
+| P2 | REF-2 — Backend contract parity: `local-store.js` vs `relay-client.js` have no single documented contract, and real drift already exists | **Problem**: both files independently implement doc/collection refs, get/set/update/delete/add, snapshot construction, deep-freezing, deep-merging, listener registration, and readiness/unavailable semantics. Confirmed near-identical, independently-maintained copies of `deepFreezeClone`/`deepMerge` in both files. Confirmed real, already-flagged drift (`docs/refactoring-report.md`'s LSP section) still present: `relay-client.js`'s snapshot/doc callbacks carry an `unavailable: !!room.unavailable` boolean that `local-store.js`'s equivalents never set; relay refs always wait on `room.ready` before resolving, local refs resolve synchronously. No single place names the actual contract `db.js` and every feature module depend on. **Value**: a future backend (or a change to either existing one) has a documented contract to code against instead of diffing two ~300-500 line files. **Acceptance criteria**: one documented backend contract; shared contract tests run against both implementations where practical; differences (readiness, `unavailable`, freezing depth) are documented as intentional, not left to silently diverge further; no broad shared-runtime extraction unless it demonstrably reduces risk — Liskov substitution here is already a genuine strength per the existing report, so don't merge the two implementations just for DRY's sake. | **Merged (2026-09-17, PR #22)** — see session log. New `docs/backend-contract.md` (cross-referenced from both files' own header comments) plus `tests/test_backend_contract_parity.py`, which found two real, previously-undocumented nuances while writing it (now documented): `docRef.get()`'s `data()` returns a live, unfrozen reference in BOTH implementations (only `onSnapshot()`/collection `get()` freeze); `relay-client.js`'s routing requires a path's SECOND segment to be a room code, unlike `local-store.js`'s flat indifference to path shape. | Documentation + new contract tests only, as scoped; if a contract test surfaces a real behavioral bug, that becomes its own follow-up item, not silently folded into this one. |
+| P2 | REF-3 — `board-sync.js`'s synchronization flags are an undocumented implicit state machine | **Problem**: `hydrating`, `suppressingLocalRewrite`, `pendingRemoteApply`, `hydrateAttemptedForSecret`, `lastPushedBoardContent`, `localBoardReady`, and `teamBoardUnsubscribe` are seven module-level mutable variables whose interaction (boot hydrate vs. live subscription's first snapshot, a local template-switch's suppressed rewrite window, push-dedup baselines needing updates from both push and remote-apply, serialized remote-apply queuing) is real and already correctly reasoned about in the file's own extensive comments, but never written down as an explicit set of states/transitions. State is scoped to the whole module/device, not per-team/room — confirmed harmless *today* only because a device holds one active team secret at a time (`getTeamSecret()`), which is an implicit constraint, not an enforced one. Existing test coverage is more substantial than the raw finding implies: `test_board_sync_hydrate_on_boot.py`, `test_board_sync_live_subscribe.py`, `test_board_sync_template_switch_race.py`, and `test_board_sync_revert_after_remote_change.py` already cover boot-hydrate-vs-live-first-snapshot, local-rewrite-during-remote-apply, and remote-update-then-local-revert. The real gaps: no test for switching teams while a hydrate for the *previous* team is still in flight, and no board-sync-level test for disconnect/reconnect with a queued board push (today's disconnect/reconnect + queued-write coverage — `test_relay_error_handling.py`, `test_relay_write_acknowledgment.py` — is at the relay-client layer only, not exercised through board-sync's own push/hydrate path). **Value**: a contributor can check a change against documented states instead of re-deriving seven flags' interactions from comments; the two real gaps get closed. **Acceptance criteria**: explicit synchronization states/transitions documented; the two genuinely missing tests added (team-switch-during-hydrate; disconnect/reconnect with a queued board-sync push); existing coverage for the other listed scenarios confirmed and cross-referenced, not duplicated; no regression in existing full-suite behavior; incremental refactor only (e.g. naming the flags as one documented state object) — not a rewrite. | **PR open (2026-09-17)**, not yet merged — see session log. Documentation added as a comment block at board-sync.js's top; two new tests close the identified gaps (`test_board_sync_team_switch_during_hydrate.py`, `test_board_sync_disconnect_reconnect_queued_push.py`). Writing the first test found a real race (see session log) — fixed with two small, targeted guards, not a rewrite. | `board-sync.js` (530 lines) plus its 8 existing test files; any change to the flags' actual semantics (not just documentation) needs the full board-sync test group re-run given how many hard-won real bugs are already encoded in this file's comments. |
+| P2 | REF-4 — Split `board-export-import.js`'s six responsibilities (903 lines, the largest production module) | **Problem**: confirmed the file mixes export serialization (`buildBoardExport`/`toJSON`), import validation (`parseBoardImportFile`/`isValid*`), pure import planning (`buildSquadImportPlan`/`buildDimensionImportPlan`/`buildTemplateImportPlan`/`buildConfigImportPlan`/`mergeSquadDimensions`), preview rendering (`renderJsonImportPreview`/`entityChipsHtml`), modal event binding, and persistence execution (`applySquadImportPlan`/`applyDimensionTemplateConfigImportPlan`) in one file with no internal boundary. *[PO comment: assess the size of other production and test files and whether they should be refactored on SOLID principles]* — done as part of this review. Production file sizes (lines): `board-export-import.js` 903, `state.js` 727, `retro-facilitator.js` 567, `board-sync.js` 530, `relay-client.js` 520, `retro-join.js` 369, `helpers.js` 386, `dimensions.js` 280, `render.js` 256, `templates.js` 214, `squads.js` 193, `db.js` 182. `state.js`'s size is almost entirely starter-template/translation *data* (three full starter templates plus their Hebrew translations), not logic — not a SOLID/cohesion problem despite the line count, and not proposed for splitting. `board-sync.js`, `relay-client.js`, and `retro-facilitator.js` are each large but each already has one fairly coherent responsibility (team-sync orchestration, relay wire protocol, facilitator UI) — worth watching if they keep growing, not urgent today. `board-export-import.js` is the one file that's both largest and genuinely multi-responsibility. On the test side, `tests/test_json_import.py` (526 lines, the largest test file) is one file per this repo's own stated convention ("every file is named for the feature or flow it covers," `tests/README.md`) covering one flow with many scenarios — consistent with the convention, not a split candidate. **Value**: pure planning logic stays directly unit-testable without a DOM; UI rendering carries no persistence policy; a future format-version bump touches fewer, smaller files. **Acceptance criteria**: pure planning functions remain directly unit-testable; UI rendering contains no persistence policy; persistence execution is awaitable (do this as part of, or immediately alongside, REF-1, not as a separate later pass); no behavior change to merge/replace semantics; JSON format versioning (`formatVersion`/`SUPPORTED_BOARD_FORMAT_VERSION`) stays explicit; no unnecessary module-system/build migration (stays a plain classic `<script>` file per the app's documented `file://` constraint). | **Merged (2026-09-18, PR #24)** — see session log. Split into six files: `board-export.js` (export serialization), `board-import-validate.js` (parse + shape validation), `board-import-plan.js` (pure merge/replace planning, plus `dimensionImportFields`/`templateImportFields`, pure field-selection only ever used by apply), `board-import-preview.js` (the import modal's preview rendering — including its own Apply/mode/scope/backup button re-binding, inseparable from rendering itself without changing behavior), `board-import-apply.js` (persistence execution), `board-import-ui.js` (the modal's open/close lifecycle). By the time this actually landed the file had grown to 1093 lines (not 903, RETRO-1 grew it further after this was proposed). | `board-export.js`/`board-import-*.js`, exercised by `tests/unit/test_json_export.js`/`test_json_import.js`/`test_last_retro_export_import.js` and `tests/test_json_export.py`/`test_json_import.py`/`test_json_last_retro_round_trip.py`/`test_board_sync_last_retro_preserved.py`/`test_tooltip_and_busy_overlay.py`/`test_json_import_write_completion.py` — full suite must stay green. |
+| P2 | REF-5 — Extract pure snapshot normalizers out of `db.js`'s listeners | **Problem**: confirmed `db.js` (182 lines) has 5 `onSnapshot` listeners (sessions, squads, dimensions, templates, config), each combining snapshot-shape normalization (e.g. the squads listener's raw-dimensions-to-plain-object loop; the dimensions listener's statements/scoreBands/strategies/i18n carry-through) with state mutation, render-triggering, `pushBoardSnapshotIfConnected()`, and `diag()` calls, all inline in one callback. Matches `docs/refactoring-report.md`'s existing `initDb()` finding (written against a 104-line function; the file has since grown to 182 lines across more listeners — same shape, larger). **Value**: adding a new synced field (i18n, statements, and scoreBands all arrived exactly this way) means writing one normalizer instead of hunting every listener that touches that snapshot shape. **Acceptance criteria**: each backend snapshot shape normalized in one named pure function; a new field added once, not copied into multiple callbacks; rendering/sync side effects stay explicit in the (now thinner) listener bodies; frozen snapshot data safely cloned before mutable state receives it (already done correctly today — preserve, don't regress); current view-refresh behavior (including the PERF-2 hydrating/suppressingLocalRewrite render-skip) stays intact. | **Merged (2026-09-18, PR #28)** — see session log. Extracted `normalizeSessionDoc`/`normalizeSquadDoc`/`normalizeDimensionDoc`/`normalizeTemplateDimensionEntry`/`normalizeTemplateDoc`/`normalizeConfigSnapshot`, each a pure function taking exactly what a listener callback receives; the five listener bodies now call one of these via `snap.docs.map(...)` and keep only mutation/render/push/diag side effects. New `tests/unit/test_db_normalizers.js` (10 tests) exercises each directly. | `db.js` only, but touched by every feature (squads, dimensions, templates, config, board-sync all flow through it) — needs the full regression suite, not just a unit test on the extracted normalizers. |
+| P2 | REF-6 — `relay-client.js`'s `getRoom()` reuses a cached room by routing id without checking the caller's secret matches | **Problem**: confirmed `getRoom(code, secret, remember)` returns `rooms[code]` immediately on a cache hit, without ever comparing the passed-in `secret` against the secret the cached room's key was originally derived from (that comparison only happens on a cache miss). A second call for the same routing code with a *different* secret silently gets back the first caller's derived key — zero error, zero diagnostic. The file's own comments already document a closely related, previously-fixed bug in this exact function (the `remember`-must-be-path-gated fix), confirming this is an area that has already bitten this codebase once. **Value**: a wrong-secret reuse fails loudly and immediately instead of silently decrypting with (or encrypting under) the wrong key. **Acceptance criteria**: requesting an existing room with a mismatched secret does not silently reuse the wrong key; the resulting error is diagnostic (`diag()`) and testable; same-room/same-secret reuse (the common, correct path) is unchanged; a fresh-browser-context test confirms wrong-key behavior (extend `test_relay_board_path_sync.py`, which already tests wrong-secret-decryption-fails for a fresh doc, but not this `getRoom()`-level cache-reuse case specifically); no secret is sent to the relay or persisted beyond today's `rememberCode()` behavior. | **Merged (2026-09-18, PR #29)** — see session log. `getRoom()` now compares an EXPLICIT, truthy `secret` argument against the cached room's own secret on a cache hit; a mismatch returns a fresh, dedicated, already-`unavailable` room (via the same `giveUp()` path every other getRoom() failure already uses) rather than the real cached room, so `docRef()`/`collRef()` need no special case. A call that passes NO secret at all (several legitimate call sites do, by design — see below) still trusts whatever's cached, unchanged from before. | `relay-client.js`'s `getRoom()` only; every session/board room lookup flows through it, so this needs the full relay-backed test group re-run (`test_relay_*`, `test_board_sync_*`, `test_cofacilitator_join.py`, `test_encryption_no_plaintext_on_wire.py`), not just one new targeted test. |
+
+### Repository / tooling improvements
+
+| Priority | Story | Problem, value, and acceptance criteria | Status | Dependencies / blast radius |
+|---|---|---|---|---|
+| P2/P3 | REF-7 — CI installs Playwright unpinned, contradicting the repo's own pinning policy | **Problem**: confirmed `.github/workflows/tests.yml`'s `playwright` job runs `pip install playwright` with no version pin and no reference to `tests/requirements.txt` (which pins `playwright==1.62.0`), while `docs/DefinitionOfDone.md`/`tests/README.md` both document the pin as the reason cross-machine timing disputes have a fast answer. CI and local can silently run different Chromium builds with no way to tell from a CI log. **Value**: a CI-only timing/flake report can be trusted or ruled out the same fast way the DoD already prescribes for a cross-machine dispute. **Acceptance criteria**: CI installs from `tests/requirements.txt`; Chromium is installed for that exact pinned version; local and CI versions provably agree; no unpinned Playwright install remains anywhere in the workflow. | **Already fixed (2026-09-17, as part of PR #24)** — see that session log entry ("Fixed a real CI-only bug found by a Codex review of PR #24"). This backlog row was written during the same 2026-09-17 Copilot assessment review without noticing the exact same problem had already been fixed earlier that day for an unrelated immediate reason (a Codex review finding on PR #24, not this backlog review) — `.github/workflows/tests.yml`'s `playwright` job installs from `tests/requirements.txt` (the pinned `playwright==1.62.0`) today, not a bare unpinned `pip install playwright`. Verified still true while picking up REF-8/9/10 (2026-09-18): no unpinned Playwright install anywhere in the workflow. No new code change needed for this row. | One-line change to `.github/workflows/tests.yml`'s `playwright` job; no code/test changes; verify with one workflow run. |
+| P2/P3 | REF-8 — Relay CI dependency install uses `npm install` despite a committed lockfile | **Problem**: confirmed both the `unit-and-relay` and `playwright` jobs run `npm install` in `relay/`, even though `relay/package-lock.json` is committed — `npm install` can resolve a graph that drifts from the lockfile; `npm ci` installs exactly what's pinned and fails fast on a lockfile/`package.json` mismatch. **Value**: CI's relay dependency graph is byte-for-byte what's committed; a mismatch fails loudly instead of silently drifting. **Acceptance criteria**: CI installs the exact lockfile graph (`npm ci`, both jobs); local setup instructions distinguish `npm ci` (CI/reproducible) from `npm install` (local dev, when actually adding a dependency); relay tests (`npm test`) still pass under `npm ci`. | **Merged (2026-09-18, PR #31)** — see session log. Both `unit-and-relay` and `playwright` jobs now run `npm ci` in `relay/`; verified locally (`rm -rf relay/node_modules && npm ci` succeeds against the committed lockfile, relay's own test suite passes under it). `relay/README.md` now explains the CI-vs-local distinction right where its own `npm install` instructions live. | `.github/workflows/tests.yml` (both jobs) plus a doc line in `relay/README.md`; no relay code changes; verify with one CI run. |
+| P2/P3 | REF-9 — Test-shard count/partitioning duplicated between `run_all.sh` and `tests.yml`, no single source of truth | **Problem**: confirmed `SHARD_COUNT` is hardcoded to `3` independently in both `tests/run_all.sh` and `.github/workflows/tests.yml`, with the same partitioning logic reimplemented in bash and in the workflow's `awk` line — kept in sync today only by a comment in each file pointing at the other. Real, acknowledged drift risk, not hypothetical (`tests/README.md`'s own history describes a closely related local/CI divergence — the 2-vs-4-worker concurrency finding — causing real confusion before it was fixed). **Value**: changing the shard count becomes a one-line, unambiguous change instead of a "did I remember the other file" question. **Acceptance criteria**: local and CI use the same shard count and partitioning rule; changing shard configuration has one obvious source of truth; local-full-suite and CI-green remain the same claim (already true today, per `tests/README.md` — must stay true after this change); no unnecessary reduction in test isolation. | **Merged (2026-09-18, PR #32)** — see session log. `tests/run_all.sh` now has a `select_shard_files()` function -- the ONE place that decides which files belong to shard N -- called both by the default (no-args) "run every shard in sequence" path and by a new `SHARD_INDEX=N` single-shard mode. `.github/workflows/tests.yml`'s per-shard matrix job now just sets `SHARD_INDEX: ${{ matrix.shard }}` and calls `tests/run_all.sh` directly, instead of reimplementing the partition as its own `ls \| awk 'NR % n == i'` line. Found a real, previously-undetected consequence of the old duplication while fixing it: the workflow's 1-indexed `awk` `NR` against this script's 0-indexed loop counter meant CI's "shard 0" and a local run's "shard 0" were actually DIFFERENT physical file groups (each still correctly partitioned the full suite on its own, so nothing broke, but the labels didn't correspond) -- now there's exactly one implementation, so they're the same group by construction. A Codex review then found the acceptance criterion ("one obvious source of truth") wasn't actually met: the workflow's matrix still hand-maintained its own `shard: [0, 1, 2]` list as a THIRD independent copy of the count, alongside the workflow's `SHARD_COUNT` and this script's own `${SHARD_COUNT:-3}` default -- confirmed via an isolated check that bumping `SHARD_COUNT` to 4 while leaving that list unchanged silently skipped 15 of 63 files, every job still green. First fix moved `SHARD_COUNT` to the workflow's top-level `env:` and added a `compute-shard-matrix` job that generates the matrix list from it -- verified working against a real CI run, but a second Codex review pass then found `tests/run_all.sh`'s own `${SHARD_COUNT:-3}` default was STILL a second, independent hardcoded copy, so the acceptance criterion remained unmet. Fixed properly by introducing `tests/.shard_count` -- a plain checked-in file (same pattern as this script's own `tests/.timing_baseline`) -- as the actual single source of truth: both `run_all.sh`'s default and the workflow's `compute-shard-matrix` job now read that one file, and the workflow no longer sets a `SHARD_COUNT` env var at all. | `tests/run_all.sh`, `tests/.shard_count` (new), and `.github/workflows/tests.yml`; orchestration-only, low risk, but verify with an actual CI run across all 3 shards, not just locally. |
+| P2/P3 | REF-10 — No root-level command entry point across Node/Python/relay/shell tooling | *[PO comment: my preference is also a Makefile]* **Problem**: confirmed running the unit suite, the relay's own tests, the Playwright suite, or a setup check each require a different tool/directory today (`node --test tests/unit/test_*.js`; `cd relay && npm test`; `tests/run_all.sh`; `pip install -r tests/requirements.txt && playwright install chromium`), with no root command surface tying them together. **Value**: a new contributor or CI runs one obvious command per task instead of reconstructing it from `tests/README.md`/`relay/README.md` each time. **Acceptance criteria**: add a root `Makefile` (per the PO's stated preference) with targets for unit tests, relay tests, browser tests, the full suite, and a setup/check command; targets use the pinned Python environment/dependencies; targets run correctly from the repository root; CI can reuse the same targets where practical (also partially addresses REF-9's single-source-of-truth goal for the non-sharded jobs); no new heavyweight build system introduced. | **PR open (2026-09-18)**, not yet merged — see session log. New root `Makefile` with `help`/`setup`/`check`/`unit`/`relay`/`browser`/`test` targets, each a thin wrapper around the exact commands `tests/README.md`/`relay/README.md` already document. Deliberately not wired into `.github/workflows/tests.yml` yet, per this row's own acceptance criteria (ship the Makefile first, wire CI to it once proven locally, as a separate follow-up). A Codex review found `make setup`'s bare `python3 -m pip install` fails with `externally-managed-environment` on a PEP 668 system; fixed by having `make setup` create a project-local `.venv` and installing into that, with `check`/`browser`/`test` consistently using its python (`browser` via prepending it to `PATH`, so `tests/run_all.sh` and every test file need no changes). | New root `Makefile`, `.venv/` added to `.gitignore`; optionally wires `.github/workflows/tests.yml` to call it (recommended but separable — ship the Makefile first, wire CI to it once proven locally). |
+| P3 | REF-11 — `STATUS.md` has grown to ~3500 lines despite describing itself as a one-page entry point | **Problem**: confirmed `STATUS.md` is ~3500 lines as of this review, almost entirely session-log history. `CLAUDE.md` and `STATUS.md`'s own header both describe it as "the one-page entry point for picking this project up cold," no longer literally true for a fresh reader who has to scroll past thousands of lines of dated history to find current decisions/backlog tables. **Value**: a fresh contributor (or agent) can read the "current state" part in one sitting; historical detail is preserved, just not in the way of it. **Acceptance criteria**: `STATUS.md` remains the authoritative current backlog/decision index; historical session-log detail moves to a dedicated, dated archive document; existing cross-references to specific dated session-log entries remain understandable after the move; no historical decision is deleted, only relocated; the change doesn't duplicate `docs/DefinitionOfDone.md` or feature-spec docs. | **Done (2026-09-18)** — see `docs/session-log.md`'s own top entry for the full writeup. The session log (990-4429 of the pre-split file, ~3440 lines) moved verbatim into `docs/session-log.md`; `STATUS.md` now ends with a short pointer at the same "## Session log" heading instead of the content itself. A repo-wide grep for "session log" found ~15 existing cross-references (`CLAUDE.md`, `docs/DefinitionOfDone.md`, `.claude/skills/tdd/SKILL.md`, `README.md`, `docs/facilitated-retro-spec.md`, `docs/refactoring-report.md`, `ETHICS.md`, and code comments in `public/js/`/`public/styles.css`/`tests/`); left as-is since they still resolve correctly through that same pointer, matching this repo's own established precedent (`tests/README.md`'s note that old session-log references elsewhere are "left as-is since they're dated history, not live references"). `CLAUDE.md` and `README.md` updated to describe the split. Docs-only change, no code/tests touched — did not re-run the full Playwright suite for this reason (same precedent as the 2026-09-17 backlog-only pass), ran the fast unit suite as a sanity check (180/180). | `STATUS.md` itself, plus any doc/comment linking to a specific dated session-log entry — a grep for cross-references before moving anything is the right first implementation step, not part of this backlog-only task. |
+| P3 | REF-12 — Generated Playwright test pages live inside `public/` (gitignored, but real noise during local dev) | **Problem**: confirmed `tests/fixtures/build_page.py` writes `_test_*.html`/`.js` files directly into `public/` (its own header comment explains why: relative asset links to `styles.css`/`vendor/qrcode.js`/`app.js` must resolve the same way they do in production, and tests run over `file://`). `.gitignore` excludes them from version control, but they're real files alongside production assets during and after any local test run. **Value**: production `public/` assets stay visibly distinguishable from generated test fixtures during local development, without touching what the suite actually proves. **Acceptance criteria**: production public assets remain clearly distinguishable from generated fixtures; test pages are not deployed (already true) or tracked (already true); any move preserves relative asset resolution and CSP behavior; evaluate a temporary public-like test subdirectory (e.g. `public/_test/`) OR a local HTTP server as the alternative to `file://`; preserve the current `file://` test path unless a replacement is proven equivalent; include a measured blast radius (how many of the suite's `page.goto()` calls and `build_page()`/`write_plain_index()`/`build_custom_page()` helpers would need to change) before any implementation is scheduled. | **Investigated (2026-09-18)** — decision recorded, see `docs/session-log.md`'s entry for the full writeup; per this row's own scoping, no code landed in this pass. Recommendation: adopt the `public/_test/` subdirectory option, reject the local-HTTP-server option. The two riskiest acceptance criteria (relative asset resolution, CSP behavior) were proven, not assumed, with a real throwaway Playwright smoke test against a nested page under the app's actual CSP — zero console/page errors, all resources 200, `getComputedStyle` confirmed the stylesheet actually applied, not just loaded — then deleted immediately. Local HTTP server was rejected: the one existing precedent (`test_join_link_secret_not_in_http_request.py`) shows it doesn't even solve the stated problem (that test still writes its file straight into `public/`, just also serves it over HTTP), and switching every test's transport would be strictly more blast radius for no corresponding benefit — `file://` is preserved as the row itself prefers. | Measured directly, not estimated: `tests/fixtures/build_page.py` (its 3 write functions plus a new relative-path `../`-prefix rewrite step), 4 files with their own duplicated `PUBLIC_DIR`-write logic (`test_backend_contract_parity.py`, `test_relay_error_handling.py`, `test_relay_legacy_known_codes.py`, `test_relay_write_acknowledgment.py`), a one-line URL fix in `test_join_link_secret_not_in_http_request.py` (`out.name` → `out.relative_to(PUBLIC_DIR)`, since its HTTP server is rooted one level up once the file moves), and `test_relay_config_injection.py` (writes `_test_relay_config_injection.html` straight into `public/` via its own inline `REPO_ROOT / "public" / ...` path, with relative `src="relay-config.js"`/`src="vendor/qrcode.js"` script URLs of its own — both the output path and those URLs would need updating; it does delete the file after a successful run, but not on a failed assertion inside the harness, so it isn't a safe exclusion) — **7 code files total** (Codex review of PR #37 caught this last one, missed by the original grep since it builds its path inline rather than via a named `PUBLIC_DIR` variable), plus `.gitignore` and the doc comments describing the current flat layout in `tests/fixtures/build_page.py`/`tests/README.md`. The other 58 test files and all 62 `page.goto()` call sites need zero changes: they only ever consume the helper's own returned, already-resolved `Path`. |
+
+### Additional review measures considered, deliberately not backlogged as tracked metrics
+
+Per the review's own instruction not to add noisy metrics without a clear action threshold:
+async fire-and-forget call sites, mutation-fan-out (state mutation + render + persistence per call
+site), module fan-in/fan-out, function complexity/nesting, and `renderAll()`-calls-per-action are
+all real, inspectable properties of this codebase (several are exactly what REF-1/REF-3/REF-5 above
+already found by inspection), but none is proposed here as an ongoing tracked metric — there's no
+agreed threshold yet at which any of them would block a change. The one concrete, repeatable-tool
+recommendation: an ESLint pass (`complexity`, `max-lines`, `max-depth`, `max-params` rules) would
+give REF-4/REF-5's targets a repeatable check going forward — **not added now**, since this task is
+backlog-only and the repository has no existing ESLint config to extend (confirmed: no
+`.eslintrc*`/`eslint.config*` anywhere in the repo). Worth revisiting once REF-4's split lands and
+there are smaller, single-responsibility files to set real size/complexity limits against.
+
+### Deferred / low-value / YAGNI (not active engineering tasks)
+
+- **Naming/abbreviation consistency** (`sq`/`squad`, `sess`/`session`, `dim`/`d`) — already flagged
+  and deliberately deferred in `docs/refactoring-report.md` ("better done incrementally, file by
+  file, whenever that file is next touched for a real reason"). Not reopened here; no new entry
+  needed.
+- **`state.editing`'s dual shape** and **splitting `dimensions-templates.js`** — **done, not
+  actually deferred** (2026-09-18 correction: `docs/refactoring-report.md`'s own top "Status" line
+  already said both were fixed in a 2026-09-12 follow-up round; this bullet was citing that
+  report's stale, deliberately-unedited body text — its "Suggested order" item 6 — instead of its
+  own Status line, and nobody had re-verified against the actual codebase since). Confirmed against
+  the live tree: `public/js/dimensions-templates.js` no longer exists (split into `dimensions.js`/
+  `templates.js`, further reorganized since by REF-4); `state.editing` no longer exists either —
+  `public/js/modals.js` uses two plainly-named slots, `state.editingCell`/`state.editingOverride`,
+  exactly the fix this report itself proposed. Nothing left to do here.
+- **Embedding/framing** (`frame-ancestors`/`X-Frame-Options`) — remains **YAGNI, PO-gated** per
+  SEC-3a above. This review does not convert it into an active item and recommends no change to
+  that decision.
+- **ESLint config** — see "Additional review measures" above: a real recommendation, but explicitly
+  not introduced in this backlog-only pass. Its own stated trigger ("once REF-4's split lands") is
+  now true (REF-4 merged 2026-09-18, PR #24) — worth an explicit PO call on whether to actually add
+  it now, rather than leaving the condition silently satisfied and unactioned.
+
 
 ## Session log
 
-- 2026-09-10 — Migrated the project from a single-file Claude Artifact (3077-line inline-script
-  `squad-pulse.html`) into this repo as a clean static-site layout (`public/index.html` + `app.js`
-  + `styles.css` + `vendor/qrcode.js`), with zero behavioral change. Ported and de-duplicated the
-  full 13-file Playwright regression suite onto the new structure, introducing a shared
-  `tests/fixtures/build_page.py` fixture (fixed a latent hidden dependency where tests v3–v13
-  silently relied on `test_v2.py` having already generated a file on disk). All tests verified
-  passing with zero JS errors. Pushed as commit `934f69b` on top of the repo's auto-generated
-  initial commit.
-- 2026-09-10 — Fixed a real bug in the retro-session feature (teammates couldn't answer the
-  board's default Spotify Squad Health Check template in Retro mode — only the facilitator
-  could). Full detail and fix description live in `docs/facilitated-retro-spec.md`, not
-  duplicated here since it's feature-specific.
-- 2026-09-11 — Added `public/local-store.js`: a localStorage-backed shim for the Firestore-shaped
-  `db` capability and the `downloads` capability, so the app works outside a Claude Artifact
-  sandbox (e.g. deployed on Vercel) instead of sitting in local-only preview mode with nothing
-  persisted. Seeds a starter board (3 squads, the 12 Spotify Squad Health Check dimensions) on
-  first run. Installs only when no real `window.claude` is present, so Claude Artifact previews
-  and the Playwright test harness are unaffected — full regression suite verified passing with
-  zero JS errors. Cross-device retro sync still needs the relay described above; this only covers
-  the board itself plus same-browser multi-tab sync.
-- 2026-09-11 — Hardened the regression suite ahead of refactoring `app.js`: renamed the 13
-  `test_v2.py`..`test_v13.py`/`test_generic.py` files to names that describe what they cover (see
-  `tests/README.md`'s naming table), added `test_tribe_hotspots.py` and `test_local_store.py` to
-  close two real coverage gaps (Tribe view's cross-squad rollup, and `local-store.js` itself — both
-  had zero tests), removed a sandbox-specific hardcoded browser path from all 15 files so the suite
-  actually runs in CI, and added `.github/workflows/tests.yml` to run it on every push/PR.
-- 2026-09-11 — Split `app.js` (2396 lines, one IIFE) into `app.js` (thin entry point) + nine feature
-  modules under `public/js/` — see "The app's file layout" above for the map and for why they're
-  plain classic scripts, not ES modules (Chromium blocks `import` over `file://`, which the test
-  suite and the "open index.html directly" workflow both rely on). Zero intended behavior change;
-  verified by the full 15-file regression suite passing with zero JS errors both before and after.
-- 2026-09-11 — Built the relay: `relay/server.js` (Node + `ws`, tiny in-memory per-code room store,
-  2-minute empty-room grace period), `public/js/crypto.js` (AES-256-GCM via Web Crypto, key derived
-  from the session code — see the locked decision above for why and its honest limits), and
-  `public/js/relay-client.js` (same `collection()`/`doc()` shape as `local-store.js`, so `db.js`
-  needed zero changes). `local-store.js` now routes any `sessions`-rooted path to the relay client
-  instead of `localStorage`. Two real bugs found and fixed along the way, both by actually testing
-  against a live relay rather than trusting the design: (1) Chromium's ES-module CORS block over
-  `file://` doesn't apply to WebSocket connections or `crypto.subtle` — verified both directly
-  before relying on either; (2) the broad `db.collection("sessions").onSnapshot(...)` listener
-  (used to notice a facilitator's own already-open session after reload) captured the "known
-  codes" list once at subscribe time and never revisited it, so a session started *after* boot
-  never appeared — fixed with a small pub/sub (`broadListeners` in relay-client.js) that any newly
-  ‑discovered room notifies. Verified end to end by `tests/test_relay_cross_device_sync.py`: a real
-  relay subprocess, two independent Playwright browser contexts (facilitator + participant) with
-  their own localStorage, and a third late-joiner confirming a closed session is really gone —
-  zero JS errors. Full existing 16-file suite re-verified passing with zero regressions. Not yet
-  deployed anywhere public (see `relay/README.md` for how). Left open: co-facilitator "finish
-  retro" ownership (see the not-built table above) — explicitly out of scope for this step.
-- 2026-09-12 — Fixed five real bugs found by testing the deployed Vercel preview, none of them
-  visible from local `file://` testing alone. Root cause of the big one: `index.html` defaulted
-  `SQUAD_PULSE_RELAY_URL` to `ws://localhost:8787` unconditionally, so on a real deployment the
-  page tried to reach a WebSocket on the *visitor's own machine* — Chrome's Private Network Access
-  policy pops a permission prompt for that (an https:// page opening a loopback socket), nothing
-  was ever listening there, and the old unbounded-retry loop then reconnected every 5s forever.
-  Clicking "Start retro session" repeatedly (since nothing appeared to happen) spawned one orphaned
-  room per click, which is why the diagnostic log showed nine different codes all reconnecting at
-  once. Fixes: (1) `index.html` now only defaults to a local relay when the page itself is local
-  (`file://`/`localhost`/`127.0.0.1`) — a real deployment with no override gets `null`; (2)
-  `relay-client.js` fails fast with zero WebSocket attempts when no relay is configured, and gives
-  up after 8 reconnect attempts (bounded backoff) instead of retrying forever when one is
-  configured but unreachable, surfacing a real error via a new `unavailable` rejection on writes;
-  (3) `retro.js`'s "Start retro session" button is now guarded by a module-level flag (not just its
-  own `disabled` attribute, which a re-render can hand back fresh mid-request) so rapid/duplicate
-  clicks can't spawn more than one session, and a failed start now opens a real error dialog
-  instead of silently doing nothing; (4) `helpers.js`'s `diag()` no longer overwrites the log's
-  `textContent` while the user has an in-progress selection inside it, so the diagnostic log can
-  actually be selected and copied; (5) added the board's own default dimension set as a proper,
-  reloadable starter template (`state.js`'s `SPOTIFY_TEMPLATE`, "Spotify Squad Health Check") —
-  previously it only existed as seed data for a fresh board with no way to load it back after
-  switching to Five Dysfunctions or Tuckman. All five verified directly (not just by inspection):
-  the relay-URL defaulting logic as a pure function across all four input cases, the fail-fast and
-  bounded-retry behavior via an isolated harness loading only `crypto.js`+`relay-client.js`
-  (`test_relay_error_handling.py`), the click-guard via 5 rapid clicks producing exactly one
-  session doc, the selection-preservation via a real `Selection`/`Range`, and the Spotify template
-  via load/switch/reload round-tripping all 12 dimensions (`test_starter_template_spotify.py`).
-  Full 18-file suite (16 previous + these 2 new files) re-verified passing with zero JS errors and
-  zero regressions. Still true, and now more clearly *surfaced* rather than silently broken: the
-  relay isn't deployed anywhere public yet, so live retro sessions on the Vercel preview correctly
-  report themselves unavailable (clear error dialog, no hang, no runaway reconnect spam) rather
-  than working end to end — deploying the relay (see "Suggested next step") is what actually
-  unblocks cross-device retro testing.
-- 2026-09-12 — Made the relay actually deployable, for two audiences stated explicitly this round:
-  embedding this on a company website (subdomain/iframe) and forking the repo so others can
-  self-host it entirely offline on their own LAN, to route around their own security constraints.
-  Considered deploying the relay as a Vercel Function using their newly-public-beta native
-  WebSocket support, so the whole app ships from one Vercel project — checked this directly against
-  Vercel's own current docs rather than assuming the earlier sketch in `docs/standalone-plan.md`
-  still held, and rejected it: a new connection there isn't guaranteed to land on the same Function
-  instance as an existing one, and Vercel's fix for that (external Redis) is a real ongoing
-  dependency neither audience wants — see the new locked decision above and `relay/README.md`'s "Why
-  not a Vercel Function" for the full reasoning. Instead: (1) added `render.yaml` at the repo root
-  so deploying the unmodified `relay/server.js` to Render is close to one-click (reads `PORT` from
-  the environment already, so nothing else to configure); (2) added
-  `scripts/generate-relay-config.js` as `vercel.json`'s new `buildCommand`, which writes
-  `public/relay-config.js` from a `SQUAD_PULSE_RELAY_URL` environment variable set in Vercel's
-  project settings — scopeable to Preview (to test a real relay on this branch before merging) or
-  Production independently, with the build step a safe no-op (checked-in placeholder stays) when
-  the variable isn't set, so a bare fork with zero config still deploys and degrades exactly as the
-  previous round's fixes intended. `relay/README.md` now also spells out the plain `npm start` +
-  hand-set `ws://<LAN-IP>:8787` path for the LAN self-host case, which needed no code changes at
-  all — the relay was already a dependency-free Node process. Verified end to end by the new
-  `tests/test_relay_config_injection.py`: the generator script's output for both the set and unset
-  cases, and — driven through `index.html`'s real script order — that an injected value actually
-  wins over the page's own protocol/hostname default rather than just asserting it should. Full
-  19-file suite re-verified passing with zero JS errors and zero regressions. Still true: nobody has
-  actually clicked "deploy" on the relay yet, since that needs a Render (or equivalent) account this
-  session doesn't have — the Render blueprint and the Vercel env var are the two concrete steps left
-  for whoever does.
-- 2026-09-12 — Three rounds of fixes chasing a real "session isn't open" report from an iPhone
-  joining a live Vercel preview, each one uncovering the next:
-  1. The join screen (`#viewJoin`) has no nav back to Admin's own Diagnostics panel by design (a
-     participant shouldn't see the facilitator's board), which meant it also had no way to show
-     ANY diagnostic info — a stuck participant had nothing to screenshot. `diag()` now updates every
-     element with `class="diag-log"` instead of only Admin's `#diagLog` by id; the join screen gets
-     its own collapsed-by-default "Trouble joining? Tap for diagnostics" panel.
-  2. That surfaced a second, worse gap on the facilitator's own device: clicking "Start retro
-     session" left the button disabled forever with NOTHING new in Diagnostics — every explicit
-     `diag()` call in the app lives inside a `.then()`/`.catch()`, so a synchronous throw upstream of
-     those vanished without a trace. `helpers.js` now forwards `window`'s own `error` and
-     `unhandledrejection` events into `diag()` unconditionally, so the log always shows *something*.
-  3. That, in turn, revealed the actual bug on the next attempt: `new WebSocket(...)` throws a
-     SyntaxError SYNCHRONOUSLY for a malformed scheme, and the real-world cause was a one-letter
-     typo in the `SQUAD_PULSE_RELAY_URL` Vercel env var (`was://` instead of `wss://`). `getRoom()`
-     in `relay-client.js` now validates the scheme up front and fails the same clean,
-     catchable way "no relay configured" already did, instead of an uncaught exception.
-  Separately, answered a real design question this raised — can "this retro isn't open" (bad/never-
-  existed code) be told apart from "this retro has ended" (closed) without a database? Partially,
-  honestly: `closeSession()` now writes `status:"closed"` (an `update`) instead of deleting the doc
-  outright, so a participant already on the join screen, or one who opens a stale link soon after,
-  sees a real "This retro has ended" — for as long as the relay's own room-empty grace period keeps
-  that doc around, since nothing here is a real database and a code the relay has fully forgotten is
-  genuinely indistinguishable from one that never existed. Also added a third, distinct message —
-  "Can't connect to the retro server" — for when this device never reached the relay at all, as
-  opposed to reaching it and finding no such room; `relay-client.js` now carries an `unavailable`
-  flag on every doc snapshot so `retro.js` can tell the two apart. Closing a session also now
-  explicitly forgets its code from this device's local "known codes" bookkeeping the moment it's
-  marked closed (previously only a hard delete did this), so a status-only update can't leave this
-  device silently reconnecting to every session it's ever started, forever.
-  A fourth round, from a follow-up report with the same symptom ("stuck in Starting...") but a diag
-  log this time showing the write had actually succeeded (`Started retro session ... Sessions
-  snapshot #4: 1 doc(s)`), found the real remaining bug: every db snapshot listener gates its own
-  re-render on `state.ui.view==="..."` (see `db.js`) — a snapshot that arrives while a view is
-  hidden updates `state` correctly but never touches that view's DOM, since nothing was watching.
-  `setView()` (`app.js`) only ever toggled `hidden` attributes, so switching back to a view just
-  un-hid whatever HTML was already there from before — stale. This is exactly what happened: click
-  "Start retro", switch to Admin to check Diagnostics while the relay connects (a real few-second
-  wait watching a cold relay wake up), the session starts successfully while Admin is showing, then
-  switching back to Squad shows the disabled button from before, forever, since nothing re-rendered
-  it. Fixed by having `setView()` call `renderAll()` on every switch — cheap (in-memory state to
-  DOM, no network), the same function already used elsewhere for "state changed broadly, refresh
-  everything." Verified with a dedicated test that reproduces the exact sequence (start a session,
-  switch away before its snapshot lands, seed the doc while hidden, switch back, confirm the real
-  session card shows) — `test_view_switch_refreshes_stale_state.py`.
-  Verified end to end, not just by inspection: a synthetic sync throw and a synthetic unhandled
-  rejection both confirmed reaching `#diagLog`
-  (`test_uncaught_error_diagnostics.py`); the join screen's own diagnostics panel confirmed reachable
-  and populated for a real "not found" case (`test_retro_join_flow.py`); the malformed-scheme case
-  confirmed to fail with zero WebSocket attempts and zero uncaught exceptions, and the real join
-  screen confirmed to show "Can't connect" (not "isn't open") for an unreachable-but-valid URL
-  (`test_relay_error_handling.py`); and, over the real relay, a just-closed session confirmed to read
-  as "ended" while a never-existed code still reads as the generic message
-  (`test_relay_cross_device_sync.py`). Full 20-file suite re-verified passing with zero regressions.
-- 2026-09-12 — Confirmed working end to end on a real deployed preview: a facilitator on Chrome ran
-  a full retro with a participant on an iPhone and another on Safari, over the deployed relay.
-  Separately, assessed whether Playwright was the right tool for the whole suite — it wasn't, for
-  part of it: pure logic with zero DOM dependency (consolidation/scoring math in `helpers.js`, CSV
-  parsing/column-matching in `csv.js`) was only reachable indirectly, by loading a full page and
-  clicking through the UI to exercise it. Added `tests/unit/` — plain Node (`node:test`, nothing to
-  install) tests that `require()` those functions directly, via a small guarded
-  `module.exports` block at the end of each file (a no-op in the browser, since `module` doesn't
-  exist there — see `tests/unit/README.md`) and a deliberately permissive fake DOM
-  (`tests/unit/fake_dom.js`) so a file that also does real DOM wiring at its top level doesn't crash
-  on load. 29 tests covering banding/consolidation (including the calmer-tie-break rule), override
-  precedence, and CSV round-tripping (quoted fields, Dimension-Key-before-label matching, column
-  reordering, template-mismatch flagging) run in ~0.1s total — instant compared to driving the same
-  logic through a browser. Playwright stays exactly where it already was for what actually needs a
-  browser (UI interaction, real WebSocket/`crypto.subtle`) — this doesn't replace any of that
-  coverage, it adds a faster, more precise layer under it. `.github/workflows/tests.yml` now runs
-  both tiers. Full suite timed end to end: 29 unit tests (~0.2s) + 21 Playwright files (~1m52s) ≈
-  1m53s total, all green.
-- 2026-09-12 — Worked through `docs/refactoring-report.md`'s prioritized list, verifying with the
-  full test suite after each step rather than as one big change:
-  1. Centralized `colorWord()`/`trendWord()` and named `isStatementDimension()` in `helpers.js`,
-     replacing duplicated ternary chains and inline `dim.statements && dim.statements.length`
-     checks across `render.js`, `squads.js`, `retro.js` (before the split below), and
-     `dimensions-templates.js`.
-  2. Added `diag()` calls to five previously-silent `.catch(function(){})` sites (`renameSquad`,
-     `removeSquad`, `removeDimension`, `deleteTemplate`, `moveDimension`'s two writes) — a rename or
-     delete that failed to persist previously left zero trace to debug from.
-  3. Collapsed `persistDimensionRating`/`persistDimensionRatings` (90% duplicate code) into one
-     function, the single-key case now just calling the batch case with a one-item array.
-  4. Added `liveOr(liveFn, localFn)` and `syncLiveIfConnected(writeFn, describe)` to `helpers.js` —
-     the two shapes every "write live, else write local" branch in the app already followed,
-     duplicated 12+ times across `squads.js`, `dimensions-templates.js`, `retro.js`, and `csv.js`.
-     Applied both everywhere that fit the shape cleanly; deliberately left `loadTemplate()`'s and
-     `applyImportPlan()`'s live branches alone, since their complexity comes from a genuinely
-     different multi-step async chain, not mechanical duplication — forcing them into the same
-     helper would have cost clarity, not saved it.
-  5. Split `retro.js` (808 lines) into `retro-facilitator.js` and `retro-join.js` along the device
-     -role seam the report identified: the two halves shared almost no code, so this was closer to
-     "move code" than "redesign code" — see "The app's file layout" above.
-  Added tests alongside each step rather than after: `colorWord`/`trendWord`/`isStatementDimension`/
-  `liveOr`/`syncLiveIfConnected` all got new `tests/unit/test_helpers.js` cases (34 unit tests now,
-  up from 29). The full 21-file Playwright suite was re-run after every one of the 5 steps above,
-  not just at the end, so a regression would have been caught at the step that introduced it rather
-  than discovered later; all 5 runs were clean. Deliberately not touched this round (still on the
-  report's backlog, lower priority): `state.editing`'s hidden dual shape, splitting
-  `dimensions-templates.js`, naming/abbreviation consistency, and the `esc()` safety audit.
-- 2026-09-12 — Finished the refactoring report's remaining items (except naming consistency, kept
-  deferred — see the report's updated "Status" note for why): split `state.editing` into
-  `state.editingCell`/`state.editingOverride` (two plainly-named slots instead of one object with a
-  hidden `mode:"session"` flag — see `modals.js`'s new `activeEditor()`); split
-  `dimensions-templates.js` into `dimensions.js` (the dimension manager) and `templates.js` (template
-  save/load/delete), the same device-role-style seam as the earlier `retro.js` split; and ran the
-  `esc()` safety audit the report flagged as unaudited. That audit found one real inconsistency:
-  `unitLower()`/`unitPluralLower()` output went into `innerHTML` unescaped in 7 places (`render.js`
-  ×2, `squads.js` ×3, `csv.js` ×2), while `templates.js`'s own `templateRowHtml` already wrapped the
-  same underlying value (`t.unitPlural||t.unit`) in `esc()` — fixed all 7 for consistency. Honest
-  caveat, not glossed over: nothing in the current UI actually lets a user set `state.config.unit`/
-  `unitPlural` to anything attacker-controlled (no exposed input writes to it directly; every path —
-  `DEFAULT_CONFIG`, the three starter templates, `saveCurrentAsTemplate` — only ever copies a value
-  already known to be a plain English word), so this closes a latent inconsistency rather than a
-  live exploit — worth having fixed regardless, since the next thing that touches this code shouldn't
-  have to rediscover the gap. Full 21-file Playwright suite plus the 34-test unit suite re-verified
-  passing with zero regressions after each of the three changes.
-- 2026-09-12 — Diagnosed a real cross-device bug (Mac facilitator + iOS participant end up with
-  divergent Tribe-view data) to its root cause: per-device `localStorage` seeds identical squad IDs
-  independently, so two devices' boards were never actually the same board. User specified the
-  replacement architecture directly (verified against Excalidraw's real design: a content-blind
-  relay for live propagation, a durable store for persistence) — see "Board sync (major change, in
-  progress)" above for the full plan and its 7 increments. **Step 1 done this session:** relay-side
-  durable storage behind a documented three-method adapter interface (`relay/storage/`:
-  `load`/`save`/`remove`). `none-adapter.js` is the default and reproduces the relay's exact
-  original behavior (nothing persists across a restart); `file-adapter.js` is a real one (one JSON
-  file per room on disk, filename derived from a hash of the room code so an arbitrary code can
-  never touch an unexpected path), opted into via `RELAY_STORAGE=file`. `server.js` now awaits
-  `storage.load()` when a room is first created (deduped across concurrent connections for the same
-  brand-new code via `roomCreationPromises`) and fire-and-forgets `storage.save()`/`storage.remove()`
-  on every write/room-cleanup; `startServer({ storage })` accepts an override for tests. Zero
-  app-facing or wire-protocol change — `relay-client.js` untouched, the original
-  `relay/test/relay.test.js` passes unmodified, and the real end-to-end
-  `tests/test_relay_cross_device_sync.py` (real relay process, two browser contexts, real
-  encryption) still passes. New `relay/test/storage.test.js` proves both adapters' contracts and,
-  by forcing a genuine module reload between two `startServer()` calls (not just reusing the same
-  in-process `rooms` Map, which would make the test meaningless), that a room's docs really do
-  survive a restart with `FileAdapter` and really don't with the default. Full 21-file Playwright +
-  34-test unit suite re-verified passing. Safe to ship to `main` as-is: this step only adds an
-  opt-in capability nothing currently calls.
-- 2026-09-12 — **Board sync step 2:** widened `relay-client.js`'s router to recognize
-  `boards/<teamCode>` paths (`isBoardPath`, alongside the existing `isSessionPath`), and
-  `local-store.js` now sends either namespace to the relay instead of `localStorage`. Turned out to
-  need no change to `relay/server.js` at all: the wire protocol already treats a room's `code` and
-  every doc `path` within it as opaque strings, never inspecting their meaning — so a
-  `boards/TEAM01/config` path just opens a differently-keyed room from `sessions/ABC123`, using the
-  exact same put/delete/snapshot mechanism and the same code-derived AES-256-GCM encryption. Nothing
-  in the app's UI calls a `boards/*` path yet. New `tests/test_relay_board_path_sync.py` proves the
-  plumbing end to end below any UI, using the same real-relay-subprocess-plus-two-browser-contexts
-  harness as `test_relay_cross_device_sync.py`: a board doc written on one device is read back,
-  decrypted, on an independent second device; an unwritten board path reads back as not-found
-  rather than throwing; and `sessions/*` paths are unaffected by the new routing. Full 22-file
-  Playwright + 34-test unit suite (plus `relay/`'s own `npm test`) re-verified passing. Safe to ship
-  to `main` as-is: purely additive, no existing call site changes behavior.
-- 2026-09-12 — **Board sync step 3:** new `public/js/board-sync.js` + an Admin-view "Team sync
-  (beta)" card — an opt-in per-device "team code" setting. Connecting pushes an encrypted
-  full-board snapshot (squads, dimensions, config) to `boards/<teamCode>` on the relay; every later
-  squad/dimension/config save pushes again. Hooked into `db.js`'s three existing snapshot
-  listeners (squads, dimensions, `meta/config`) rather than each individual writer across
-  `squads.js`/`dimensions.js`/`templates.js`/`csv.js`/`modals.js` — those listeners already fire on
-  any board mutation regardless of which file caused it, so this needed zero changes outside
-  `db.js`, `board-sync.js`, and `index.html`'s new card. One-way only: nothing reads a team code's
-  board back yet (hydrate-on-load is step 4). With no team code set, `pushBoardSnapshotIfConnected()`
-  returns immediately — zero behavior change for the default case. `tests/unit/test_board_sync.js`
-  covers `normalizeTeamCode()`; new `tests/test_board_sync_opt_in_push.py` drives the real Admin UI
-  end to end against the real relay (not just the plumbing): no code set never touches the relay,
-  connect-then-add-a-squad produces a real decryptable snapshot a second device can read straight
-  off the relay, and disconnecting genuinely stops further pushes. Full 23-file Playwright +
-  35-test unit suite re-verified passing. Safe to ship to `main` as-is.
-- 2026-09-12 — **Board sync step 4:** hydrate-on-load. `board-sync.js` gained
-  `hydrateFromTeamCodeIfConnected()`, run once at boot in `db.js`'s `initDb()` (before the
-  squads/dimensions/config listeners register, so their first fire already reflects hydrated data)
-  and again right after connecting a team code (so connecting to an existing team's board doesn't
-  blindly clobber it with whatever this device had locally). Conflict rule: last-write-wins by the
-  push payload's own `updatedAt` ISO timestamp, tracked per team code via
-  `getSyncedAt`/`setSyncedAt` so a device can tell "the relay has something genuinely newer" apart
-  from "the relay has exactly what I just pushed." `applyRemoteBoardSnapshot()` reads the CURRENT
-  local squad/dimension doc ids via a fresh `get()` (not `state.squads`/`state.dimensions`, which
-  at boot are still whatever `state.js` seeded them to — the real board hasn't loaded at that
-  point) to correctly add, update, and remove docs to match the remote. A `hydrating` flag
-  suppresses `pushBoardSnapshotIfConnected()` mid-rewrite so the relay never sees a
-  half-applied intermediate board. New `tests/test_board_sync_hydrate_on_boot.py` proves the full
-  round trip over the real relay in both directions: device B, booting with a team code already
-  configured, pulls device A's already-pushed board with zero clicks; then after B makes its own
-  change, device A's next reload pulls B's newer state back too — genuine bidirectional
-  last-write-wins, not just a one-time catch-up. Full 24-file Playwright + 35-test unit suite
-  re-verified passing. Safe to ship to `main` as-is: with no team code set, hydrate is a no-op, and
-  the "Connect" flow only changes for someone opting into a code that already has a newer remote
-  board.
-- 2026-09-12 — **Board sync step 5:** live subscribe. `board-sync.js` gained
-  `subscribeToTeamBoardIfConnected()`/`stopTeamBoardSubscription()`, and refactored step 4's
-  apply-if-newer logic into a shared `maybeApplyRemote()` used by both the one-shot boot hydrate
-  and every live callback — the subscription's own first callback (onSnapshot always fires
-  immediately with current state, same as any Firestore-shaped listener in this app) safely no-ops
-  since it's just re-announcing what hydrate already applied moments earlier. The subscription
-  reuses the exact same relay-client.js machinery retro sessions already rely on for this: one
-  persistent WebSocket per room code, kept open for as long as the tab stays connected to that team
-  code. Started right after boot-time hydrate and right after a fresh "Connect"; stopped on
-  "Disconnect". New `tests/test_board_sync_live_subscribe.py` proves two devices connected to the
-  same team code AT THE SAME TIME converge on a squad add in both directions with zero reloads
-  (the real gap step 4 left open), and that disconnecting stops live updates too, not just outgoing
-  pushes. Full 25-file Playwright + 35-test unit suite re-verified passing. Safe to ship to `main`
-  as-is: identical no-team-code-set behavior; the only change for a connected device is seeing
-  updates sooner (live vs. next reload), never a different final state than step 4 already produced.
-- 2026-09-12 — **Board sync security fix**, from user review of steps 3–5: a typed, user-chosen
-  "team code" doubling as the encryption key (retro sessions' deliberate tradeoff, wrong here — see
-  "Board sync"'s new "Security fix" section for the full reasoning) replaced with a high-entropy
-  secret shared only via link/QR, mirroring Excalidraw's real architecture and reusing retro
-  sessions' own join-by-link/QR UI. `crypto.js` gained `generateSecret()`/`roomIdFor()`;
-  `relay-client.js`'s `doc()`/`collection()` gained an optional `secret` argument (omitted, sessions
-  are byte-for-byte unchanged); `board-sync.js`'s UI became "Create a team link" / paste-a-link /
-  auto-connect-from-`?team=`. Testing this also caught a real, previously-latent bug in
-  `relay-client.js`'s `putDoc()` (re-derived its key from the room's routing id instead of reusing
-  the room's actual key — invisible for sessions, silently broke every board write) — fixed by
-  storing the room's `keyPromise` at connect time. All three board-sync Playwright tests rewritten
-  against the new UI; `test_relay_board_path_sync.py` gained direct secret/routing-id-separation
-  coverage; `tests/unit/test_board_sync.js` now covers `parseTeamSecretInput()`/`teamLinkFor()`.
-  Full 25-file Playwright + 38-test unit suite passing. **Not yet merged to `main`** — the user
-  clarified mid-session that "safe to push to main" is a standing capability they want, not a
-  standing instruction to auto-merge every finished increment: from here on, increments land on the
-  feature branch and stay there, tested and ready, until the user explicitly says to merge.
-- 2026-09-12 — **Playwright suite perf pass**, prompted by the user noticing the suite had gotten
-  slow again. Timed all 25 files individually (`time python3 tests/test_*.py` per file) before
-  touching anything: 133.65s sequential total, one huge outlier —
-  `test_dimension_and_template_admin.py` at 17.58s, more than double the next-slowest file. Root
-  cause: it built its own test page by reading `public/index.html` and splicing its fake store in
-  by hand, instead of calling `tests/fixtures/build_page.py`'s `build_page()`/`write_plain_index()`
-  — bypassing the Google Fonts `<link>` strip those apply, and re-triggering the exact ~12-second
-  stall `build_page.py`'s own header comment already documented as the reason that strip exists in
-  the first place. Fixed by adding `build_custom_page(extra_head_html, out_name)` (same strip, for
-  a test needing its own bespoke fake store shape) and switching this file to use it:
-  17.58s → 5.03s. Also trimmed `test_csv_import_column_matching.py`'s "renamed headers" scenario
-  (positional-fallback header matching, preview-only, never applies anything) since
-  `tests/unit/test_csv.js`'s "`mapImportColumns()` falls back to `toCSV()`'s fixed column order"
-  already covers the exact same logic, and the file's other two scenarios already prove the same
-  preview-rendering pipeline works: 3.44s → 3.08s. No other file was found reading `index.html` by
-  hand, and no other fully-redundant Playwright-vs-unit-test overlap was found on this pass — every
-  other file exercises real DOM rendering, `localStorage`, a real WebSocket, or `crypto.subtle` that
-  a unit test structurally can't reach. New sequential total: 118.9s (down from 133.65s). Documented
-  the pattern and a "run this if it gets slow again" note in `tests/README.md` so this doesn't
-  quietly regress a third time. Full 25-file Playwright + 38-test unit suite re-verified passing.
-- 2026-09-12 — **New policy: test-first, from here on.** The product owner asked for TDD going
-  forward rather than tests-after-code. No general-purpose TDD skill existed to install (checked
-  the skill/plugin marketplace — nothing generic fit), so added a repo-scoped one instead:
-  `.claude/skills/tdd/SKILL.md`. It encodes this repo's actual two-tier decision (pure logic →
-  `tests/unit/`, real DOM/relay/crypto → `tests/test_*.py`), the "check for existing unit coverage
-  before adding a Playwright test" rule from the perf pass above, and the write-test-first →
-  watch-it-fail-for-the-right-reason → minimal-code → refactor → full-suite loop this file's own
-  session log has been documenting in practice all along. Applies to any change under
-  `public/js/*.js`, `public/local-store.js`, or `relay/*.js`.
-- 2026-09-12 — **Board sync step 6, and the `tdd` skill's first real test-flight.** Followed the new
-  skill exactly: picked the tier (Playwright — real relay, real cross-device), wrote
-  `tests/test_board_sync_finish_retro_convergence.py` FIRST reproducing the original bug report's
-  exact shape (two team-synced devices, each facilitating a different squad's retro), then ran it
-  before writing any new production code. It failed for a real reason on the first run — not the
-  one expected. `board-sync.js`'s `applyRemoteBoardSnapshot()` was writing a remote squad's
-  `dimensions` object (frozen, per `deepFreezeClone()`) straight into a local doc; the next
-  `persistDimensionRatings()` call on that squad threw trying to add a new key to it ("object is
-  not extensible"). This is precisely the kind of bug a test-after approach tends to miss — a
-  weaker test (does `applyRemoteBoardSnapshot()` return without throwing?) would have stayed green
-  right through it, since the throw only happens on the NEXT write to that squad, not the hydrate
-  itself. Fixed with a `plainClone()` helper (JSON round-trip) applied everywhere a remote
-  snapshot's nested value gets written into a local doc. Full scenario now passes: two devices,
-  each finishing a different squad's retro, both converge on seeing BOTH squads' real results,
-  live; a rainy-day third device that never connected to the team link is confirmed unaffected.
-  Skill verdict: worked as intended, no changes needed to the skill itself this round — the
-  "pick the tier" and "write it first" steps did their job. One incidental discovery while writing
-  the test, not a skill gap: a joined participant has no in-app way back to the main board (the
-  test had to `page.goto()` the plain URL to simulate what a real user does today), independent
-  confirmation that story 9 is real. Full 26-file Playwright + 38-test unit suite passing.
-- 2026-09-12/13 — Stories 9, 10, 11, and Board sync step 7 (default-on), test-flighting the `tdd`
-  skill across all four. Stories 9 (participant exit/return), 10 (co-facilitator join via
-  code/link/QR), and 11 (wire-level encryption verification) all landed clean on the first real run
-  — see "Board sync" above for each one's detail; no skill changes needed. Step 7 (default-on) was
-  the hard one: turning on the full hydrate/push/subscribe cycle for EVERY device on EVERY boot
-  (instead of only an opted-in device once in a while) surfaced five real, previously-latent
-  concurrency/timing bugs the existing test suite caught one at a time as each prior fix exposed
-  the next — a blocking `await` that could stall the whole board behind a slow/unreachable relay, a
-  partial-board push race between three independently-timed local listeners, a timestamp-capture-
-  order bug that could invert last-write-wins, `maybeApplyRemote()` reentrancy between hydrate and
-  live-subscribe, and a genesis-push race for a device joining an existing team. The trickiest was
-  found LAST, via `test_board_sync_finish_retro_convergence.py` (story 6's own test) regressing at
-  a new assertion after all five of the above were fixed: `relay-client.js`'s `getRoom()` was
-  remembering every room it ever connected to — including a board's secret-derived room id, not
-  just plain session codes — for the broad `sessions` listener's reconnect-on-boot bookkeeping.
-  Once a device had ever joined a retro session and then reloaded, that bookkeeping's blind,
-  no-secret `getRoom(code)` call could create the board's room FIRST on the new page, permanently
-  fixing its encryption key to the wrong value (derived from the room id instead of the real
-  secret) — the device could still round-trip with itself but could never again decrypt a
-  correctly-keyed teammate's pushes, with no error surfaced anywhere. Fixed by only remembering a
-  code when no secret was given. Chasing the same regression also surfaced a SEPARATE, test-only
-  bug: `tests/fixtures/fake_store.html` had no concept of routing to a relay, so board sync's new
-  always-on `boards/<roomId>` traffic was landing in the exact same shared in-memory map as the
-  real squads/dimensions data in every fake-store test — a delayed hydrate could echo back a stale
-  snapshot and silently clobber a test's freshly-written board, intermittently breaking several
-  unrelated template/dimension tests. Fixed by making `boards/` paths inert in the fake store
-  (reads as not-found, writes reject as unavailable), the same behavior a real deployment gets with
-  no relay configured. Retired the "no persistent database, ever" language in this file, `README.md`,
-  and `docs/standalone-plan.md` for good — board sync's default-on rollout is what that
-  language was always going to give way to once proven. Full 30-file Playwright + 38-test unit
-  suite passing with zero regressions.
-- 2026-09-13 — **Test suite performance pass.** Runtime, not behavior: no product code changed.
-  Confirmed every file in `tests/test_*.py` is fully independent (its own unique `build_page()`/
-  `write_plain_index()` output filename, its own hardcoded relay port where a relay-backed file
-  spawns one — no two files share either), so added `tests/run_all.sh` to run the suite as parallel
-  processes instead of the serial `for` loop tests/README.md used to suggest. Measured on this
-  machine: serial ~170s → 2-at-a-time ~75s (zero failures) → 4-at-a-time ~41s but with one real,
-  reproducible flake (`test_relay_cross_device_sync.py`, an element read right after a genuine
-  WebSocket round trip, purely from CPU contention on a 4-core box with no headroom) — so
-  `run_all.sh` defaults to 2, not `nproc`. `.github/workflows/tests.yml` now shards the Playwright
-  suite three ways across separate runners (each running `run_all.sh` internally at 2), and split
-  the relay/unit checks into their own job that runs concurrently with the Playwright shards rather
-  than serially before them. Separately, converted the small number of `wait_for_timeout(N)` calls
-  that were guessing at a REAL relay round trip's duration (right after `#startSessionBtn`, a
-  join-by-code, or before touching `#experimentNoteBox`) to `page.wait_for_selector(...)` on
-  whatever that round trip actually produces — same fixed pattern that was causing the P=4 flake
-  above, now fixed at the source rather than by capping concurrency alone. Deliberately did NOT
-  touch the much larger set of `wait_for_timeout` calls with no equivalent DOM signal to wait on
-  (a write with no visible effect, several independent listeners settling) — converting those
-  would mean guessing a different, unproven condition rather than removing a real one, which is not
-  a safe trade at suite-wide scale. Also audited `tests/unit/*.js` vs. several Playwright files
-  that looked like candidates for trimming duplicate pure-logic coverage (consolidation/tie-
-  breaking, scored-template math) — found each one already earns its slower cost per this file's
-  own established rule (real DOM rendering, live-toggle persistence through the shared session doc,
-  wiring from actual clicks through to the real aggregation code path, not just re-checking the
-  math), so none were removed. Full 30-file Playwright + 38-test unit suite passing with zero
-  regressions throughout, including three consecutive clean runs of the suite's most timing-
-  sensitive file after the wait-condition changes.
-- 2026-09-13 — **Real bug report, three devices (Mac facilitator, iPhone + iPad participants),
-  fixed.** Diagnostics from all three showed different board-sync room ids -- three unrelated
-  teams -- even though a retro was shared between them: iPhone and iPad had each joined only the
-  retro session's OWN participant join link, never the facilitator's separate team link, so a
-  finished retro (and, separately, a squad rename tried on one device) never reached the others in
-  either direction. Root cause and fix are exactly what the product owner proposed: unify the two
-  mechanisms, matching the Excalidraw "one link, one shared document" model this repo's docs
-  already reference, rather than requiring a second, separate team-link step. `joinUrlFor()` (and
-  `coFacilitateUrlFor()`, same gap) now appends the facilitator's own current team secret as
-  `&team=<secret>` whenever they have one connected (the default per step 7); `board-sync.js`'s
-  existing `autoConnectFromLink()` already applies a `?team=` param generically and runs before the
-  default-bootstrap step, so no other production code needed to change. A facilitator who
-  explicitly stopped syncing produces a plain, session-only link exactly like before this fix --
-  the join link never forces a team onto anyone. New `tests/test_retro_join_link_carries_team_sync.py`
-  proves both directions over the real relay (a device that only ever opens the join link ends up
-  team-synced and sees the facilitator's real board; the reverse also reaches the facilitator live)
-  plus the rainy day above. A separate reported bug ("Starting retro session" stuck on iPhone/iPad
-  while Mac worked fine) is very likely explained by the same diagnostics -- both mobile devices
-  show repeated relay disconnect/reconnect cycles roughly every 30-90s (absent on Mac), consistent
-  with a mobile network's NAT dropping an idle WebSocket with no application-level keep-alive to
-  prevent it (`relay/server.js` has no ping/pong). Not fixed this round -- flagged as a follow-up
-  (a server-side heartbeat, and/or a client-side connection-attempt timeout in `relay-client.js`'s
-  `connectRoom()` so a hung initial connect can't block a brand-new session's `.set()` forever) --
-  since it's a distinct, separately-scoped resilience improvement to the wire protocol rather than
-  a one-line fix, and wasn't confirmed as an infinite hang (only a real, repeated slowdown) in the
-  captured diagnostics.
+The dated, chronological log of past work — every session's "what changed, why, what it fixed,
+what was verified" entry — moved to **[`docs/session-log.md`](docs/session-log.md)** on 2026-09-18
+(REF-11, "Repository / tooling improvements" below). By that date this file had grown to ~4400
+lines almost entirely from that history, no longer literally the "one-page entry point" its own
+header above claims for a fresh reader. Nothing was rewritten, summarized, or dropped in the
+move — every dated entry is there, verbatim, in order. Every existing "see `STATUS.md`'s session
+log" reference elsewhere in this repo still resolves correctly by following this same pointer.
 
-  **2026-09-18 note:** the product owner doesn't recall reporting this specific symptom. Worth
-  being precise about what was and wasn't a user report here: the *stuck-starting-on-iPhone/iPad*
-  bug above was a real report; the *30-90s reconnect-cycling* explanation was this session's own
-  reading of the captured diagnostics, offered as a likely cause, not something reported directly
-  — and the entry above already says so ("very likely explained by," "not confirmed"). Downgraded
-  from "flagged follow-up" to **unconfirmed, unscheduled** — don't build the heartbeat/timeout fix
-  against this until the reconnect pattern is actually reproduced and confirmed as the cause of a
-  real complaint.
-- 2026-09-13 — Two small UI fixes from the same bug report. (1) The session card's "Close session"
-  button sits right next to "Finish retro & apply results" and was reported as easy to mistake for
-  also saving results -- renamed it and both confirm-dialog OK labels that lead to the same
-  `closeSession()` action to "Close session without applying results" / "Close without applying
-  results". Text-only; the action itself is unchanged. Regression assertion added to
-  `test_retro_join_flow.py`. (2) Added a one-click "Copy diagnostics" button to both diagnostics
-  panels (Admin view and the participant join screen) -- `diag()`'s own selection-preserving logic
-  already existed because a fast-moving log made manual select-and-copy fiddly; a button sidesteps
-  that entirely by reading the log's current text at click time. Falls back to a hidden-textarea +
-  `execCommand("copy")` if the Clipboard API isn't available. New assertions in
-  `test_uncaught_error_diagnostics.py` verify the REAL clipboard content (not just "didn't throw"),
-  which needed granting the test's browser context `clipboard-write`/`clipboard-read` permissions
-  Playwright doesn't have by default. Full 31-file Playwright + 38-test unit suite passing.
-- 2026-09-18 — **Backlog review + ESLint added.** Product-owner review of the outstanding items
-  above; several corrections and calls recorded inline where they live (the deploy status note,
-  the mobile-reconnect downgrade, and the "Deliberately not built yet" table). Summary: relay
-  deployment confirmed done (was previously listed as blocked on account access — it wasn't, the
-  product owner already had it wired); Save-board/Load-to-file and "Relay on Vercel" cut as YAGNI
-  (not merely deferred); Embedding decision reconfirmed deferred, noted as a Copilot-suggested item
-  with no real need yet.
-
-  Also added **ESLint** (`eslint.config.js`, flat config, root `package.json` with a `lint`
-  script, wired into `.github/workflows/tests.yml`'s existing fast `unit-and-relay` job): three
-  rule groups, not one, because the codebase genuinely has three different sharing models —
-  `public/js/*.js`/`public/app.js` are classic `<script>` files that deliberately share one global
-  scope (see "The app's file layout" above for why: Chromium blocks cross-file `import` over
-  `file://`), so `no-undef` is off there (ESLint lints one file at a time and can't see a sibling
-  file's declarations — leaving it on would be ~14 files' worth of false positives) and
-  `no-unused-vars` only checks nested/local scope, not top-level declarations (same reason, mirror
-  image: a function that looks unused in its own file is routinely called from another one).
-  `relay/`, `scripts/`, and `tests/unit/` are ordinary Node CommonJS files with no such split, so
-  they keep the full `no-undef` check. First real run found 2 real (if low-severity) findings, both
-  fixed: `helpers.js`'s `consolidateBand()` and `retro-join.js`'s per-dimension draft-answer init
-  both called `.hasOwnProperty()` directly on a plain object instead of
-  `Object.prototype.hasOwnProperty.call(obj, key)` — safe today only because nothing currently lets
-  a dimension key collide with an `Object.prototype` name, but CSV import and template
-  save/load both turn arbitrary user text into dimension keys, so it's a real latent gap, not a
-  style nit. Also surfaced 24 warnings, all the same shape: a `catch(e)` whose `e` is never used —
-  left as warnings (not fixed), since this is exactly the "silent catch, no diagnostic trace" gap
-  `docs/refactoring-report.md` already flagged and partially fixed (5 sites, 2026-09-12); ESLint
-  now makes the remaining instances visible and keeps new ones from hiding. Verified safe: 39-test
-  unit suite and relay's own protocol/storage tests re-run clean after both fixes (Playwright
-  itself wasn't runnable in this session — no `playwright` package installed here — but neither
-  fix touches Playwright-covered surface differently than before; both are behavior-identical for
-  every plain-object case the suite already exercises).
-
-  **Does ESLint cover `docs/refactoring-report.md`'s remaining open items?** Checked directly
-  rather than assumed: two of the three items raised this round are NOT actually still open —
-  `state.editing`'s dual shape and the `dimensions-templates.js` split were both finished
-  2026-09-12 (see that day's two session-log entries above); `docs/refactoring-report.md`'s own
-  "Status" note already says so. The only genuinely open item is naming/abbreviation consistency
-  (`sq`/`squad`, `sess`/`session`, `dim`/`d`/`dimension`). ESLint can partially help there
-  *prospectively* — an `id-denylist`-style rule banning the short forms would stop new instances
-  from creeping in — but it can't do the actual renaming pass itself (that's a real, if mechanical,
-  ~3400-line find-and-replace with genuine regression risk if done carelessly), and a blunt
-  denylist on `d` specifically would false-positive on every unrelated one-letter use. Not added
-  this round; the refactoring report's own call (do it file-by-file, next time that file is
-  touched for a real reason) still stands as the right-sized approach.
+**New entries go in `docs/session-log.md`, not here** — append a dated entry there (same style as
+its existing entries) after finishing any non-trivial change, per `docs/DefinitionOfDone.md`'s
+delivery-workflow section.

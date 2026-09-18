@@ -29,13 +29,17 @@ with sync_playwright() as p:
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto("file://" + str(out_path.resolve()))
-    page.wait_for_timeout(300)
+    # eval_on_selector()/query_selector() below don't auto-wait --
+    # renderAdminSquadList() only populates this once the async store load +
+    # first render() pass lands, so this is the real boot-complete marker
+    # (same one test_hebrew_rtl_coverage.py uses), not a guessed sleep.
+    page.wait_for_selector('#adminSquadList .admin-squad-name', state="attached")
 
     print("=== start a session, then navigate away BEFORE the snapshot updates the DOM ===")
+    # setView() (app.js) and selectSquad() (squads.js) are both synchronous
+    # (established across this pass) -- no wait needed for either click.
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(100)
     page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.wait_for_timeout(150)
     assert page.query_selector('#startSessionBtn') is not None
 
     # Simulate the real timing: the write is in flight, the button already
@@ -49,10 +53,15 @@ with sync_playwright() as p:
       }
     """)
     page.click('.view-btn[data-view="admin"]')
-    page.wait_for_timeout(100)
     print("now on Admin, Squad view is hidden but still shows the disabled button underneath")
 
     print("=== the session doc lands while Squad view is hidden ===")
+    # window.__NOTIFY__() below calls the fake store's notify() SYNCHRONOUSLY
+    # (unlike a real onSnapshot's first delivery, which the fixture delays),
+    # which synchronously updates state.sessions via the long-lived sessions
+    # listener (db.js) -- but that listener only re-renders Squad view when
+    # it's the active view (the exact bug this test exists to catch), so
+    # nothing here needs a wait either way.
     page.evaluate("""
       () => {
         window.__FAKE_STORE__['sessions/ABC123'] = {
@@ -63,20 +72,24 @@ with sync_playwright() as p:
         window.__NOTIFY__('sessions');
       }
     """)
-    page.wait_for_timeout(150)
 
     print("=== switching back to Squad view must show the real, current state ===")
     page.click('.view-btn[data-view="squad"]')
-    page.wait_for_timeout(150)
     start_btn = page.query_selector('#startSessionBtn')
     close_btn = page.query_selector('#closeSessionBtn')
     print("startSessionBtn present (should be None -- a session is open):", start_btn)
     print("closeSessionBtn present (should exist -- the in-progress card):", close_btn is not None)
     assert start_btn is None, "returning to Squad view still showed the stale disabled button instead of the session that actually started"
     assert close_btn is not None
-    session_code_shown = page.eval_on_selector('.session-code', 'el => el.textContent')
-    print("session code shown on card:", session_code_shown)
-    assert session_code_shown == "ABC123"
+    # SEC-2: no raw code is shown any more -- the real, current session
+    # renders its join-link block instead (this doc's own room id, "ABC123",
+    # never went through startSession()'s real secret generation, so the
+    # link itself is incidental here -- what matters is the card reflects
+    # the ACTUAL open session, not the stale disabled button).
+    join_link_present = page.query_selector('#sessionJoinLink') is not None
+    print("join link present on the real, current session card:", join_link_present)
+    assert join_link_present
+    assert page.query_selector('.session-code') is None
     print("errors:", errors)
 
     print("=== ALL VIEW-SWITCH REFRESH TESTS PASSED ===")

@@ -109,21 +109,70 @@ function isJoinMode(){ return !!state.joinSessionId; }
 // explicitly stopped syncing -- in that case this omits the team param
 // entirely, exactly like before this fix, rather than forcing a team back
 // onto a device that deliberately isn't using one.
-function teamParamFor(){
-  var secret = (typeof getTeamSecret === "function") ? getTeamSecret() : "";
-  return secret ? "&team=" + encodeURIComponent(secret) : "";
+// Builds one '#'-prefixed URL fragment out of several name/secret pairs,
+// skipping any pair whose value is empty -- the one place that knows how to
+// combine, say, a join link's own session secret AND its piggybacked team
+// secret into a single fragment (a URL only ever has one '#'; two callers
+// each returning their own "#foo=..." can't just be concatenated). Returns
+// "" (not a bare dangling "#") when nothing qualifies.
+function buildFragment(pairs){
+  var params = new URLSearchParams();
+  pairs.forEach(function(pair){ if(pair[1]) params.set(pair[0], pair[1]); });
+  var s = params.toString();
+  return s ? "#" + s : "";
 }
-function joinUrlFor(sessionId){
-  return window.location.origin + window.location.pathname + "?session=" + encodeURIComponent(sessionId) + teamParamFor();
+// SEC-4 (STATUS.md's "Security hardening backlog"): the team secret rides
+// in the URL FRAGMENT (#team=...), not the query string -- same reasoning,
+// and the same shape, as board-sync.js's own teamLinkFor(): a fragment is
+// never sent to any server at all, unlike a query param.
+function teamHashFor(){
+  var secret = (typeof getTeamSecret === "function") ? getTeamSecret() : "";
+  return buildFragment([["team", secret]]);
+}
+// Real bug report from usage: a participant opening a join link on a fresh
+// device always landed on an English join screen, even when the
+// facilitator had switched the whole app to Hebrew first -- state.ui.locale
+// (i18n.js) is per-device UI state with no way to reach a device that's
+// never visited before. Same fix shape as teamHashFor() below: carry the
+// facilitator's CURRENT locale on the link, omitted entirely for the "en"
+// default so an all-English board's links are unchanged. state.js's
+// boot-time loadUiPrefs() applies it, but only as a fallback for a device
+// with no locale of its own already saved -- see that function's own
+// comment for why an existing preference always wins.
+// The only thing this app ever puts in a join/co-facilitate link's QUERY
+// string -- deliberately not a secret, so it stays fine to sit in a server
+// access log or a Referer header. Standalone (a leading "?", not "&") since
+// SEC-2's fix below (Codex review on PR #14, finding P1) means it's now the
+// only query param these links ever carry -- the session/co-facilitate
+// secret moved into the fragment alongside the team secret.
+function langParamFor(){
+  var locale = (state.ui && state.ui.locale) || "en";
+  return locale === "en" ? "" : "?lang=" + encodeURIComponent(locale);
+}
+// SEC-2: `secret` is the session's high-entropy secret (crypto.js's
+// generateSecret()), not its relay room id -- see crypto.js's header
+// comment and retro-facilitator.js's startSession().
+//
+// Codex review on PR #14 (P1, fixing a gap SEC-4 left open): this secret
+// used to ride in the query string (?session=<secret>) -- sent in the
+// initial HTTP navigation request, so it could land in the hosting server's
+// own access logs, exactly the exposure SEC-4 closed for the PIGGYBACKED
+// team secret but missed for the session secret itself. It now rides in the
+// fragment too, alongside team (buildFragment() above combines them into
+// one "#session=...&team=..." rather than two separate fragments).
+function joinUrlFor(secret){
+  var team = (typeof getTeamSecret === "function") ? getTeamSecret() : "";
+  return window.location.origin + window.location.pathname + langParamFor() + buildFragment([["session", secret], ["team", team]]);
 }
 // Story 10: a SEPARATE link from joinUrlFor() above -- opening this one
 // attaches a device as a co-facilitator (full facilitator view) rather
 // than the participant join screen. See state.js's coFacilitateSessionId
 // and retro-facilitator.js's coFacilitateSessionByCode(). Carries the same
-// team param and for the same reason: a co-facilitator needs the
+// team fragment and for the same reason: a co-facilitator needs the
 // facilitator's real board locally too, not just the session's own data.
-function coFacilitateUrlFor(sessionId){
-  return window.location.origin + window.location.pathname + "?cofacilitate=" + encodeURIComponent(sessionId) + teamParamFor();
+function coFacilitateUrlFor(secret){
+  var team = (typeof getTeamSecret === "function") ? getTeamSecret() : "";
+  return window.location.origin + window.location.pathname + langParamFor() + buildFragment([["cofacilitate", secret], ["team", team]]);
 }
 function slugify(s, fallback){
   var slug = String(s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
@@ -225,6 +274,31 @@ function statementDimensions(dims){
 function directRatingDimensions(dims){
   return retroDimensions(dims).filter(function(d){ return !isStatementDimension(d); });
 }
+// RETRO-2: the ordered sequence of individually-answerable "questions" a
+// PACED session steps through one at a time -- every interleaved statement
+// (same round-robin order retro-join.js's own interleavedStatements() uses:
+// the 1st statement of every statement dimension, then the 2nd of every
+// one, ...) followed by every direct-rating dimension's single pick. A pure
+// function of a session's own `dimensions` snapshot and nothing else, so
+// both the facilitator's device (which only needs the total count, to show
+// "Question X of N" and enable/disable Next/Previous) and a participant's
+// device (which needs the one item at the session doc's own
+// `currentQuestionIndex`) compute the exact SAME sequence independently --
+// nothing about the sequence itself needs to be written to the session
+// doc, only the numeric index into it.
+function pacingSequence(dims){
+  var stmtDims = statementDimensions(dims);
+  var directDims = directRatingDimensions(dims);
+  var out = [];
+  var maxLen = stmtDims.reduce(function(m,d){ return Math.max(m, (d.statements||[]).length); }, 0);
+  for(var i=0;i<maxLen;i+=1){
+    stmtDims.forEach(function(dim){
+      if(dim.statements && dim.statements[i]!==undefined) out.push({ kind:"stmt", dimKey: dim.key, idx: i });
+    });
+  }
+  directDims.forEach(function(dim){ out.push({ kind:"direct", dimKey: dim.key }); });
+  return out;
+}
 function dimByKey(key){
   for(var i=0;i<state.dimensions.length;i++){ if(state.dimensions[i].key===key) return state.dimensions[i]; }
   return null;
@@ -284,6 +358,20 @@ function findSquad(id){
   return null;
 }
 
+// Bug fix: loading a template (templates.js's loadTemplate()) rewrites the
+// board's shared dimension set and meta/config -- board-wide, not scoped to
+// any one squad, since Templates is opened from Admin with no "current
+// squad" context -- with no check for whether any squad has a retro IN
+// PROGRESS. Used to warn before loading, and to close those sessions
+// (without saving) if the facilitator confirms, rather than silently
+// leaving a retro running against dimensions the newly-active template no
+// longer matches.
+function openRetroSessionsInfo(){
+  return state.sessions
+    .filter(function(s){ return s.status==="open"; })
+    .map(function(s){ var sq = findSquad(s.squadId); return { id: s.id, squadName: sq ? sq.name : s.squadId }; });
+}
+
 // ---------- live/local write helpers ----------
 // Every mutation in this app follows one of two shapes depending on
 // whether it's safe to also apply locally before the live write confirms:
@@ -327,9 +415,12 @@ if (typeof module !== "undefined" && module.exports) {
     bandForResponse: bandForResponse, effectiveDimResult: effectiveDimResult,
     sortedDimensions: sortedDimensions, sortedSquads: sortedSquads,
     squadScore: squadScore, dimByKey: dimByKey, findSquad: findSquad,
+    openRetroSessionsInfo: openRetroSessionsInfo,
     retroDimensions: retroDimensions, statementDimensions: statementDimensions,
-    directRatingDimensions: directRatingDimensions,
+    directRatingDimensions: directRatingDimensions, pacingSequence: pacingSequence,
     isStatementDimension: isStatementDimension, colorWord: colorWord, trendWord: trendWord,
-    liveOr: liveOr, syncLiveIfConnected: syncLiveIfConnected, DIAG_LINES: DIAG_LINES
+    liveOr: liveOr, syncLiveIfConnected: syncLiveIfConnected, DIAG_LINES: DIAG_LINES,
+    teamHashFor: teamHashFor, langParamFor: langParamFor, buildFragment: buildFragment,
+    joinUrlFor: joinUrlFor, coFacilitateUrlFor: coFacilitateUrlFor
   };
 }

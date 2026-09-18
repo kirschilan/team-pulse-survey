@@ -6,6 +6,13 @@
    own guards (`window.claude && window.claude.use`) fall through to
    local-only preview mode with nothing persisted.
 
+   REF-2: this file and relay-client.js are two independent implementations
+   of that same `db` contract -- see docs/backend-contract.md for the one
+   place it's actually named, including where the two intentionally differ
+   (the `unavailable` field, readiness timing, get() vs. onSnapshot()'s
+   freezing behavior) and tests/test_backend_contract_parity.py for the
+   shared test coverage.
+
    This file only installs a shim when no real `window.claude` is present
    (Claude Artifact previews, and the Playwright test harness's own
    fake_store.html, both set `window.claude` themselves and take priority --
@@ -42,22 +49,47 @@
     for (var i=1;i<=3;i++){
       STORE["squads/squad-"+i] = { name:"Squad "+i, order:i, dimensions:{}, updatedAt: new Date().toISOString() };
     }
+    // Hebrew translation (5th element) duplicates state.js's own
+    // SPOTIFY_DIMENSIONS_HE -- this file loads BEFORE state.js (see
+    // index.html's script order) and already deliberately duplicates every
+    // other piece of seed data it mirrors (see this file's own header
+    // comment), so referencing state.js's copy isn't an option. Kept here
+    // so a BRAND NEW board -- seeded here, never explicitly (re)loaded via
+    // the Templates modal -- still shows a translated grid the moment
+    // someone switches to Hebrew, same as state.js's localizedDimText()
+    // gives any Spotify-template dimension everywhere else (the exact gap
+    // Story 5 originally fixed, now re-guarded here after the bilingual-
+    // dimensions redesign moved translation onto the dimension itself
+    // instead of a value-matched template lookup).
     var dims = [
-      ["release","Easy to release",1,"Releasing is routine, low-risk, and low-drama.","Releases are rare, risky, or dreaded events."],
-      ["process","Suitable process",2,"Our way of working fits us, and we can tune it ourselves.","Process feels imposed, bureaucratic, or mismatched to how we work."],
-      ["techquality","Tech quality",3,"We're proud of our codebase and engineering practices.","Quality is a constant source of pain and slow-down."],
-      ["value","Value",4,"What we ship clearly matters to users and the business.","We're not confident our work is moving the needle."],
-      ["speed","Speed",5,"We get things done quickly, without cutting corners.","Progress feels slow and heavy."],
-      ["mission","Mission",6,"We know why we exist and where we're headed.","The mission is vague, or keeps shifting under us."],
-      ["fun","Fun",7,"We genuinely enjoy working together.","Coming to work feels like a grind."],
-      ["learning","Learning",8,"We're growing, trying new things, and sharing what we learn.","We're stagnant — same patterns, no time to learn."],
-      ["support","Support",9,"We get the help we need, when we need it, from the org around us.","We're on our own — blocked, or ignored."],
-      ["pawns","Pawns or players",10,"We help decide what to build and how.","We just execute a backlog someone else wrote."],
-      ["teamwork","Teamwork",11,"We function as one team, not a collection of individuals.","We're fragmented, siloed, or in open conflict."],
-      ["codebase","Codebase health",12,"The codebase is something we can safely and confidently change.","Every change feels risky, brittle, or full of surprises."]
+      ["release","Easy to release",1,"Releasing is routine, low-risk, and low-drama.","Releases are rare, risky, or dreaded events.",
+        "קלות שחרור לפרודקשן","השחרור הוא שגרתי, בסיכון נמוך וללא דרמה.","שחרורים הם נדירים, מסוכנים, או מעוררי חשש."],
+      ["process","Suitable process",2,"Our way of working fits us, and we can tune it ourselves.","Process feels imposed, bureaucratic, or mismatched to how we work.",
+        "תהליך עבודה מתאים","צורת העבודה שלנו מתאימה לנו, ואנחנו יכולים לכוונן אותה בעצמנו.","התהליך מרגיש כפוי, בירוקרטי, או לא תואם לאופן שבו אנחנו עובדים."],
+      ["techquality","Tech quality",3,"We're proud of our codebase and engineering practices.","Quality is a constant source of pain and slow-down.",
+        "איכות טכנולוגית","אנחנו גאים בקוד ובשיטות העבודה ההנדסיות שלנו.","האיכות היא מקור מתמשך לכאב ולהאטה."],
+      ["value","Value",4,"What we ship clearly matters to users and the business.","We're not confident our work is moving the needle.",
+        "ערך","ברור שמה שאנחנו משחררים חשוב למשתמשים ולעסק.","אנחנו לא בטוחים שהעבודה שלנו באמת מקדמת משהו."],
+      ["speed","Speed",5,"We get things done quickly, without cutting corners.","Progress feels slow and heavy.",
+        "מהירות","אנחנו מספקים דברים במהירות, בלי לקצר תהליכים.","ההתקדמות מרגישה איטית וכבדה."],
+      ["mission","Mission",6,"We know why we exist and where we're headed.","The mission is vague, or keeps shifting under us.",
+        "משימה","אנחנו יודעים לשם מה אנחנו קיימים ולאן אנחנו הולכים.","המשימה מעורפלת, או משתנה כל הזמן."],
+      ["fun","Fun",7,"We genuinely enjoy working together.","Coming to work feels like a grind.",
+        "כיף","אנחנו נהנים באמת לעבוד ביחד.","להגיע לעבודה מרגיש כמו התשה."],
+      ["learning","Learning",8,"We're growing, trying new things, and sharing what we learn.","We're stagnant — same patterns, no time to learn.",
+        "למידה","אנחנו מתפתחים, מנסים דברים חדשים, ומשתפים את מה שאנחנו לומדים.","אנחנו קופאים על השמרים — אותם דפוסים, בלי זמן ללמוד."],
+      ["support","Support",9,"We get the help we need, when we need it, from the org around us.","We're on our own — blocked, or ignored.",
+        "תמיכה","אנחנו מקבלים את העזרה שאנחנו צריכים, בזמן שאנחנו צריכים אותה, מהארגון שסביבנו.","אנחנו לבד — חסומים, או מתעלמים מאיתנו."],
+      ["pawns","Pawns or players",10,"We help decide what to build and how.","We just execute a backlog someone else wrote.",
+        "שחקנים או כלים במשחק","אנחנו עוזרים להחליט מה לבנות ואיך.","אנחנו רק מבצעים בקלוג שמישהו אחר כתב."],
+      ["teamwork","Teamwork",11,"We function as one team, not a collection of individuals.","We're fragmented, siloed, or in open conflict.",
+        "עבודת צוות","אנחנו מתפקדים כצוות אחד, לא כאוסף של יחידים.","אנחנו מפוצלים, מבודדים, או בקונפליקט גלוי."],
+      ["codebase","Codebase health",12,"The codebase is something we can safely and confidently change.","Every change feels risky, brittle, or full of surprises.",
+        "בריאות בסיס הקוד","בסיס הקוד הוא משהו שאנחנו יכולים לשנות בבטחה ובביטחון.","כל שינוי מרגיש מסוכן, שביר, או מלא בהפתעות."]
     ];
     dims.forEach(function(d){
-      STORE["dimensions/"+d[0]] = { label:d[1], order:d[2], green:d[3], red:d[4] };
+      STORE["dimensions/"+d[0]] = { label:d[1], order:d[2], green:d[3], red:d[4],
+        i18n: { he: { label:d[5], green:d[6], red:d[7] } } };
     });
     STORE["meta/config"] = {
       unit:"Squad", unitPlural:"Squads", activeTemplateName:"Spotify Squad Health Check",
@@ -104,10 +136,55 @@
       l.cb({ id: path.split("/").pop(), exists: !!d, data: function(){ return d ? deepFreezeClone(d) : undefined; } });
     });
   }
-  function notifyEverything(){
+  // PERF-1 (STATUS.md's "Runtime performance backlog"): the native
+  // `storage` event fires once per localStorage WRITE, not once per path
+  // that actually changed -- a bare "reload everything and notify every
+  // listener" response (the old notifyEverything(), now replaced by this)
+  // re-fires every squads/dimensions/config listener even when only ONE of
+  // them genuinely changed. db.js's listeners each unconditionally
+  // re-render AND call pushBoardSnapshotIfConnected() (board-sync.js) on
+  // every fire -- so a no-op echo of data this tab already has still
+  // produces a BRAND NEW board push (a fresh nowIso() timestamp) back to
+  // the relay. With a live subscription open (board sync is default-on),
+  // that push echoes back as a "newer" remote snapshot, gets applied
+  // locally, writes local docs again, fires another `storage` event in the
+  // OTHER tab sharing this origin's localStorage -- and the cycle repeats
+  // forever between any two tabs sharing storage, pinning both renderer
+  // processes at 100%+ CPU while sitting completely idle (confirmed: one
+  // became unresponsive to browser automation entirely). Comparing each
+  // listener's own path against what this tab already had, BEFORE load()
+  // overwrote it, and only notifying paths that actually changed breaks
+  // the loop at its root: an echo of already-known data now produces zero
+  // renders and zero pushes, while a genuine edit (the data really does
+  // differ) still notifies exactly as before.
+  function pathChanged(oldStore, path){
+    // STORE only ever holds plain JSON-shaped data (persist() itself goes
+    // through JSON.stringify) -- comparing serialized form is a correct
+    // deep-equality check here, not just a reference check, and matches
+    // the same JSON-round-trip comparison pattern board-sync.js's own
+    // plainClone() already relies on elsewhere in this app.
+    return JSON.stringify(oldStore[path]) !== JSON.stringify(STORE[path]);
+  }
+  function notifyChangedSince(oldStore){
+    var changedCollections = {};
+    var changedDocs = {};
+    var allPaths = {};
+    Object.keys(oldStore).forEach(function(p){ allPaths[p]=1; });
+    Object.keys(STORE).forEach(function(p){ allPaths[p]=1; });
+    Object.keys(allPaths).forEach(function(path){
+      if (!pathChanged(oldStore, path)) return;
+      changedDocs[path] = true;
+      changedCollections[path.split("/").slice(0,-1).join("/")] = true;
+    });
     var seen = {};
-    LISTENERS.forEach(function(l){ if(!seen["c:"+l.collectionPath]){ seen["c:"+l.collectionPath]=1; notify(l.collectionPath); } });
-    DOC_LISTENERS.forEach(function(l){ if(!seen["d:"+l.docPath]){ seen["d:"+l.docPath]=1; notifyDoc(l.docPath); } });
+    LISTENERS.forEach(function(l){
+      if (seen["c:"+l.collectionPath]) return; seen["c:"+l.collectionPath]=1;
+      if (changedCollections[l.collectionPath]) notify(l.collectionPath);
+    });
+    DOC_LISTENERS.forEach(function(l){
+      if (seen["d:"+l.docPath]) return; seen["d:"+l.docPath]=1;
+      if (changedDocs[l.docPath]) notifyDoc(l.docPath);
+    });
   }
   function buildSnapshot(collectionPath){
     var docs = [];
@@ -187,13 +264,15 @@
   seedIfEmpty();
 
   // Another tab of the same browser wrote a change -- pick it up and
-  // re-fire whatever this tab currently has listeners on. There's no way
-  // to know from a bare `storage` event which paths actually changed, and
-  // this app's data is small, so just re-check everything.
+  // notify only the listeners whose own path genuinely differs from what
+  // this tab already had (see notifyChangedSince()'s own comment above for
+  // why re-firing EVERY listener on every event, regardless of whether its
+  // data actually changed, is a real, previously-shipped bug).
   window.addEventListener("storage", function(e){
     if (e.key !== STORAGE_KEY) return;
+    var before = STORE;
     load();
-    notifyEverything();
+    notifyChangedSince(before);
   });
 
   function triggerBrowserDownload(filename, data){
