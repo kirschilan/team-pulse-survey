@@ -19,6 +19,12 @@ repo — read these before making a change, not this file's own prose:
 - **`README.md`** — project overview, running locally, deploying.
 - **`ETHICS.md`** — secrets handling, attribution honesty, and other
   standing ethical/security-hygiene rules for anyone working in this repo.
+- **`ETHICS_AGREEMENT.md`** — Dr. Agile's canonical stakeholder-priority
+  agreement (Clients → Business Partners → Dr. Agile → Effectiveness),
+  copied verbatim from `dr-agile-standards`. A different layer than
+  `ETHICS.md`: that one is security/trust hygiene for this repo
+  specifically; this one is company-wide and states whose needs take
+  precedence when they conflict.
 
 This file intentionally stays a short index rather than a growing summary of
 the codebase — the docs above are the source of truth, and duplicating them

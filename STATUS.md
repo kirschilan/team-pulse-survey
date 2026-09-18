@@ -4018,3 +4018,49 @@ there are smaller, single-responsibility files to set real size/complexity limit
   to confirm it's genuinely merged rather than closed-unmerged, rather than trusting either list
   command's own state/merged columns for that distinction. Docs-only; no runtime code touched. Full
   suite re-verified green: 167/167 unit tests, all Playwright files.
+- 2026-09-17 — Adopted `ETHICS_AGREEMENT.md` from `dr-agile-standards`, the third of three points
+  raised by a review of PR #25 from another Claude session working on that sister repo, relayed by
+  the PO. That review's own framing was right, but its suggested shape wasn't quite what the
+  canonical source actually asks for: the review (and my own initial question back to the PO)
+  proposed writing a bespoke "team-pulse-survey-scoped equivalent" naming this app's own
+  stakeholders -- but `dr-agile-standards`' actual `ETHICS_AGREEMENT.md` states plainly it's a
+  **canonical template** meant to be copied VERBATIM into each project ("adapt only the Session Log
+  there"), specifically so the Stakeholder Hierarchy (Clients -> Business Partners -> Dr. Agile ->
+  Effectiveness) stays identical and comparable across every Dr. Agile project, not reinterpreted
+  per-repo. Cloned `dr-agile-standards` (read-only) to actually read the source before drafting
+  anything, rather than reconstructing its structure from the PO's paraphrase -- confirmed via its
+  own `EXEMPLARS/ethics-agreement-blocker-generator.md` that "copy verbatim, fill in the Session
+  Log" is the real, already-established pattern, not a guess. Copied it into this repo's root
+  unchanged apart from the Session Log's new team-pulse-survey entry (no `/specification/`
+  directory exists here -- this repo uses `STATUS.md`/`docs/` instead -- so placed at the root
+  only, not duplicated into a directory this repo doesn't have). This is a genuinely different
+  layer than `ETHICS.md` (added earlier this session): that one is security/trust hygiene scoped to
+  this repo (secrets, verified claims, attribution, authorization); this one is company-wide and
+  states whose needs take precedence when they conflict -- confirmed the two don't overlap by
+  re-reading `ETHICS.md` in full before concluding a second document was actually needed, per the
+  review's own explicit ask to check with the PO rather than assume. Cross-referenced from
+  `CLAUDE.md`'s index alongside `ETHICS.md`. Docs-only; no runtime code touched. Full suite
+  re-verified green: 167/167 unit tests, all Playwright files.
+- 2026-09-18 — Fixed a real P2 finding from a Codex review of PR #27: `ETHICS_AGREEMENT.md`'s
+  Code Commits section requires "test coverage per the project's TESTER.md" and treats
+  `/specification/` as the source of truth for implementation questions, but neither a `TESTER.md`
+  file nor a `/specification/` directory exists in this repo, canonical text preserved verbatim
+  from `dr-agile-standards` means those references are left dangling for anyone reading this repo's
+  copy on its own. Rather than adding a `TESTER.md`/`/specification/` this repo's own well-established
+  doc architecture doesn't need (this repo already splits testing guidance across
+  `docs/DefinitionOfDone.md`, `tests/README.md`/`tests/unit/README.md`, and
+  `.claude/skills/tdd/SKILL.md` for reasons documented in DoD's own "How this relates to the repo's
+  other reference docs" section, and specification-equivalent content across `STATUS.md`'s
+  "Decisions locked in" plus feature specs like `docs/backend-contract.md`/
+  `docs/facilitated-retro-spec.md`), added a second Session Log row mapping the canonical template's
+  two named artifacts to their real equivalents here -- resolving the ambiguity without renaming,
+  restructuring, or duplicating any existing doc, and without touching the canonical
+  Hierarchy/Commitments/Resolution-examples text itself (only the Session Log, exactly as the
+  template's own header permits). Also flagged as worth raising upstream in `dr-agile-standards`
+  itself: the canonical template hardcodes `TESTER.md`/`/specification/` as if every adopting
+  project's testing and spec content lives in exactly those single, fixed paths, which this repo is
+  a live counterexample against -- suggested (not made here, no push access to that repo from this
+  session) that the template's own Session Log instructions explicitly ask each adopting project to
+  map those two names to its real equivalents when they differ, the same way this row now does.
+  Docs-only; no runtime code touched. Full suite re-verified green: 167/167 unit tests, all
+  Playwright files, relay's own suite.
