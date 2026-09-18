@@ -100,11 +100,13 @@ var LOCALE_EN = {
   "templates.meta.scoredFromStatements": " · {count} scored from statements",
   "templates.confirmLoadTitle": "Load “{name}”?",
   "templates.confirmLoadMessage": "This replaces your current {oldCount} dimension(s) with {name}'s {newCount}. Ratings tied to dimensions that don't carry over will be hidden, not deleted.",
+  "templates.confirmLoadOpenSessionWarning": "This will also close the in-progress retro session for {squads} — its results will not be saved.",
   "templates.confirmLoadButton": "Load template",
   "templates.confirmDeleteTitle": "Delete “{name}”?",
   "templates.confirmDeleteMessage": "This removes the saved template. It won't affect your current dimensions or ratings.",
   "templates.confirmDeleteButton": "Delete",
   "templates.switchingBusy": "Switching to “{name}”…",
+  "templates.confirmLoadOpenSessionCloseFailedHint": "Couldn't load “{name}” – closing the in-progress retro failed. Try again.",
 
   "admin.language.heading": "Language",
   "admin.language.betaBadge": "Beta",

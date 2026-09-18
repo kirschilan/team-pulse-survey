@@ -11,7 +11,20 @@
 // STATUS.md).
 var templatesBackdrop = document.getElementById("templatesBackdrop");
 
+// #diagLog (the Admin panel's diagnostics log) lives OUTSIDE this modal --
+// invisible to anyone actually looking at the still-open Templates dialog
+// when a load fails. This is the modal's own, translated, visible-in-place
+// error surface (same "hint error" idiom as expNoteSaveErrorHint in
+// retro-facilitator.js); diag() below is kept alongside it for the
+// underlying cause, not instead of it.
+var tplLoadErrorHintEl = document.getElementById("tplLoadErrorHint");
+function setTplLoadError(msg){
+  tplLoadErrorHintEl.textContent = msg || "";
+  tplLoadErrorHintEl.hidden = !msg;
+}
+
 function openTemplates(){
+  setTplLoadError(null);
   renderTemplateList();
   templatesBackdrop.hidden = false;
 }
@@ -57,10 +70,39 @@ function renderTemplateList(){
     var tpl = findAnyTemplateById(id);
     if(!tpl) return;
     row.querySelector('[data-action="load"]').addEventListener("click", function(){
+      // Bug fix: loading a template rewrites the board's shared dimension
+      // set board-wide -- warn (and, if confirmed, close without saving)
+      // any squad's retro that's currently in progress, rather than
+      // silently leaving it open and running against dimensions the newly-
+      // active template no longer matches. See helpers.js's
+      // openRetroSessionsInfo() for why this checks every squad, not just
+      // one -- Templates has no single "current squad" context.
+      var openSessions = openRetroSessionsInfo();
+      var message = t("templates.confirmLoadMessage", {oldCount: state.dimensions.length, name: tpl.name, newCount: tpl.dimensions.length});
+      if(openSessions.length){
+        message += " " + t("templates.confirmLoadOpenSessionWarning", {squads: openSessions.map(function(s){ return s.squadName; }).join(", ")});
+      }
       openConfirm(
         t("templates.confirmLoadTitle", {name: tpl.name}),
-        t("templates.confirmLoadMessage", {oldCount: state.dimensions.length, name: tpl.name, newCount: tpl.dimensions.length}),
-        function(){ loadTemplate(tpl); },
+        message,
+        function(){
+          // Await every close before rewriting the board's shared dimension
+          // set -- closeSession() can fail (a rejected write, same as any
+          // other live write in this app), and loading on top of a retro
+          // that's still actually open would leave it running against
+          // dimensions the newly-active template no longer matches, exactly
+          // the bug this confirm dialog exists to prevent. diag() logs the
+          // underlying cause; setTplLoadError() is what a facilitator
+          // actually SEES, since the Templates modal is still open right in
+          // front of them and #diagLog isn't.
+          setTplLoadError(null);
+          Promise.all(openSessions.map(function(s){ return closeSession(s.id); }))
+            .then(function(){ loadTemplate(tpl); })
+            .catch(function(){
+              diag("Template '" + tpl.name + "' NOT loaded: failed to close an in-progress retro session first.");
+              setTplLoadError(t("templates.confirmLoadOpenSessionCloseFailedHint", {name: tpl.name}));
+            });
+        },
         t("templates.confirmLoadButton")
       );
     });

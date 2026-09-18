@@ -207,6 +207,32 @@ test("sortedDimensions/sortedSquads/dimByKey/findSquad/squadScore read from glob
   assert.deepEqual(score.counts, { good: 1, warn: 0, crit: 1, unscored: 0 });
 });
 
+test("openRetroSessionsInfo() lists only open sessions, with each one's squad name", () => {
+  global.state = {
+    squads: [
+      { id: "sq-1", name: "Squad One" },
+      { id: "sq-2", name: "Squad Two" },
+    ],
+    sessions: [
+      { id: "sess-1", squadId: "sq-1", status: "open" },
+      { id: "sess-2", squadId: "sq-2", status: "closed" },
+      { id: "sess-3", squadId: "sq-missing", status: "open" },
+    ],
+  };
+  assert.deepEqual(helpers.openRetroSessionsInfo(), [
+    { id: "sess-1", squadName: "Squad One" },
+    { id: "sess-3", squadName: "sq-missing" },
+  ]);
+});
+
+test("openRetroSessionsInfo() returns an empty array when no session is open", () => {
+  global.state = {
+    squads: [{ id: "sq-1", name: "Squad One" }],
+    sessions: [{ id: "sess-1", squadId: "sq-1", status: "closed" }],
+  };
+  assert.deepEqual(helpers.openRetroSessionsInfo(), []);
+});
+
 // SEC-4 (STATUS.md's "Security hardening backlog"): a retro join/
 // co-facilitate link's piggybacked team secret (see this file's own header
 // comment on why one link now carries both) moved from a query param to

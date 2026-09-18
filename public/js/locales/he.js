@@ -93,11 +93,13 @@ var LOCALE_HE = {
   "templates.meta.scoredFromStatements": " · {count} מדורגים על סמך היגדים",
   "templates.confirmLoadTitle": "לטעון את “{name}”?",
   "templates.confirmLoadMessage": "פעולה זו תחליף את {oldCount} הממדים הנוכחיים שלכם ב-{newCount} הממדים של {name}. דירוגים המשויכים לממדים שלא עוברים יוסתרו, לא יימחקו.",
+  "templates.confirmLoadOpenSessionWarning": "פעולה זו תסגור גם את הרטרו הפעיל עבור {squads} — התוצאות לא יישמרו.",
   "templates.confirmLoadButton": "טעינת תבנית",
   "templates.confirmDeleteTitle": "למחוק את “{name}”?",
   "templates.confirmDeleteMessage": "פעולה זו מסירה את התבנית השמורה. היא לא תשפיע על הממדים או הדירוגים הנוכחיים שלכם.",
   "templates.confirmDeleteButton": "מחיקה",
   "templates.switchingBusy": "עובר אל “{name}”…",
+  "templates.confirmLoadOpenSessionCloseFailedHint": "טעינת “{name}” נכשלה – סגירת הרטרו הפעיל לא הצליחה. יש לנסות שוב.",
 
   "admin.language.heading": "שפה",
   "admin.language.betaBadge": "בטא",

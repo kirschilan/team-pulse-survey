@@ -139,6 +139,13 @@ function startSession(sq, pacingEnabled, excludedDimKeys){
   });
 }
 
+// Returns the write's own promise (resolved once the close has actually
+// landed, rejected if it failed) rather than swallowing it -- a caller that
+// needs to know the close really happened before doing something else
+// (templates.js's loadTemplate() confirm handler, closing every in-progress
+// retro before it rewrites the shared dimension set) can await it; a
+// fire-and-forget caller (the plain "close this retro" button below) can
+// still just call it and ignore the return value, same as before.
 function closeSession(sessionId){
   // An update to status:"closed" rather than a delete -- a participant
   // already on the join screen (or one who opens a stale link soon
@@ -148,13 +155,15 @@ function closeSession(sessionId){
   // grace period elapses (see relay/server.js) -- this only widens the
   // window in which "closed" is distinguishable, it doesn't make it
   // permanent, since nothing here is a real database.
-  liveOr(function(){
+  return liveOr(function(){
     return state.db.collection("sessions").doc(sessionId).update({ status:"closed", closedAt: nowIso() }).catch(function(err){
       diag("Close session failed: " + (err && err.code ? err.code : String(err)));
+      throw err;
     });
   }, function(){
     state.sessions = state.sessions.filter(function(s){ return s.id!==sessionId; });
     renderSquadView();
+    return Promise.resolve();
   });
 }
 
@@ -534,7 +543,7 @@ function bindSessionCardEvents(sq){
     openConfirm(
       t("retro.confirmClose.title"),
       t("retro.confirmClose.message", {name: sq.name}),
-      function(){ closeSession(sess.id); },
+      function(){ closeSession(sess.id).catch(function(){}); },
       t("retro.confirmClose.button")
     );
   });
@@ -657,7 +666,7 @@ function bindSessionCardEvents(sq){
       openConfirm(
         t("retro.confirmFinishEmpty.title"),
         t("retro.confirmFinishEmpty.message", {name: sq.name}),
-        function(){ closeSession(sess.id); },
+        function(){ closeSession(sess.id).catch(function(){}); },
         t("retro.confirmClose.button")
       );
       return;
@@ -811,7 +820,7 @@ function finishRetroAndApply(sq, sess, results){
   var lastRetro = { finishedAt: nowIso(), experimentNote: sess.experimentNote || "", dimensions: lastRetroDimensions };
   sq.lastRetro = lastRetro;
   if(patchedKeys.length) persistDimensionRatings(sq, patchedKeys, { lastRetro: lastRetro });
-  closeSession(sess.id);
+  closeSession(sess.id).catch(function(){});
   renderAll();
 }
 

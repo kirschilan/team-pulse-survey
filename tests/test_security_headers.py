@@ -45,16 +45,14 @@ with sync_playwright() as p:
     page.click('#about-participant summary')
     page.click('#aboutCloseBtn')
 
-    print("=== starting a retro session and rendering its QR/join-link block ===")
-    page.click('.view-btn[data-view="squad"]')
-    page.click('.squad-pick-btn[data-id="squad-1"]')
-    page.click('#startSessionBtn')
-    # real crypto.subtle round trip behind SquadPulseCrypto.roomIdFor() --
-    # wait for the real signal, not a guessed delay.
-    page.wait_for_function("() => document.getElementById('sessionJoinLink') && document.getElementById('sessionJoinLink').value.length > 0")
-    assert page.query_selector('#sessionQr svg') is not None, "the QR code itself must actually render under this CSP"
-
     print("=== Templates: loading a starter template ===")
+    # Bug fix (docs/session-log.md): loading a template while a squad's
+    # retro is in progress now closes that retro (without saving) once
+    # confirmed -- see test_template_load_closes_open_retro.py for that
+    # behavior's own dedicated coverage. This walkthrough's session/join
+    # steps come AFTER the template load for exactly that reason: this
+    # test is about CSP violations across a realistic flow, not about that
+    # interaction, so loading first avoids exercising it at all.
     page.click('.view-btn[data-view="admin"]')
     page.click('#templatesBtn')
     page.wait_for_selector('#tplList .tpl-row', state="attached")
@@ -63,6 +61,15 @@ with sync_playwright() as p:
     page.click('#confirmOk')
     page.wait_for_function("() => window.__FAKE_STORE__['dimensions/forming'] !== undefined")
     page.click('#templatesClose') if page.query_selector('#templatesClose') else None
+
+    print("=== starting a retro session and rendering its QR/join-link block ===")
+    page.click('.view-btn[data-view="squad"]')
+    page.click('.squad-pick-btn[data-id="squad-1"]')
+    page.click('#startSessionBtn')
+    # real crypto.subtle round trip behind SquadPulseCrypto.roomIdFor() --
+    # wait for the real signal, not a guessed delay.
+    page.wait_for_function("() => document.getElementById('sessionJoinLink') && document.getElementById('sessionJoinLink').value.length > 0")
+    assert page.query_selector('#sessionQr svg') is not None, "the QR code itself must actually render under this CSP"
 
     print("=== joining as a participant (own tab, shared fake store) and answering a statement ===")
     session_id = page.evaluate("""

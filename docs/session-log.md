@@ -3657,3 +3657,72 @@ back in `STATUS.md`.
     change.
   Docs-only change; fast unit suite re-run as a sanity check after merging in PR #38's changes
   (182/182, including PR #38's two new `test_script_loading.js` cases).
+- 2026-09-18 -- Bug report: given a retro is in process, when loading a template, then a
+  confirmation should appear that the current retro will be closed without saving, closing it (no
+  consolidation applied) only if confirmed, leaving it open and the template unloaded if declined.
+  Actual (before this fix): `loadTemplate()` (`templates.js`) rewrote the board's shared dimension
+  set and `meta/config` -- board-wide, not scoped to any one squad, since Templates opens from
+  Admin with no "current squad" context -- with no check at all for an in-progress retro on ANY
+  squad, silently leaving it open and running against dimensions the newly-active template no
+  longer matched. Test-first: added `openRetroSessionsInfo()` (`helpers.js`, pure global-state
+  read alongside `findSquad()`) with two unit tests (`tests/unit/test_helpers.js`) confirmed
+  failing first (function didn't exist), then a full Playwright regression
+  (`tests/test_template_load_closes_open_retro.py`) covering both branches: CANCEL leaves the
+  session open and loads nothing (dimension keys unchanged); CONFIRM closes the session (via the
+  existing `closeSession()`, which already does exactly "close without saving" -- no consolidation
+  applied) THEN loads the template. Implementation: the Load button's click handler
+  (`templates.js`) now calls `openRetroSessionsInfo()` and, when any session is open, appends a new
+  sentence (`templates.confirmLoadOpenSessionWarning`, both locales, naming the affected squad(s))
+  to the EXISTING dimension-count-change confirm message -- one dialog, not two -- and its
+  `onConfirm` closes every listed session before calling `loadTemplate()`. Found and fixed a real
+  regression this surfaced in an EXISTING test: `test_security_headers.py`'s CSP walkthrough
+  started a session, then loaded a template while it was open, then tried to join THAT SAME
+  session as a participant -- exactly the sequence this fix now correctly disallows without an
+  explicit confirm. Reordered that test (template load, then session start, then join) since its
+  own purpose is CSP-violation coverage across a realistic flow, not this interaction, which has
+  its own dedicated test now; grepped every other test file that loads a template and confirmed
+  none of them shared this ordering. Full suite green: `node --test tests/unit/test_*.js`
+  (184/184), `tests/run_all.sh` (all Playwright files passing, 78s).
+- 2026-09-18 -- PR #41 review follow-up: a Claude Code review found a real gap in the fix above --
+  the Load button's `onConfirm` fired every `closeSession(s.id)` call and then called
+  `loadTemplate(tpl)` immediately, without waiting for the close write(s) to actually land, and
+  `closeSession()` itself swallowed a rejected write (logged via `diag()`, but the caller had no way
+  to know it failed). Reproduced with a forced-rejection close write: the template loaded while the
+  session it was supposed to have closed stayed open. Test-first: extended
+  `tests/test_template_load_closes_open_retro.py` with two new scenarios, both monkey-patching
+  `state.db.collection("sessions").doc(id).update` on the page (the fake store's own docRef, no new
+  test-only backdoor needed) -- a PENDING case (the close write resolves after an artificial 250ms
+  delay) confirming the template load only happens after that write actually lands, not
+  immediately on confirm; and a REJECTED case (the write always rejects) confirming the session
+  stays open, the board's dimensions are untouched, and `#diagLog` shows why. Both confirmed failing
+  first against the unfixed code (the pending case failed because the dimension set changed before
+  the close resolved). Implementation: `closeSession()` (`retro-facilitator.js`) now returns the
+  write's own promise instead of discarding it, and re-throws after logging via `diag()` instead of
+  swallowing the rejection -- the three existing fire-and-forget call sites (the plain close button,
+  the empty-retro finish confirm, `finishRetroAndApply()`) each got a no-op `.catch(function(){})`
+  appended so this doesn't turn into an unhandled-rejection regression for them (diag() has already
+  logged the failure by the time they'd see it). The Load handler (`templates.js`) now
+  `Promise.all()`s every `closeSession()` call, only calls `loadTemplate()` once all of them
+  resolve, and on any rejection logs a `diag()` message naming the template that was NOT loaded
+  instead of proceeding. Full suite green: `node --test tests/unit/test_*.js` (184/184),
+  `tests/run_all.sh` (all Playwright files passing, 71s).
+- 2026-09-18 -- PR #41 review follow-up #2: a Claude Code review found two real gaps in the
+  previous fix. (1) The rejected-close error only ever reached `diag()` -- the Admin panel's
+  diagnostics log, which lives OUTSIDE the still-open Templates modal, so a facilitator staring at
+  that modal when the load fails never sees it. (2) The pending-write test's close-write delay was a
+  plain 250ms `setTimeout`, which only LIKELY resolves after the test's "still pending" assertions
+  run -- under real load (a slow CI runner) the write can land first, false-failing a correct
+  implementation; confirmed this by widening the observation delay to 350ms and watching the
+  assertions fail despite nothing being wrong with the app. Test-first: replaced the timer with an
+  explicitly released gate promise (`window.__releaseClose()`, called only after the "still pending"
+  assertions have already run) -- "pending" is now a fact the write literally cannot have resolved
+  past, not a timing guess. Extended the rejected-write scenario to assert the Templates modal stays
+  open and a new `#tplLoadErrorHint` element inside it becomes visible with non-empty text -- ran
+  first against the unfixed code to confirm it failed (element didn't exist). Implementation: added
+  `#tplLoadErrorHint` (`index.html`, same `.hint.error` idiom `expNoteSaveErrorHint` already
+  established in `retro-facilitator.js`) inside the Templates modal itself, a
+  `setTplLoadError()`/translated `templates.confirmLoadOpenSessionCloseFailedHint` key (both
+  locales) that shows it on a rejected close and clears it on reopen/retry -- `diag()` stays too,
+  for the underlying cause, alongside the new in-modal message instead of in place of it. Full suite
+  green: `node --test tests/unit/test_*.js` (184/184), `tests/run_all.sh` (all Playwright files
+  passing, 71s).
