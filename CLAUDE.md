@@ -8,9 +8,11 @@ repo — read these before making a change, not this file's own prose:
   called done. When in doubt about whether something is finished, this file
   is the answer, not a judgment call.
 - **`STATUS.md`** — current state, locked-in architecture/product decisions,
-  what's deliberately not built yet, and a session log of past work. Read
-  this before starting any non-trivial change; update its session log after
-  finishing one.
+  and what's deliberately not built yet. Read this before starting any
+  non-trivial change. The dated session log of past work lives in
+  `docs/session-log.md` (split out 2026-09-18 to keep this file itself a
+  one-page entry point) — append a dated entry there after finishing a
+  change, not in `STATUS.md`.
 - **`.claude/skills/tdd/SKILL.md`** — the test-first workflow (which of the
   two test tiers a behavior belongs in, how to build a Playwright test page)
   that satisfies the Definition of Done's Testing section.
