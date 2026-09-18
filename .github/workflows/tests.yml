@@ -74,9 +74,20 @@ jobs:
         with:
           node-version: "22"
 
+      # Codex review on PR #24: this installed unpinned `pip install
+      # playwright`, silently drifting to whatever the latest release was
+      # at CI run time (found running 1.63/Chromium 153 against a repo that
+      # pins 1.62/Chromium 151 in tests/requirements.txt) -- CI had never
+      # actually run the pinned version this whole time, defeating the
+      # exact cross-machine-version guarantee tests/README.md documents and
+      # docs/DefinitionOfDone.md's Delivery Workflow section already warns
+      # about (a real 2026-09-15 incident: two environments investigating
+      # the same reported failure were silently running different Chromium
+      # builds). Install from the pinned requirements file, like every
+      # local run already does.
       - name: Install Playwright
         run: |
-          pip install playwright
+          pip install -r tests/requirements.txt
           playwright install --with-deps chromium
 
       - name: Install relay dependencies

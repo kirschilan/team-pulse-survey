@@ -3900,3 +3900,24 @@ not just in this repo's own tests.
   row (same staleness, noticed during PR #23's rebase) already got the same fix then. Full suite
   verified green: 167/167 unit tests (including the three updated require() call sites), all 61
   Playwright files (`tests/run_all.sh`), relay's own suite.
+- 2026-09-17 — Fixed a real CI-only bug found by a Codex review of PR #24: no code defects in the
+  split itself ("all 34 function bodies and global names are preserved"), but `.github/workflows/
+  tests.yml`'s Playwright job ran `pip install playwright` with no version constraint -- silently
+  installing whatever the latest release was at CI run time (1.63/Chromium 153) against a repo that
+  pins `playwright==1.62.0`/Chromium 151 in `tests/requirements.txt` specifically to avoid this.
+  Confirmed CI had never actually run the pinned version at all: every local run (this session's
+  own, and Codex's) already used the correct pin via `tests/requirements.txt`, so "local passes,
+  CI fails" wasn't the same evidence on both sides. This is exactly the failure mode `tests/README.md`
+  already documents and `docs/DefinitionOfDone.md`'s Delivery Workflow section already has a rule
+  about (a real 2026-09-15 incident: two environments investigating the same reported failure were
+  silently running different Chromium builds) -- the workflow file itself just never followed its
+  own repo's documented policy. Fixed by installing from `tests/requirements.txt` instead of a bare
+  `pip install playwright`. Re-verified `test_idle_tab_sync_loop.py` (CI's specific failure: a
+  separate browser context not receiving a real-relay edit within 30s) passes clean under the
+  correctly-pinned version -- 6/6 runs (the original full-suite pass plus 5 repeats), consistent
+  with the CI failure being the version-mismatch artifact Codex suspected rather than a real
+  regression from the split (which touches board-export-import.js's successor files, nothing in
+  board-sync.js/relay-client.js's idle-tab-sync path at all). Full suite re-verified green: 167/167
+  unit tests, all 61 Playwright files, relay's own suite. Pushed to the same
+  `ref-4-split-board-export-import` branch/PR (no new PR) -- CI itself is the real remaining check,
+  watched after this push per Codex's own "align and rerun" recommendation.
