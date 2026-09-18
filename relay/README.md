@@ -20,6 +20,16 @@ npm install
 npm start          # listens on ws://localhost:8787 (set PORT to change it)
 ```
 
+`npm install` here is for local dev, where you might actually be adding or
+upgrading a dependency and want `package-lock.json` to update to reflect
+that. CI (`.github/workflows/tests.yml`) instead runs `npm ci` in this
+directory for both its jobs -- installs exactly what the committed lockfile
+says, and fails fast on a lockfile/`package.json` mismatch instead of
+silently resolving a different graph. Use `npm ci` yourself too when you
+want a byte-for-byte reproduction of what CI installs (e.g. debugging a
+CI-only dependency issue) rather than `npm install`'s more permissive
+resolution.
+
 Then point the app at it — `public/index.html` already defaults
 `window.SQUAD_PULSE_RELAY_URL` to `ws://localhost:8787`, so a local relay
 plus `python3 -m http.server` in `public/` (or opening `index.html`
