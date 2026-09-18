@@ -158,6 +158,29 @@ function closeSession(sessionId){
   });
 }
 
+// RETRO-2 follow-up (PO review): the facilitator's own session card only
+// ever showed a bare "Question X of N" counter during a paced session --
+// no way to know WHAT that question actually asks without also having a
+// participant's device open next to it. Resolves the exact same text
+// retro-join.js's own paced render shows a participant for pacingSeq[index]
+// -- duplicated here rather than shared via helpers.js because it calls
+// localizedDimText() (state.js), which -- like this function -- depends on
+// live app state/locale and can't run through the Node-only unit-test
+// harness a true helpers.js function does (see tests/unit/README.md);
+// Playwright-tested only, same as retro-join.js's own version. Returns
+// null past the end of the sequence (nothing to show).
+function pacingQuestionText(dims, seq, index){
+  var item = seq[index];
+  if(!item) return null;
+  var dim = dims.filter(function(d){ return d.key===item.dimKey; })[0];
+  if(!dim) return null;
+  if(item.kind==="stmt"){
+    var localizedStmts = localizedDimText(dim, "statements");
+    return (localizedStmts && localizedStmts[item.idx]!==undefined) ? localizedStmts[item.idx] : dim.statements[item.idx];
+  }
+  return localizedDimText(dim, "label");
+}
+
 // This card renders inside #viewSquad, which Story 4 made i18n-supported
 // (flips to dir="rtl" under Hebrew) -- Story 11 brought this flow's own
 // chrome under translation too, so it now inherits that flip like the rest
@@ -229,7 +252,12 @@ function renderSessionCardHtml(sq){
     var atStart = qIdx <= 0;
     var atEnd = qIdx >= pacingSeq.length;
     var nextLabel = qIdx === pacingSeq.length - 1 ? t("retro.pacing.finishButton") : t("retro.pacing.nextButton");
+    var qText = atEnd ? null : pacingQuestionText(activeDims, pacingSeq, qIdx);
+    var questionTextHtml = qText
+      ? '<p class="hint pacing-current-question" id="pacingQuestionText" style="margin:0 0 8px;font-weight:600;" dir="auto">'+esc(qText)+'</p>'
+      : "";
     pacingHtml =
+      questionTextHtml +
       '<div class="pacing-controls" style="display:flex;align-items:center;gap:10px;margin:0 0 10px;">' +
         '<button class="btn" id="pacingPrevBtn" type="button"'+(atStart?" disabled":"")+'>'+esc(t("retro.pacing.prevButton"))+'</button>' +
         '<span class="hint" id="pacingCounter" style="margin:0;">'+esc(atEnd ? t("retro.pacing.doneHint") : t("retro.pacing.counter", {current: qIdx+1, total: pacingSeq.length}))+'</span>' +
@@ -306,12 +334,29 @@ function renderSessionCardHtml(sq){
     }
   }
   var noteVal = sess.experimentNote || "";
+  // RETRO-2 follow-up (PO review): "Saved" used to be a 1.8s timed flash
+  // (window.__expNoteHintTimer, since removed) -- easy to miss, and worse,
+  // could be silently wiped out mid-flash by an UNRELATED re-render (any
+  // live sessions/responses update re-renders this whole card -- see
+  // subscribeSessionResponses()), since it was hardcoded `hidden` in this
+  // markup rather than derived from anything. savedExperimentNoteFor
+  // (below, near startingSessionFor) is this device's own record of the
+  // exact text it last successfully saved for this session; comparing it
+  // against the session's own persisted note HERE, at render time, means
+  // "Saved" stays correctly shown through any number of unrelated
+  // re-renders, and (via #experimentNoteBox's own `input` listener in
+  // bindSessionCardEvents) disappears the moment this device's note
+  // differs from what's actually saved.
+  if(!(sess.id in savedExperimentNoteFor)) savedExperimentNoteFor[sess.id] = noteVal;
+  var noteIsSaved = noteVal !== "" && savedExperimentNoteFor[sess.id] === noteVal;
+  var noteSaveFailed = !!noteSaveFailedFor[sess.id];
   var experimentHtml =
     '<div class="field-label" style="margin-top:14px;">'+esc(t("retro.experiment.heading"))+'</div>' +
     '<p class="hint" style="margin:0 0 8px;">'+esc(t("retro.experiment.hint"))+'</p>' +
     '<textarea class="note" id="experimentNoteBox" placeholder="'+esc(t("retro.experiment.placeholder"))+'" dir="auto">'+esc(noteVal)+'</textarea>' +
     '<div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:6px;">' +
-      '<span class="hint" id="expNoteSavedHint" style="margin:0;" hidden>'+esc(t("retro.experiment.saved"))+'</span>' +
+      '<span class="hint" id="expNoteSavedHint" style="margin:0;"'+(noteIsSaved?"":" hidden")+'>'+esc(t("retro.experiment.saved"))+'</span>' +
+      '<span class="hint error" id="expNoteSaveErrorHint" style="margin:0;"'+(noteSaveFailed?"":" hidden")+'>'+esc(t("retro.experiment.saveFailed"))+'</span>' +
       '<button class="btn" id="saveExperimentNoteBtn" type="button">'+esc(t("retro.experiment.saveButton"))+'</button>' +
     '</div>';
   var finishHtml = activeDims.length
@@ -376,6 +421,21 @@ function renderSessionCardHtml(sq){
 // quietly handing back a fresh, clickable button and inviting a second
 // (third, ninth...) concurrent attempt.
 var startingSessionFor = {};
+
+// RETRO-2 follow-up (PO review): { [sessionId]: <text this device last
+// successfully saved> }, read by renderSessionCardHtml() above to decide
+// whether "Saved" shows -- see that comment for the full reasoning (the
+// same "state change re-renders this card" problem startingSessionFor
+// above solves, applied to the sprint-experiment note's save confirmation).
+var savedExperimentNoteFor = {};
+
+// Codex review (PR #35): { [sessionId]: true } for a device whose most
+// recent save attempt was rejected, read by renderSessionCardHtml() the
+// same way savedExperimentNoteFor is -- otherwise the failure hint would
+// be hardcoded `hidden` in the markup again and vanish on the very next
+// unrelated re-render, the exact bug class this file already fixed once
+// for "Saved" itself.
+var noteSaveFailedFor = {};
 
 // RETRO-3: draft dimension-exclusion choices, kept OUTSIDE the DOM and
 // keyed by squad id -- exactly the reason startingSessionFor (above)
@@ -514,17 +574,51 @@ function bindSessionCardEvents(sq){
   });
 
   var saveNoteBtn = document.getElementById("saveExperimentNoteBtn");
+  var expNoteBox = document.getElementById("experimentNoteBox");
+  var expNoteHint = document.getElementById("expNoteSavedHint");
+  // RETRO-2 follow-up (PO review): live dirty-detection while typing --
+  // without this, "Saved" (shown by renderSessionCardHtml() at render time,
+  // or set true below right after a click) would keep claiming the note is
+  // saved even after the facilitator starts editing it again.
+  if(expNoteBox && expNoteHint) expNoteBox.addEventListener("input", function(){
+    var sess = openSessionForSquad(sq.id);
+    if(!sess) return;
+    expNoteHint.hidden = savedExperimentNoteFor[sess.id] !== expNoteBox.value;
+  });
   if(saveNoteBtn) saveNoteBtn.addEventListener("click", function(){
     var sess = openSessionForSquad(sq.id);
     var box = document.getElementById("experimentNoteBox");
     if(!sess || !box) return;
-    saveExperimentNote(sess.id, box.value.trim());
-    var hint = document.getElementById("expNoteSavedHint");
-    if(hint){
-      hint.hidden = false;
-      clearTimeout(window.__expNoteHintTimer);
-      window.__expNoteHintTimer = setTimeout(function(){ hint.hidden = true; }, 1800);
-    }
+    var text = box.value.trim();
+    delete noteSaveFailedFor[sess.id];
+    var errHint = document.getElementById("expNoteSaveErrorHint");
+    if(errHint) errHint.hidden = true;
+    // Codex review (PR #35): the "Saved" hint used to be shown -- and
+    // savedExperimentNoteFor recorded -- immediately on click, without
+    // ever waiting to see whether the write actually landed. Await the
+    // save's own promise and only claim "saved" once it resolves; a
+    // rejected write (relay down, a stale/missing session doc) instead
+    // records the failure in noteSaveFailedFor (read at render time, same
+    // pattern as savedExperimentNoteFor) so the failure hint survives an
+    // unrelated re-render instead of being wiped like "Saved" itself used
+    // to be, and never gets papered over with a stale "Saved".
+    saveExperimentNote(sess.id, text).then(function(){
+      savedExperimentNoteFor[sess.id] = text;
+      // Codex review (PR #35, second pass): a save's own completion doesn't
+      // mean the box still shows what it just saved -- the facilitator can
+      // (and did, in the reported repro) type something newer while this
+      // exact write was still in flight. Only claim "Saved" if the box's
+      // CURRENT value still matches the text this completion actually
+      // persisted; otherwise leave it exactly as the `input` listener
+      // above already left it for the now-newer, unsaved text.
+      var currentBox = document.getElementById("experimentNoteBox");
+      var hint = document.getElementById("expNoteSavedHint");
+      if(hint) hint.hidden = !currentBox || currentBox.value !== text;
+    }).catch(function(){
+      noteSaveFailedFor[sess.id] = true;
+      var errHint2 = document.getElementById("expNoteSaveErrorHint");
+      if(errHint2) errHint2.hidden = false;
+    });
   });
 
   var finishBtn = document.getElementById("finishSessionBtn");
@@ -652,13 +746,20 @@ function openSessionOverrideEditor(sess, dimKey){
 // remote change, which would otherwise yank focus out of the textarea
 // while someone's still typing.
 function saveExperimentNote(sessionId, text){
-  liveOr(function(){
+  // Returns the write's own promise -- rejecting, not swallowing, on
+  // failure -- so the caller (the Save button's click handler) can tell a
+  // real persisted save from one that never landed. See Codex's PR #35
+  // review: this used to catch-and-log only, which meant the promise
+  // always resolved and the caller had no way to know the write failed.
+  return liveOr(function(){
     return state.db.collection("sessions").doc(sessionId).update({ experimentNote: text }).catch(function(err){
       diag("Save experiment note failed: " + (err && err.code ? err.code : String(err)));
+      throw err;
     });
   }, function(){
     var sess = state.sessions.filter(function(s){ return s.id===sessionId; })[0];
     if(sess) sess.experimentNote = text;
+    return Promise.resolve();
   });
 }
 

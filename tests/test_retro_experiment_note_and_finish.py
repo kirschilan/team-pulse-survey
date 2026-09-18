@@ -116,6 +116,162 @@ with sync_playwright() as p:
     assert page.eval_on_selector('#experimentNoteBox', 'el => el.value') == note_text
     print("errors:", errors)
 
+    print("=== PO review follow-up: 'Saved' must be a durable state, not a timed flash that can be missed ===")
+    # Deliberate real-time wait, not a guessed one -- this specifically
+    # proves the ABSENCE of the old 1.8s auto-hide timer, which is not
+    # something any event/state change can signal; waiting past that
+    # duration is the only way to distinguish "still shown" from "about to
+    # disappear on its own."
+    page.wait_for_timeout(2200)
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == False, \
+        "'Saved' must stay visible indefinitely, not auto-hide after a fixed delay"
+
+    print("=== an UNRELATED re-render (e.g. a live sessions update) must not wipe the 'Saved' indication ===")
+    # window.__NOTIFY__() fires the sessions collection listener exactly like
+    # a real remote change would -- see RETRO-3's own use of this same
+    # mechanism (Codex review on PR #34) for a dimensions listener causing
+    # an identical class of "hardcoded markup state lost on re-render" bug.
+    page.evaluate("window.__NOTIFY__('sessions')")
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == False, \
+        "'Saved' must survive an unrelated re-render, derived from state rather than hardcoded in the markup"
+    assert page.eval_on_selector('#experimentNoteBox', 'el => el.value') == note_text
+
+    print("=== editing the note again (making it dirty) hides 'Saved' until the next save ===")
+    page.fill('#experimentNoteBox', note_text + " -- plus more")
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == True
+    # restore the original note_text afterward -- later assertions in this
+    # file check the finished retro's own lastRetro.experimentNote against
+    # this same note_text, and this scenario's only job is to prove the
+    # dirty/saved toggle, not to change what the rest of the test expects.
+    page.fill('#experimentNoteBox', note_text)
+    page.click('#saveExperimentNoteBtn')
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == False
+
+    print("=== Codex review (PR #35): a rejected save must NOT show 'Saved' ===")
+    # Force exactly ONE upcoming sessions/<id>.update() call to reject, the
+    # same shape a real failed relay write rejects with -- without deleting
+    # the doc from the store (that would also drop the session from the
+    # sessions collection listener's next snapshot, conflating "the write
+    # failed" with "the session disappeared", two different things). This
+    # reproduces Codex's finding: the save handler used to mark the note
+    # "saved" and record it in savedExperimentNoteFor without ever awaiting
+    # the write's own promise.
+    page.evaluate("""
+      (function(){
+        var origCollection = state.db.collection.bind(state.db);
+        state.db.collection = function(name){
+          var c = origCollection(name);
+          if(name !== "sessions") return c;
+          var origDoc = c.doc.bind(c);
+          c.doc = function(id){
+            var d = origDoc(id);
+            d.update = function(){
+              state.db.collection = origCollection; // one-shot failure
+              return Promise.reject({code:"unavailable", message:"simulated write failure"});
+            };
+            return d;
+          };
+          return c;
+        };
+      })();
+    """)
+    failed_text = note_text + " -- offline attempt"
+    page.fill('#experimentNoteBox', failed_text)
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == True
+    page.click('#saveExperimentNoteBtn')
+    # real signal for "the rejected save's own .catch() ran", not a guess
+    page.wait_for_selector('#expNoteSaveErrorHint', state="visible")
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == True, \
+        "'Saved' must never show for a save that was never acknowledged as persisted"
+    assert page.eval_on_selector('#experimentNoteBox', 'el => el.value') == failed_text
+    # noteSaveFailedFor (retro-facilitator.js, next to savedExperimentNoteFor)
+    # is what keeps this failure hint from being hardcoded `hidden` in the
+    # markup -- read directly rather than forcing a re-render to prove it,
+    # since a re-render while the box holds unsaved, un-persisted text also
+    # resets the textarea to the last-persisted server value (a separate,
+    # pre-existing "state lost on re-render" gap this fix doesn't extend to
+    # closing -- see STATUS.md).
+    assert page.evaluate("noteSaveFailedFor['%s']" % sid) == True
+
+    print("=== once the write can succeed again, saving clears the failure and shows 'Saved' ===")
+    page.fill('#experimentNoteBox', note_text)
+    page.click('#saveExperimentNoteBtn')
+    page.wait_for_function(
+      "([sid, expected]) => window.__FAKE_STORE__['sessions/' + sid] && window.__FAKE_STORE__['sessions/' + sid].experimentNote === expected",
+      arg=[sid, note_text],
+    )
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == False
+    assert page.eval_on_selector('#expNoteSaveErrorHint', 'el => el.hidden') == True
+
+    print("=== Codex review (PR #35, second pass): 'Saved' must not appear over newer, unsaved edits ===")
+    # Hold the next sessions/<id>.update() call pending (never resolving on
+    # its own) instead of letting it complete immediately, so a real edit can
+    # land in the window between "save clicked" and "save acknowledged" --
+    # exactly the sequence Codex reproduced: save A, edit to B before A's
+    # write completes, then A's write lands. Applies the patch directly to
+    # the fake store on resolution WITHOUT calling notify()/notifyDoc() --
+    # a real notify() would fire the sessions listener and re-render the
+    # whole card, which would (separately, and correctly per this file's
+    # own "Saved" fix) reset the textarea to the just-persisted value and
+    # mask the exact race this scenario exists to isolate: the completion
+    # handler's own check of the box's CURRENT value, independent of
+    # whether a re-render happens to intervene.
+    page.evaluate("""
+      (function(){
+        var origCollection = state.db.collection.bind(state.db);
+        state.db.collection = function(name){
+          var c = origCollection(name);
+          if(name !== "sessions") return c;
+          var origDoc = c.doc.bind(c);
+          c.doc = function(id){
+            var d = origDoc(id);
+            d.update = function(patch){
+              state.db.collection = origCollection; // one-shot control
+              return new Promise(function(resolve){
+                window.__pendingSaveResolve = function(){
+                  Object.assign(window.__FAKE_STORE__[d.path], patch);
+                  resolve();
+                };
+              });
+            };
+            return d;
+          };
+          return c;
+        };
+      })();
+    """)
+    first_text = "First saved text."
+    second_text = "Second unsaved text"
+    page.fill('#experimentNoteBox', first_text)
+    page.click('#saveExperimentNoteBtn')
+    # the write is deliberately stuck pending -- edit again before it lands
+    page.fill('#experimentNoteBox', second_text)
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == True
+    # let the first save actually complete now
+    page.evaluate("window.__pendingSaveResolve()")
+    page.wait_for_function(
+      "([sid, expected]) => window.__FAKE_STORE__['sessions/' + sid] && window.__FAKE_STORE__['sessions/' + sid].experimentNote === expected",
+      arg=[sid, first_text],
+    )
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == True, \
+        "'Saved' must not appear over text that was never itself acknowledged as saved"
+    assert page.eval_on_selector('#experimentNoteBox', 'el => el.value') == second_text
+    # saving the still-unsaved text now must work normally
+    page.click('#saveExperimentNoteBtn')
+    page.wait_for_function(
+      "([sid, expected]) => window.__FAKE_STORE__['sessions/' + sid] && window.__FAKE_STORE__['sessions/' + sid].experimentNote === expected",
+      arg=[sid, second_text],
+    )
+    assert page.eval_on_selector('#expNoteSavedHint', 'el => el.hidden') == False
+    # restore the original note_text -- later assertions in this file check
+    # the finished retro's own lastRetro.experimentNote against note_text
+    page.fill('#experimentNoteBox', note_text)
+    page.click('#saveExperimentNoteBtn')
+    page.wait_for_function(
+      "([sid, expected]) => window.__FAKE_STORE__['sessions/' + sid] && window.__FAKE_STORE__['sessions/' + sid].experimentNote === expected",
+      arg=[sid, note_text],
+    )
+
     print("=== Story 9: 'Finish retro' with nothing submitted just closes, no squad changes ===")
     page.click('#finishSessionBtn')
     page.wait_for_selector('#confirmBackdrop', state="visible")  # real modal-open signal, not a guess

@@ -70,6 +70,11 @@ with sync_playwright() as p:
     assert page.eval_on_selector('#pacingPrevBtn', 'el => el.disabled') is True
     assert page.eval_on_selector('#pacingNextBtn', 'el => el.textContent').strip() != ""
 
+    print("=== PO review follow-up: the facilitator sees the actual question text, not just a bare counter ===")
+    facilitator_q1_text = page.eval_on_selector('#pacingQuestionText', 'el => el.textContent')
+    print("facilitator's question 1 text:", facilitator_q1_text)
+    assert facilitator_q1_text == "S1 for trust", "the facilitator should see the SAME text being presented to participants"
+
     # ============ participant device: seeded with the paced session doc ============
     sdoc = json.dumps(session_info["doc"])
     seed_js = "STORE['sessions/" + sid + "'] = " + sdoc + ";"
@@ -117,6 +122,9 @@ with sync_playwright() as p:
     page.wait_for_function("() => window.__FAKE_STORE__['sessions/%s'].currentQuestionIndex === 1" % sid)
     advanced_doc = page.evaluate("window.__FAKE_STORE__['sessions/%s']" % sid)
     assert advanced_doc["currentQuestionIndex"] == 1
+    facilitator_q2_text = page.eval_on_selector('#pacingQuestionText', 'el => el.textContent')
+    print("facilitator's question 2 text:", facilitator_q2_text)
+    assert facilitator_q2_text == "S2 for trust"
     mirror_session_to_participant(advanced_doc)
     part.wait_for_function("() => document.querySelector('#pacingCounter') && document.querySelector('#pacingCounter').textContent.indexOf('2') !== -1")
 
@@ -134,6 +142,7 @@ with sync_playwright() as p:
     page.wait_for_function("() => window.__FAKE_STORE__['sessions/%s'].currentQuestionIndex === 0" % sid)
     back_doc = page.evaluate("window.__FAKE_STORE__['sessions/%s']" % sid)
     assert back_doc["currentQuestionIndex"] == 0
+    assert page.eval_on_selector('#pacingQuestionText', 'el => el.textContent') == "S1 for trust"
     mirror_session_to_participant(back_doc)
     part.wait_for_function("() => document.querySelector('#pacingCounter') && document.querySelector('#pacingCounter').textContent.indexOf('1') !== -1")
     revisited_text = part.eval_on_selector('.stmt-row .stmt-text', 'el => el.textContent')
@@ -159,6 +168,10 @@ with sync_playwright() as p:
         # be checked field-by-field, not just "something truthy".
         row = part.query_selector('.direct-row')
         assert row is not None, "question index %d should be a direct-rating row" % target_idx
+        dim_label = part.eval_on_selector('.direct-row .stmt-text', 'el => el.textContent')
+        facilitator_text = page.eval_on_selector('#pacingQuestionText', 'el => el.textContent')
+        print("direct-rating question %d -- participant label: %r, facilitator text: %r" % (target_idx, dim_label, facilitator_text))
+        assert facilitator_text == dim_label, "a direct-rating question shows the facilitator the same label a participant sees"
         color = ["good", "warn", "crit"][target_idx - 2]
         row.query_selector('.swatch.' + color).click()
 

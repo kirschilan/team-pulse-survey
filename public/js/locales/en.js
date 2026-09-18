@@ -351,6 +351,7 @@ var LOCALE_EN = {
   "retro.experiment.hint": "What will the team try differently next sprint?",
   "retro.experiment.placeholder": "e.g. Pair on the riskiest story each day",
   "retro.experiment.saved": "Saved",
+  "retro.experiment.saveFailed": "Save failed – try again",
   "retro.experiment.saveButton": "Save note",
   "retro.finishButton": "Finish retro & apply results",
   "retro.closeButton": "Close session without applying results",

@@ -911,8 +911,8 @@ Stories 1–9, already DONE; these are new, not part of that closed backlog). No
 | Priority | Story | User value and acceptance criteria | Status |
 |---|---|---|---|
 | P1 | RETRO-1 — Carry latest retro results into board export/import | As a facilitator, back up or migrate a board without losing its most recently finished retro. Extend the JSON board export (`board-export-import.js`, later split by REF-4 into `board-export.js`/`board-import-*.js`) to also capture, per squad, the latest finished retro session's per-dimension result (consolidated or overridden), sprint experiment note, and finish timestamp, and restore it on import alongside the existing squads/ratings/dimensions/templates/settings. Define what happens when an imported snapshot's dimensions no longer match the target board (e.g. a renamed/removed dimension) instead of silently dropping or misapplying data. | **Merged (2026-09-17, PR #21)** — see session log. New squad field `lastRetro` (finishedAt/experimentNote/dimensions incl. `overridden`), written by `finishRetroAndApply()` (retro-facilitator.js) via `persistDimensionRatings()`'s new optional `extraFields` param, carried through `db.js`'s squad listener, and exported/imported by `board-export.js`/`board-import-validate.js`/`board-import-plan.js`/`board-import-apply.js` (validated, matched/skipped the same way ratings already are). |
-| P2 | RETRO-2 — Facilitation option: progress one question at a time | As a facilitator running a live session, optionally pace the group through statements one at a time instead of everyone seeing the full survey at once. Add a session-level toggle (default off, preserving today's all-at-once survey) that, when on, shows each participant only the current question and advances everyone together as the facilitator moves forward; revisiting an earlier question doesn't discard that participant's existing answer to it. | **Merged (2026-09-18, PR #30)** — see session log (corrected here: a prior row said "PR open, not yet merged", stale after the PR merged without this row being updated). A session-level `pacingEnabled`/`currentQuestionIndex` pair, chosen once via a checkbox at "Start retro session" (default off). `helpers.js`'s new `pacingSequence(dims)` (pure, order-matched to the existing `interleavedStatements()`) gives every device the same ordered list of individually-answerable items independently, so nothing about the sequence itself needs to be stored — only the shared index into it. The facilitator's session card gets Previous/Next controls (`setCurrentQuestionIndex()`, same `liveOr()`/`.update()` shape `setRevealMode()` already uses); a participant's join screen shows exactly the one item at that index, retaining (never discarding) whatever they'd already answered on an earlier visit to it, and auto-submits the whole draft, unchanged atomic-submission shape, once the facilitator advances past the last question — a participant who hasn't finished answering by then sees a friendly wait state instead of a silent partial submit. |
-| P3 | RETRO-3 — Facilitation option: choose which questions to include | As a facilitator, exclude statements/dimensions from the active template that don't apply to this particular retro. Let the facilitator deselect specific questions/dimensions when starting (or before opening) a session, without altering the saved template itself; excluded ones are omitted from the join survey and from that session's consolidation/results. | **PR open (2026-09-18)**, not yet merged — see session log. Scoped to whole-DIMENSION exclusion, not individual statements within a statement dimension (a statement dimension's `scoreBands` are calibrated against summing ALL of its statements — dropping only some would silently shift what "good"/"warn"/"crit" mean; excluding the whole dimension has no such problem, and a direct-rating dimension IS already a single "question"). The "no session" card gets a collapsible checklist (`.dim-include-checkbox` per board dimension, checked/included by default); `startSession()` filters the dimension snapshot by the unchecked keys BEFORE it's ever written into the session doc, so the join survey, `pacingSequence()`, the live tally, and `finishRetroAndApply()` all correctly skip an excluded dimension with zero changes of their own — it was simply never in `sess.dimensions` to begin with. Start is disabled (with an inline hint) if every dimension is unchecked. A Codex review found the checklist's selection was pure DOM state with nothing backing it: `state.dimensions` changing AT ALL (even an unrelated dimension, from this device or a co-facilitator's) fires `db.js`'s own dimensions listener, which calls `renderAll()` and rebuilds this whole card from scratch, silently resetting every checkbox to checked -- reproduced exactly as described (exclude a dimension, trigger a board snapshot, the exclusion vanished). Fixed by adding `pendingDimExclusionsFor`, a squad-keyed draft object outside the DOM (same shape/reasoning as this file's own pre-existing `startingSessionFor`), updated on each checkbox's `change` and read back by `renderSessionCardHtml()` to restore exactly what the facilitator chose instead of defaulting to "everything included"; cleared once a session actually starts. |
+| P2 | RETRO-2 — Facilitation option: progress one question at a time | As a facilitator running a live session, optionally pace the group through statements one at a time instead of everyone seeing the full survey at once. Add a session-level toggle (default off, preserving today's all-at-once survey) that, when on, shows each participant only the current question and advances everyone together as the facilitator moves forward; revisiting an earlier question doesn't discard that participant's existing answer to it. | **Merged (2026-09-18, PR #30)** — see session log (corrected here: a prior row said "PR open, not yet merged", stale after the PR merged without this row being updated). A session-level `pacingEnabled`/`currentQuestionIndex` pair, chosen once via a checkbox at "Start retro session" (default off). `helpers.js`'s new `pacingSequence(dims)` (pure, order-matched to the existing `interleavedStatements()`) gives every device the same ordered list of individually-answerable items independently, so nothing about the sequence itself needs to be stored — only the shared index into it. The facilitator's session card gets Previous/Next controls (`setCurrentQuestionIndex()`, same `liveOr()`/`.update()` shape `setRevealMode()` already uses); a participant's join screen shows exactly the one item at that index, retaining (never discarding) whatever they'd already answered on an earlier visit to it, and auto-submits the whole draft, unchanged atomic-submission shape, once the facilitator advances past the last question — a participant who hasn't finished answering by then sees a friendly wait state instead of a silent partial submit. **PO review follow-up (2026-09-18)**: two gaps fixed, see session log — (1) the facilitator's own card only showed a bare "Question X of N" counter with no way to know what that question actually asks; `pacingQuestionText()` now shows the exact same text a participant sees. (2) the sprint-experiment note's "Saved" confirmation was a 1.8s timed flash that could be missed, and could even be wiped out mid-flash by an unrelated re-render (any live sessions/responses update re-renders the whole card); it's now a durable, state-derived indicator (`savedExperimentNoteFor`) that survives re-renders and only clears once the note is actually edited again. A Codex review of that same follow-up then found "Saved" could still show for a write that never landed (the click handler didn't await the save's promise, and the promise itself swallowed errors); fixed by returning/rejecting the promise properly and adding a render-time-derived failure hint (`noteSaveFailedFor`), same pattern as `savedExperimentNoteFor` — see session log. |
+| P3 | RETRO-3 — Facilitation option: choose which questions to include | As a facilitator, exclude statements/dimensions from the active template that don't apply to this particular retro. Let the facilitator deselect specific questions/dimensions when starting (or before opening) a session, without altering the saved template itself; excluded ones are omitted from the join survey and from that session's consolidation/results. | **Merged (2026-09-18, PR #34)** — see session log (corrected here: this row still said "PR open, not yet merged" after the PR merged, the same stale-status pattern RETRO-2's own row above needed corrected twice already). Scoped to whole-DIMENSION exclusion, not individual statements within a statement dimension (a statement dimension's `scoreBands` are calibrated against summing ALL of its statements — dropping only some would silently shift what "good"/"warn"/"crit" mean; excluding the whole dimension has no such problem, and a direct-rating dimension IS already a single "question"). The "no session" card gets a collapsible checklist (`.dim-include-checkbox` per board dimension, checked/included by default); `startSession()` filters the dimension snapshot by the unchecked keys BEFORE it's ever written into the session doc, so the join survey, `pacingSequence()`, the live tally, and `finishRetroAndApply()` all correctly skip an excluded dimension with zero changes of their own — it was simply never in `sess.dimensions` to begin with. Start is disabled (with an inline hint) if every dimension is unchecked. A Codex review found the checklist's selection was pure DOM state with nothing backing it: `state.dimensions` changing AT ALL (even an unrelated dimension, from this device or a co-facilitator's) fires `db.js`'s own dimensions listener, which calls `renderAll()` and rebuilds this whole card from scratch, silently resetting every checkbox to checked -- reproduced exactly as described (exclude a dimension, trigger a board snapshot, the exclusion vanished). Fixed by adding `pendingDimExclusionsFor`, a squad-keyed draft object outside the DOM (same shape/reasoning as this file's own pre-existing `startingSessionFor`), updated on each checkbox's `change` and read back by `renderSessionCardHtml()` to restore exactly what the facilitator chose instead of defaulting to "everything included"; cleared once a session actually starts. |
 
 ## Code quality & refactoring backlog (2026-09-17)
 
@@ -4340,3 +4340,90 @@ there are smaller, single-responsibility files to set real size/complexity limit
   `renderSessionCardHtml()` reads it back to restore exactly what the facilitator chose instead of
   defaulting every checkbox to checked; the draft is cleared once a session actually starts. Full
   suite re-verified green: 180/180 unit tests, relay's own suite, all 64 Playwright files.
+- 2026-09-18 — RETRO-2 follow-up (PO review of the already-merged pacing feature): implemented on
+  branch `retro-2-followup-po-review`, PR opened against `claude/optimistic-keller-holuql`.
+  Two independent, small fixes to the same feature area, per the PO's own two review points:
+  (1) **Facilitator sees the current question.** The session card's paced controls only ever
+  showed a bare "Question X of N" counter, with no way to know what that question actually asks
+  without a separate participant device open alongside it. Test-first:
+  `tests/test_retro_paced_questions.py` extended with a failing assertion for a `#pacingQuestionText`
+  element before any implementation. Fixed by adding `pacingQuestionText(dims, seq, index)` to
+  retro-facilitator.js -- resolves the exact same text retro-join.js's own paced render shows a
+  participant for `pacingSeq[index]` (a statement's localized text, or a direct-rating dimension's
+  localized label). Deliberately duplicated rather than shared via helpers.js: it calls
+  `localizedDimText()` (state.js), which depends on live app state/locale and can't run through the
+  Node-only unit-test harness a true helpers.js function does -- Playwright-tested only, same as
+  retro-join.js's own nearly-identical lookup. Verified the facilitator's own text matches the
+  participant's exactly at every step: question 1 (a statement), question 2 (a statement, after
+  Next/Previous), and each direct-rating dimension's label. (2) **A durable "Saved" indicator on
+  the sprint-experiment note.** The existing "Saved" hint was a 1.8s `setTimeout`-based flash --
+  easy to miss, and worse, could be silently wiped out mid-flash by an UNRELATED re-render (any
+  live sessions/responses update re-renders this whole card -- e.g. a participant submitting a
+  response while the facilitator is mid-typing), since it was hardcoded `hidden` in the markup
+  rather than derived from anything -- the exact same class of "DOM state lost on re-render" bug
+  Codex found in RETRO-3 on PR #34 the same day. Test-first: extended
+  `tests/test_retro_experiment_note_and_finish.py` with failing assertions (hint must survive a
+  real 2.2s wait past the old timeout, must survive a simulated `window.__NOTIFY__('sessions')`
+  re-render, and must hide again once the note is edited) before fixing anything. Fixed by adding
+  `savedExperimentNoteFor` -- a session-keyed record of the exact text this device last
+  successfully saved, the same shape/reasoning as `startingSessionFor` already used for the Start
+  button's own in-flight state -- read at RENDER time (not a timeout) to decide whether "Saved"
+  shows, plus a plain `input` listener on the textarea that hides it the moment the box's value
+  diverges from what's saved. Removed the old timer entirely. Full suite green for both fixes:
+  180/180 unit tests, relay's own suite, all 63 Playwright files.
+- 2026-09-18 — Codex review on PR #35 (P2, fixed): "'Saved' remains visible even when saving
+  fails." The sprint-experiment note's Save button called `saveExperimentNote()` and immediately
+  marked the note "saved" (`savedExperimentNoteFor[sess.id] = text`, hint shown) without ever
+  awaiting the write's own promise -- reproduced by Codex with a rejected write: "Saved" showed,
+  and the new text was recorded as saved, while the persisted note stayed empty. Root cause was
+  two-fold: (1) the click handler didn't return/await anything from `saveExperimentNote()`, and
+  (2) `saveExperimentNote()` itself swallowed the error (`diag()`-logged it, then let the `.catch()`
+  resolve normally) so even an awaiting caller couldn't have told success from failure. Test-first,
+  on `retro-2-followup-po-review` (same branch/PR as the fix above, per the "one PR per backlog
+  item" convention -- this is a review finding on that PR's own diff, not a new backlog item):
+  extended `tests/test_retro_experiment_note_and_finish.py` with a failing scenario that
+  monkeypatches `state.db.collection("sessions").doc(id).update` to reject exactly once (not by
+  deleting the doc from the fake store, which would also drop the session from the sessions
+  listener's own snapshot and conflate "the write failed" with "the session disappeared") and
+  asserts the failure is never shown as "Saved". Fixed by (1) having `saveExperimentNote()` return
+  `liveOr(...)`'s result and `throw err` inside the live branch's `.catch()` instead of swallowing
+  it (matching `startSession()`'s existing return-both-branches shape), and (2) having the click
+  handler `.then()`/`.catch()` the returned promise -- only recording `savedExperimentNoteFor` and
+  showing "Saved" on success, and adding a new failure hint (`#expNoteSaveErrorHint`,
+  `retro.experiment.saveFailed` in en.js/he.js, styled via a new `.hint.error` class using the
+  existing `--crit` token) on rejection. The failure hint's visibility is driven by a new
+  `noteSaveFailedFor` (session-keyed, read at render time) rather than hardcoded `hidden` in the
+  markup, for the same reason `savedExperimentNoteFor` already is -- otherwise it would vanish on
+  the next unrelated re-render, the exact bug class this same file's "Saved" fix (above) exists to
+  prevent. Deliberately NOT fixed here: an unrelated re-render while the textarea holds unsaved,
+  un-persisted text (e.g. after a failed save, before a successful retry) still resets the
+  textarea's displayed value to the last-persisted server value, since the whole card is rebuilt
+  from `sess.experimentNote` on every re-render -- a separate, pre-existing "state lost on
+  re-render" gap (the same one this session earlier declined to fix while addressing the PO's
+  original "Saved" complaint) that would need the textarea's live, in-progress value tracked
+  outside the DOM the same way `savedExperimentNoteFor`/`noteSaveFailedFor` already track the hint
+  state; out of scope for this specific Codex finding, which is about the save outcome, not
+  mid-edit content loss. Full suite green: 180/180 unit tests, all 63 Playwright files including
+  5 repeated clean runs of the changed test file (state.db monkeypatching is a new pattern in this
+  file, checked for flakiness before calling it done).
+- 2026-09-18 — Codex review on PR #35, second pass (P2, fixed): "'Saved' can appear over newer,
+  unsaved edits." Reproduced exactly as reported: save "First saved text.", edit the box to
+  "Second unsaved text" before that write completes, then let the first write land -- the
+  completion handler's `.then()` unconditionally set `hint.hidden = false`, showing "Saved" over
+  text that was never itself acknowledged as persisted. Root cause: the handler recorded
+  `savedExperimentNoteFor[sess.id] = text` (the text it just confirmed saved) but then showed the
+  hint unconditionally, never re-checking whether the textarea's CURRENT value still matched that
+  same `text` by the time the promise resolved. Test-first: extended
+  `tests/test_retro_experiment_note_and_finish.py` with a scenario that holds a save's own
+  `update()` pending via a one-shot monkeypatch, edits the box again before releasing it, then
+  releases it and asserts "Saved" does NOT show over the newer text -- confirmed failing first
+  (reverted the fix locally and re-ran to verify the same assertion fails for the right reason).
+  The monkeypatch deliberately applies the resolved write directly to the fake store WITHOUT
+  calling `notify()`/`notifyDoc()`, unlike the first Codex-review fix's monkeypatch -- a real
+  `notify()` here would fire the sessions listener and re-render the whole card, which separately
+  (and correctly) resets the textarea to the just-persisted value, masking the exact race this
+  scenario exists to isolate. Fixed by checking `document.getElementById("experimentNoteBox").value
+  !== text` before showing "Saved" in the `.then()` handler -- if the box has moved on, the hint
+  stays exactly as the `input` listener already left it for the newer, unsaved text, instead of
+  being overridden by the stale completion. Full suite green: 180/180 unit tests, all 64 Playwright
+  files, 5 repeated clean runs of the changed test file.

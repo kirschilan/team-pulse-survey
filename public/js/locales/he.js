@@ -325,6 +325,7 @@ var LOCALE_HE = {
   "retro.experiment.hint": "מה הצוות ינסה לעשות אחרת בספרינט הבא?",
   "retro.experiment.placeholder": "למשל: עבודה בזוגות על הסיפור המסוכן ביותר בכל יום",
   "retro.experiment.saved": "נשמר",
+  "retro.experiment.saveFailed": "השמירה נכשלה – יש לנסות שוב",
   "retro.experiment.saveButton": "שמירת ההערה",
   "retro.finishButton": "סיום הרטרו ויישום התוצאות",
   "retro.closeButton": "סגירת המפגש בלי ליישם תוצאות",
