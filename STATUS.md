@@ -4277,3 +4277,21 @@ there are smaller, single-responsibility files to set real size/complexity limit
   -- relay's own suite passes; `make browser` -- all 63 Playwright files pass in 71s (under the
   78s baseline); `make test` (the full aggregate) -- exit 0, all 63 files plus 180/180 unit tests
   passing.
+- 2026-09-18 — Fixed a real P2 finding from a Codex review of PR #33: `make setup`'s bare
+  `python3 -m pip install -r tests/requirements.txt` -- straight into whatever `python3` happens
+  to be on `PATH` -- fails with `externally-managed-environment` on a PEP 668 system (confirmed
+  in the reviewer's own shell; the same failure `tests/README.md`'s own bare `pip install`
+  instructions would hit there too, just never surfaced until someone actually ran it on such a
+  system). Fixed by having `make setup` create (idempotently -- safe to re-run) a project-local
+  `.venv` virtualenv and install into that instead, added `/.venv/` to `.gitignore`. `make check`
+  now checks the venv's own python for `playwright` rather than whatever's on `PATH`; `make
+  browser`/`make test` put the venv's `bin/` first on `PATH` when invoking `tests/run_all.sh`, so
+  that script's own `python3` calls (and every individual `test_*.py` file's, via
+  `tests/_run_one.sh`) resolve to the venv without either of those files needing to know a venv
+  exists -- one Python, consistently, for setup, check, and the tests themselves. Verified end to
+  end: `rm -rf .venv && make setup` succeeds cleanly from nothing; `make check` correctly reports
+  MISSING with a non-zero exit when `.venv` doesn't exist yet; re-running `make setup` against an
+  already-populated `.venv` is a clean no-op (idempotent); explicitly confirmed via `PATH=".venv/
+  bin:$PATH" bash -c 'which python3'` that `make browser`'s `PATH` prepend actually resolves to
+  the venv's binary, not just that tests happened to pass. Full suite re-verified green via the
+  Makefile itself: `make unit` (180/180), `make relay`, `make test` (full aggregate, 69s).
