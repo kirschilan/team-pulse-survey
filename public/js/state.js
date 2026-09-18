@@ -615,6 +615,12 @@ var state = {
   // flight -- a second onSnapshot delivery landing before that promise
   // settles is a real possibility, not a hypothetical (see submitJoinAnswers()).
   joinAutoSubmitting: false,
+  // Codex review on PR #30 (P2): a failed auto-submit used to leave the
+  // screen stuck showing "Submitting..." forever, with no error and no way
+  // to retry short of reloading (and losing the draft). Set by
+  // attemptPacedAutoSubmit()'s own .catch() so renderJoinScreen() can show
+  // a real failure state with a retry button instead.
+  joinAutoSubmitFailed: false,
   // facilitator-side: live tally of anonymous submissions for whichever
   // session is currently shown in Squad view (see subscribeSessionResponses)
   sessionResponses: []

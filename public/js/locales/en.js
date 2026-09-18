@@ -306,6 +306,9 @@ var LOCALE_EN = {
   "join.pacing.hint": "Your facilitator controls when everyone moves to the next question.",
   "join.pacing.waitingHeading": "Hang on…",
   "join.pacing.waitingHint": "Your facilitator has moved everyone past this question, but you haven't finished answering yet. Ask them to go back if you need more time — your answers so far won't be counted until you catch up.",
+  "join.pacing.submitFailedHeading": "Couldn't submit your answers",
+  "join.pacing.submitFailedHint": "Something went wrong sending your answers. Your answers are still saved on this device — tap retry to try again.",
+  "join.pacing.retryButton": "Retry",
 
   // Story 11: the retro FACILITATION flow (facilitator-facing screens) --
   // the session card (start/start-again, session code, live tally, reveal

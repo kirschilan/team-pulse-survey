@@ -207,6 +207,30 @@ function submitJoinAnswers(stmtDims, directDims){
   }, function(){ afterSubmit(); return Promise.resolve(); });
 }
 
+// RETRO-2's paced flow auto-submits once the facilitator finishes
+// questioning -- unlike the manual Submit button (bindStatementForm()
+// below), there's no click for a participant to retry from, so a real
+// write failure (a relay hiccup, not a bug) needs its own visible
+// failure-and-retry path. Codex review on PR #30 (P2): the first version
+// of this only reset `joinAutoSubmitting` on rejection and never
+// re-rendered, so the screen stayed on "Submitting..." forever with no
+// error and no way to retry short of reloading the page and losing the
+// draft. Fixed by setting `joinAutoSubmitFailed` and re-rendering into an
+// explicit failure state (renderJoinScreen() below) with a retry button
+// that calls this same function again -- the draft itself
+// (state.joinDraftAnswers) is never touched by a failed attempt, so retry
+// resubmits the exact same answers, not a reset survey.
+function attemptPacedAutoSubmit(stmtDims, directDims){
+  state.joinAutoSubmitFailed = false;
+  state.joinAutoSubmitting = true;
+  submitJoinAnswers(stmtDims, directDims).catch(function(err){
+    diag("Paced auto-submit failed: " + (err && err.code ? err.code : String(err)));
+    state.joinAutoSubmitting = false;
+    state.joinAutoSubmitFailed = true;
+    renderJoinScreen();
+  });
+}
+
 function renderJoinScreen(){
   var el = document.getElementById("joinCard");
   if(!el) return;
@@ -291,10 +315,25 @@ function renderJoinScreen(){
         // behind, and gets a friendly wait state rather than a bad partial
         // submit or a silent no-op.
         if(isJoinDraftComplete(stmtDims, directDims)){
-          if(!state.joinAutoSubmitting){
-            state.joinAutoSubmitting = true;
-            submitJoinAnswers(stmtDims, directDims).catch(function(){ state.joinAutoSubmitting = false; });
+          if(state.joinAutoSubmitFailed){
+            // Codex review on PR #30 (P2): a real write failure here used
+            // to leave the screen stuck on "Submitting..." forever -- see
+            // attemptPacedAutoSubmit()'s own header comment. The retry
+            // button below calls the exact same function; the draft is
+            // untouched by a failed attempt, so retrying resubmits the
+            // same answers, not a reset survey.
+            el.innerHTML =
+              '<h2>'+esc(t("join.pacing.submitFailedHeading"))+'</h2>' +
+              '<p class="hint pacing-submit-failed">'+esc(t("join.pacing.submitFailedHint"))+'</p>' +
+              '<button class="btn primary" id="pacingRetrySubmitBtn" type="button">'+esc(t("join.pacing.retryButton"))+'</button>';
+            var retryBtn = document.getElementById("pacingRetrySubmitBtn");
+            if(retryBtn) retryBtn.addEventListener("click", function(){
+              attemptPacedAutoSubmit(stmtDims, directDims);
+              renderJoinScreen();
+            });
+            return;
           }
+          if(!state.joinAutoSubmitting) attemptPacedAutoSubmit(stmtDims, directDims);
           el.innerHTML =
             '<h2>'+esc(t("join.joiningHeading", {squad: sess.squadName||"the squad"}))+'</h2>' +
             '<p class="hint">'+esc(t("join.submittingButton"))+'</p>';

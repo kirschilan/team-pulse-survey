@@ -287,6 +287,9 @@ var LOCALE_HE = {
   "join.pacing.hint": "המנחה שלכם קובע מתי כולם עוברים לשאלה הבאה.",
   "join.pacing.waitingHeading": "רגע…",
   "join.pacing.waitingHint": "המנחה העביר את כולם הלאה מהשאלה הזו, אבל עדיין לא סיימתם לענות עליה. בקשו מהם לחזור אחורה אם אתם צריכים עוד זמן — התשובות שלכם עד כה לא ייספרו עד שתשלימו.",
+  "join.pacing.submitFailedHeading": "לא ניתן היה לשלוח את התשובות שלכם",
+  "join.pacing.submitFailedHint": "משהו השתבש בשליחת התשובות שלכם. התשובות שלכם עדיין שמורות במכשיר הזה — הקישו על נסה שוב כדי לנסות שוב.",
+  "join.pacing.retryButton": "נסה שוב",
 
   "retro.noSession.heading": "מפגש רטרו",
   "retro.noSession.hint": "התחילו מפגש חי לפי התבנית הנוכחית של הלוח (“{templateName}”) — חברי הצוות יכולים להצטרף ולענות מהמכשיר שלהם.",

@@ -4151,3 +4151,22 @@ there are smaller, single-responsibility files to set real size/complexity limit
   test stress-tested 8x clean. Full suite re-verified green: 170/170 unit tests (167 + 3 new
   `pacingSequence()` tests), all 62 Playwright files, relay's own suite; full-suite wall-clock time
   unaffected (70s, well under the 78s baseline).
+- 2026-09-18 — Fixed a real P2 finding from a Codex review of PR #30: the paced flow's auto-submit
+  (`renderJoinScreen()`'s "questioning finished" branch, `retro-join.js`) only reset
+  `joinAutoSubmitting` inside its `.catch()` on a rejected write, never re-rendering -- a genuine
+  write failure (a relay hiccup, not a bug) left the participant's screen stuck showing
+  "Submitting…" forever, with no error shown and no way to retry short of reloading the page and
+  losing the in-progress draft. Wrote a failing test first (`test_retro_paced_submit_failure.py`,
+  a single-dimension paced session whose first submit attempt is made to fail by monkey-patching
+  the fake store's own `responses.add()`), confirmed it timed out waiting for a failure state that
+  never appeared, then fixed it: extracted `attemptPacedAutoSubmit()` (sets `joinAutoSubmitting`,
+  calls `submitJoinAnswers()`, and on rejection sets a new `state.joinAutoSubmitFailed` flag plus
+  re-renders) and added a real failure state in `renderJoinScreen()` -- a heading, an explanatory
+  hint, and a `#pacingRetrySubmitBtn` that calls the same function again. The draft
+  (`state.joinDraftAnswers`) is never touched by a failed attempt, so retry resubmits the exact
+  same answers, confirmed by the new test's own assertion that the draft survives the failure and
+  a retry click succeeds and stores the right response. New i18n keys
+  (`join.pacing.submitFailedHeading`/`submitFailedHint`/`retryButton`) added to both `en.js` and
+  `he.js` -- key-parity test passing. New test stress-tested 6x clean; the main paced-questions
+  test re-confirmed with no regression. Full suite re-verified green: 170/170 unit tests, all 63
+  Playwright files, relay's own suite; wall-clock time unaffected (70s).
