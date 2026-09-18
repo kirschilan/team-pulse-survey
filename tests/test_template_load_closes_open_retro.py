@@ -80,10 +80,17 @@ with sync_playwright() as p:
         "Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/') && window.__FAKE_STORE__[k].status === 'open')[0].split('/')[1]"
     )
     dims_before_pending = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('dimensions/')).sort()")
-    # Patch the sessions collection's close write to resolve slowly, exactly
-    # like a real in-flight network write -- so a test can observe the
-    # in-between "pending" state, not just its eventual outcome.
+    # Patch the sessions collection's close write to block on an explicitly
+    # released gate, instead of a wall-clock delay -- a fixed setTimeout
+    # only LIKELY resolves after the assertions below run; under real load
+    # (a slow CI runner) the write can resolve first, making the "still
+    # pending" assertions false-fail even though the app behaved correctly.
+    # window.__releaseClose() (called further down, once the assertions
+    # below have run) is the only thing that lets this write proceed, so
+    # "pending" here is a fact, not a race.
     page.evaluate("""() => {
+      window.__releaseClose = null;
+      var gate = new Promise(function(resolve){ window.__releaseClose = resolve; });
       var origCollection = state.db.collection.bind(state.db);
       state.db.collection = function(name){
         var coll = origCollection(name);
@@ -93,9 +100,7 @@ with sync_playwright() as p:
           var ref = origDoc(id);
           var origUpdate = ref.update.bind(ref);
           ref.update = function(patch){
-            return new Promise(function(resolve, reject){
-              setTimeout(function(){ origUpdate(patch).then(resolve, reject); }, 250);
-            });
+            return gate.then(function(){ return origUpdate(patch); });
           };
           return ref;
         };
@@ -112,15 +117,17 @@ with sync_playwright() as p:
     page.click('#tplList .tpl-row[data-id="starter-tuckman"] [data-action="load"]')
     page.wait_for_selector('#confirmBackdrop:not([hidden])', state="attached")
     page.click('#confirmOk')
-    # Immediately after confirming -- well before the patched 250ms close
-    # write resolves -- neither the session nor the board's dimensions
-    # should have changed yet. A template load that raced ahead of the
-    # close (the original bug's shape) would fail this.
+    # The close write is genuinely blocked on the gate right now -- neither
+    # the session nor the board's dimensions should have changed. A template
+    # load that raced ahead of the close (the original bug's shape) would
+    # fail this, and it's not a timing guess: the write literally cannot
+    # have resolved yet.
     assert page.evaluate("window.__FAKE_STORE__['sessions/%s'].status" % session_id_2) == "open", \
         "must not close/load until the pending close write actually resolves"
     dims_during_pending = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('dimensions/')).sort()")
     assert dims_during_pending == dims_before_pending, \
         "must not load the template while the close write is still pending"
+    page.evaluate("() => window.__releaseClose()")
     page.wait_for_function(
         "() => window.__FAKE_STORE__['sessions/%s'].status === 'closed'" % session_id_2
     )
@@ -167,7 +174,16 @@ with sync_playwright() as p:
     assert dims_after_rejected == dims_before_rejected, \
         "a failed close must stop the template load entirely -- the board must not end up on a template " \
         "the still-open retro's dimensions no longer match"
-    print("rejected-write case: close failed, template load correctly aborted, diag log shows why")
+    # #diagLog is NOT enough on its own: it lives in the Admin view, behind
+    # the still-open Templates modal, so a facilitator staring at that modal
+    # never sees it. The failure needs to be visible right where they're
+    # looking.
+    assert page.is_visible('#templatesBackdrop'), "the Templates modal should stay open so the error is visible in context"
+    page.wait_for_selector('#tplLoadErrorHint:not([hidden])', state="visible")
+    hint_text = page.eval_on_selector('#tplLoadErrorHint', 'el => el.textContent')
+    print("visible load-error hint:", hint_text)
+    assert hint_text.strip(), "the Templates modal itself must show a translated error, not just the diagnostics log"
+    print("rejected-write case: close failed, template load correctly aborted, diag log AND the modal itself show why")
 
     print("errors:", errors)
     assert errors == []

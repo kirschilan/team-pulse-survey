@@ -11,7 +11,20 @@
 // STATUS.md).
 var templatesBackdrop = document.getElementById("templatesBackdrop");
 
+// #diagLog (the Admin panel's diagnostics log) lives OUTSIDE this modal --
+// invisible to anyone actually looking at the still-open Templates dialog
+// when a load fails. This is the modal's own, translated, visible-in-place
+// error surface (same "hint error" idiom as expNoteSaveErrorHint in
+// retro-facilitator.js); diag() below is kept alongside it for the
+// underlying cause, not instead of it.
+var tplLoadErrorHintEl = document.getElementById("tplLoadErrorHint");
+function setTplLoadError(msg){
+  tplLoadErrorHintEl.textContent = msg || "";
+  tplLoadErrorHintEl.hidden = !msg;
+}
+
 function openTemplates(){
+  setTplLoadError(null);
   renderTemplateList();
   templatesBackdrop.hidden = false;
 }
@@ -78,14 +91,16 @@ function renderTemplateList(){
           // other live write in this app), and loading on top of a retro
           // that's still actually open would leave it running against
           // dimensions the newly-active template no longer matches, exactly
-          // the bug this confirm dialog exists to prevent. diag() (already
-          // called inside closeSession() on failure) is this app's
-          // established visible-failure channel -- the Admin panel's own
-          // log, not a separate alert.
+          // the bug this confirm dialog exists to prevent. diag() logs the
+          // underlying cause; setTplLoadError() is what a facilitator
+          // actually SEES, since the Templates modal is still open right in
+          // front of them and #diagLog isn't.
+          setTplLoadError(null);
           Promise.all(openSessions.map(function(s){ return closeSession(s.id); }))
             .then(function(){ loadTemplate(tpl); })
             .catch(function(){
               diag("Template '" + tpl.name + "' NOT loaded: failed to close an in-progress retro session first.");
+              setTplLoadError(t("templates.confirmLoadOpenSessionCloseFailedHint", {name: tpl.name}));
             });
         },
         t("templates.confirmLoadButton")

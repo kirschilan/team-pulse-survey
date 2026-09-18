@@ -106,6 +106,7 @@ var LOCALE_EN = {
   "templates.confirmDeleteMessage": "This removes the saved template. It won't affect your current dimensions or ratings.",
   "templates.confirmDeleteButton": "Delete",
   "templates.switchingBusy": "Switching to “{name}”…",
+  "templates.confirmLoadOpenSessionCloseFailedHint": "Couldn't load “{name}” – closing the in-progress retro failed. Try again.",
 
   "admin.language.heading": "Language",
   "admin.language.betaBadge": "Beta",

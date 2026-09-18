@@ -3706,3 +3706,23 @@ back in `STATUS.md`.
   resolve, and on any rejection logs a `diag()` message naming the template that was NOT loaded
   instead of proceeding. Full suite green: `node --test tests/unit/test_*.js` (184/184),
   `tests/run_all.sh` (all Playwright files passing, 71s).
+- 2026-09-18 -- PR #41 review follow-up #2: a Claude Code review found two real gaps in the
+  previous fix. (1) The rejected-close error only ever reached `diag()` -- the Admin panel's
+  diagnostics log, which lives OUTSIDE the still-open Templates modal, so a facilitator staring at
+  that modal when the load fails never sees it. (2) The pending-write test's close-write delay was a
+  plain 250ms `setTimeout`, which only LIKELY resolves after the test's "still pending" assertions
+  run -- under real load (a slow CI runner) the write can land first, false-failing a correct
+  implementation; confirmed this by widening the observation delay to 350ms and watching the
+  assertions fail despite nothing being wrong with the app. Test-first: replaced the timer with an
+  explicitly released gate promise (`window.__releaseClose()`, called only after the "still pending"
+  assertions have already run) -- "pending" is now a fact the write literally cannot have resolved
+  past, not a timing guess. Extended the rejected-write scenario to assert the Templates modal stays
+  open and a new `#tplLoadErrorHint` element inside it becomes visible with non-empty text -- ran
+  first against the unfixed code to confirm it failed (element didn't exist). Implementation: added
+  `#tplLoadErrorHint` (`index.html`, same `.hint.error` idiom `expNoteSaveErrorHint` already
+  established in `retro-facilitator.js`) inside the Templates modal itself, a
+  `setTplLoadError()`/translated `templates.confirmLoadOpenSessionCloseFailedHint` key (both
+  locales) that shows it on a rejected close and clears it on reopen/retry -- `diag()` stays too,
+  for the underlying cause, alongside the new in-modal message instead of in place of it. Full suite
+  green: `node --test tests/unit/test_*.js` (184/184), `tests/run_all.sh` (all Playwright files
+  passing, 71s).

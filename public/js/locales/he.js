@@ -99,6 +99,7 @@ var LOCALE_HE = {
   "templates.confirmDeleteMessage": "פעולה זו מסירה את התבנית השמורה. היא לא תשפיע על הממדים או הדירוגים הנוכחיים שלכם.",
   "templates.confirmDeleteButton": "מחיקה",
   "templates.switchingBusy": "עובר אל “{name}”…",
+  "templates.confirmLoadOpenSessionCloseFailedHint": "טעינת “{name}” נכשלה – סגירת הרטרו הפעיל לא הצליחה. יש לנסות שוב.",
 
   "admin.language.heading": "שפה",
   "admin.language.betaBadge": "בטא",
