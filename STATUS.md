@@ -4041,3 +4041,26 @@ there are smaller, single-responsibility files to set real size/complexity limit
   review's own explicit ask to check with the PO rather than assume. Cross-referenced from
   `CLAUDE.md`'s index alongside `ETHICS.md`. Docs-only; no runtime code touched. Full suite
   re-verified green: 167/167 unit tests, all Playwright files.
+- 2026-09-18 — Fixed a real P2 finding from a Codex review of PR #27: `ETHICS_AGREEMENT.md`'s
+  Code Commits section requires "test coverage per the project's TESTER.md" and treats
+  `/specification/` as the source of truth for implementation questions, but neither a `TESTER.md`
+  file nor a `/specification/` directory exists in this repo, canonical text preserved verbatim
+  from `dr-agile-standards` means those references are left dangling for anyone reading this repo's
+  copy on its own. Rather than adding a `TESTER.md`/`/specification/` this repo's own well-established
+  doc architecture doesn't need (this repo already splits testing guidance across
+  `docs/DefinitionOfDone.md`, `tests/README.md`/`tests/unit/README.md`, and
+  `.claude/skills/tdd/SKILL.md` for reasons documented in DoD's own "How this relates to the repo's
+  other reference docs" section, and specification-equivalent content across `STATUS.md`'s
+  "Decisions locked in" plus feature specs like `docs/backend-contract.md`/
+  `docs/facilitated-retro-spec.md`), added a second Session Log row mapping the canonical template's
+  two named artifacts to their real equivalents here -- resolving the ambiguity without renaming,
+  restructuring, or duplicating any existing doc, and without touching the canonical
+  Hierarchy/Commitments/Resolution-examples text itself (only the Session Log, exactly as the
+  template's own header permits). Also flagged as worth raising upstream in `dr-agile-standards`
+  itself: the canonical template hardcodes `TESTER.md`/`/specification/` as if every adopting
+  project's testing and spec content lives in exactly those single, fixed paths, which this repo is
+  a live counterexample against -- suggested (not made here, no push access to that repo from this
+  session) that the template's own Session Log instructions explicitly ask each adopting project to
+  map those two names to its real equivalents when they differ, the same way this row now does.
+  Docs-only; no runtime code touched. Full suite re-verified green: 167/167 unit tests, all
+  Playwright files, relay's own suite.
