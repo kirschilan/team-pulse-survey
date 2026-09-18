@@ -3854,3 +3854,27 @@ back in `STATUS.md`.
   Chromium-version mismatch (a project-local venv with its own pinned Playwright install), so the
   full 65-file Playwright suite finally ran this session, not just the unit/relay tiers -- all
   green.
+- 2026-09-18 -- Docs-only process fix: added a `docs/DefinitionOfDone.md` "Delivery workflow"
+  rule after Copilot told the PO a stuck `Vercel` PR check was "just a stale GitHub UI render" and
+  safe to merge, based only on the merge-box screenshot. The affected commit was `6a0955d` (on PR
+  #41's branch, `template-load-closes-open-retro`) -- **correction, Codex + Claude Code review of
+  this PR (#43): an earlier version of this entry misattributed the incident to PR #38, which had
+  already merged cleanly hours earlier (its own Vercel status succeeded at 13:56:50 UTC, merged
+  13:58:50 UTC -- long before the incident). The real timeline: `6a0955d`'s Vercel status went
+  `pending` at 20:27 UTC and never resolved; PR #41's own merge commit (`cf0052d`) then got no
+  Vercel status posted at all.** It was a real Vercel platform incident ("Elevated Errors
+  Triggering Deployments", vercel-status.com, incident posted 20:32 UTC -- customer impact
+  starting a few minutes before a provider's public acknowledgment is normal, not a discrepancy,
+  per Claude Code's own follow-up check against vercel-status.com). Confirmed via `gh api
+  repos/<owner>/<repo>/branches/<branch>/protection` (404) that this repo has no branch protection
+  requiring status checks to pass before merging -- so nothing technically stops a merge on a
+  pending/failed check today; that's a human/AI judgment call, not an enforced gate. New rule: a
+  stuck check is never assumed to be a display bug -- confirm it against the check provider's own
+  status page, AND both of GitHub's own check surfaces (the legacy Statuses API a Vercel-style
+  integration posts to, and the separate Checks API GitHub Actions posts to --
+  `/commits/<sha>/statuses` alone misses the latter entirely, as Codex's review of this PR pointed
+  out; `gh pr checks` or the `statusCheckRollup` field cover both) -- before calling anything "safe
+  to merge." Recommends (but does not itself apply, since it changes shared repo settings)
+  enabling required status checks on `claude/optimistic-keller-holuql` to make this an enforced
+  gate instead of a judgment call. Docs-only change; ran the fast unit suite as a sanity check
+  anyway (184/184).
