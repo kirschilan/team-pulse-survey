@@ -3860,12 +3860,20 @@ back in `STATUS.md`.
   #41's branch, `template-load-closes-open-retro`) -- **correction, Codex + Claude Code review of
   this PR (#43): an earlier version of this entry misattributed the incident to PR #38, which had
   already merged cleanly hours earlier (its own Vercel status succeeded at 13:56:50 UTC, merged
-  13:58:50 UTC -- long before the incident). The real timeline: `6a0955d`'s Vercel status went
-  `pending` at 20:27 UTC and never resolved; PR #41's own merge commit (`cf0052d`) then got no
-  Vercel status posted at all.** It was a real Vercel platform incident ("Elevated Errors
-  Triggering Deployments", vercel-status.com, incident posted 20:32 UTC -- customer impact
-  starting a few minutes before a provider's public acknowledgment is normal, not a discrepancy,
-  per Claude Code's own follow-up check against vercel-status.com). Confirmed via `gh api
+  13:58:50 UTC -- long before the incident).** The timeline, as observed live during the incident:
+  `6a0955d`'s Vercel status went `pending` at 20:27:01 UTC and had not resolved by the time PR #41
+  merged at 20:38:06 UTC; its merge commit (`cf0052d`) had no Vercel status posted at all as of
+  that same point. **Second correction, Codex's follow-up review: an earlier version of this entry
+  described `6a0955d` as having "never resolved" -- checked again against live data while fixing
+  this, `6a0955d` actually resolved to `success` at 21:13:03 UTC** (matching vercel-status.com's own
+  "Monitoring -- a fix has been implemented" update, itself posted at 21:13 UTC, with the incident
+  fully "Resolved" at 21:22 UTC); `cf0052d` got a `pending` status posted later, at 21:30:56 UTC,
+  and was still showing `pending` as of this correction (2026-09-19) -- it's no longer the branch
+  tip, so it's unclear whether it will ever get a final status, and that's a live-data fact, not a
+  permanent one, so don't treat either commit's state here as still current by the time you're
+  reading this -- re-check live if it matters. It was a real Vercel platform incident ("Elevated
+  Errors Triggering Deployments", vercel-status.com, opened 20:32 UTC, resolved 21:22 UTC on
+  2026-09-18). Confirmed via `gh api
   repos/<owner>/<repo>/branches/<branch>/protection` (404) that this repo has no branch protection
   requiring status checks to pass before merging -- so nothing technically stops a merge on a
   pending/failed check today; that's a human/AI judgment call, not an enforced gate. New rule: a
