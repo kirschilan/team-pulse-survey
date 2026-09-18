@@ -496,6 +496,16 @@ back in `STATUS.md`.
   since it's a distinct, separately-scoped resilience improvement to the wire protocol rather than
   a one-line fix, and wasn't confirmed as an infinite hang (only a real, repeated slowdown) in the
   captured diagnostics.
+
+  **2026-09-18 correction:** the PO doesn't recall reporting this specific symptom, asked about it
+  during a backlog review. Worth being precise about what was and wasn't a direct report: the
+  *stuck-starting-on-iPhone/iPad* bug above was a real report; the *30-90s reconnect-cycling*
+  explanation was this session's own reading of the captured diagnostics offered as a likely cause
+  — and the paragraph above already hedges it that way ("very likely explained by," "not
+  confirmed"). This item was never actually carried into `STATUS.md`'s tracked backlog (it only
+  ever lived here, as narrative) — not reopened as one now either. Don't build the heartbeat/
+  connection-timeout fix against this until the reconnect pattern is actually reproduced and
+  confirmed as the cause of a real complaint.
 - 2026-09-13 — Two small UI fixes from the same bug report. (1) The session card's "Close session"
   button sits right next to "Finish retro & apply results" and was reported as easy to mistake for
   also saving results -- renamed it and both confirm-dialog OK labels that lead to the same
@@ -3726,3 +3736,88 @@ back in `STATUS.md`.
   for the underlying cause, alongside the new in-modal message instead of in place of it. Full suite
   green: `node --test tests/unit/test_*.js` (184/184), `tests/run_all.sh` (all Playwright files
   passing, 71s).
+- 2026-09-18 -- **PO backlog review, acting on the previous entry's own flagged decisions, plus
+  ESLint actually added this time.** The PO reviewed this file's "Revisited four backlog/deferred
+  items" entry above and gave explicit calls on each open question, plus two more:
+  1. **Relay deployment**: reconfirmed already done (`SQUAD_PULSE_RELAY_URL` set, per the "What's
+     real right now" bullet dated 2026-09-17) -- "otherwise the retro would not have worked." No
+     STATUS.md change needed, already accurate.
+  2. **Preview and Production sharing one Render relay instance** (raised by the PO, not previously
+     documented anywhere): analyzed and recorded as an accepted tradeoff, not a gap -- new bullet
+     under "Decisions locked in" (STATUS.md). Two real but currently low-stakes consequences (no
+     isolated place to test a relay-side change before Production traffic sees it; a runaway
+     Preview branch could degrade Production's relay too, no resource isolation) with a named, cheap
+     fix (a second Render instance + a second Preview-scoped env var) for whenever it stops being a
+     non-issue. Not worth doing preemptively at this app's current scale.
+  3. **Mobile disconnect/reconnect follow-up** (2026-09-13 entry above): PO didn't recall reporting
+     this specific symptom. Added a 2026-09-18 correction right at that entry distinguishing the
+     real report (stuck-starting on iPhone/iPad) from this session's own diagnostic-log inference
+     (30-90s reconnect cycling) -- never actually promoted into STATUS.md's tracked backlog, so
+     nothing to formally downgrade there; the narrative entry itself now says not to build the
+     heartbeat/timeout fix against it until reproduced.
+  4. **Save-board/Load-board-to-file YAGNI?** PO asked to be convinced otherwise. Checked directly
+     instead of arguing either side from priors: it's not a hypothetical trade-off at all -- this
+     was already built and shipped as the JSON board export/import feature (Multi-language rollout
+     Story 13; `board-export.js`'s real `window.claude.use("downloads")` file save,
+     `board-import-ui.js`'s real `FileReader`-based file load), later extended by RETRO-1 to also
+     carry a squad's last finished retro. The "Deliberately not built yet" table row had simply gone
+     stale the moment that feature landed. Removed the row (STATUS.md), noted why in a correction
+     paragraph right above the table so the history isn't silently erased.
+  5. **Relay-on-Vercel YAGNI?** Reconfirmed, PO: "we have a free working solution" -- added a dated
+     reconfirmation to the existing table row, no change to the decision itself (already correctly
+     "rejected, not deferred" per the locked decision it cites).
+  6. **Embedding decision YAGNI?** Reconfirmed, PO: it's a Copilot-sourced PT item, YAGNI until
+     required -- already the SEC-3a row's exact position in the Security hardening backlog. The
+     "Deliberately not built yet" table's own separate Embedding row was a stale duplicate of SEC-3a
+     (same call, less detail, no cross-reference) -- consolidated into one entry, removed from that
+     table with a note.
+  7. **ESLint -- "do it now."** Added for real this time (the previous entry only flagged the
+     now-satisfied trigger without adding it, deliberately, pending this exact PO call): new
+     `eslint.config.js` (flat config) + root `package.json`/`package-lock.json`, wired into
+     `.github/workflows/tests.yml`'s `unit-and-relay` job as a `npm ci && npm run lint` step. Three
+     rule groups matching the codebase's three real sharing models -- `public/js/*.js`/`app.js`
+     (classic `<script>` files deliberately sharing one global scope: `no-undef` off, since ESLint
+     lints one file at a time and can't see a sibling file's declarations, which would otherwise be
+     ~14 files' worth of false positives; `no-unused-vars` scoped to local/nested only, mirror-image
+     reason -- a function that looks unused in its own file is routinely called from another one)
+     vs. `relay/`/`scripts/`/`tests/unit/` (ordinary Node CommonJS, full ruleset). First real run
+     found 4 genuine findings, all fixed rather than suppressed: three separate direct
+     `.hasOwnProperty()` calls on a plain object instead of
+     `Object.prototype.hasOwnProperty.call(obj, key)` (`helpers.js`'s `consolidateBand()`,
+     `retro-join.js`'s per-dimension draft-answer init, `dimensions.js`'s `i18nPanelHtml()`) --
+     latent, not live-exploitable today, but JSON board import and template save/load both turn
+     arbitrary user text into keys that could collide with an `Object.prototype` name; and
+     `relay/test/rate-limits.test.js` using `var` inside six independent `{ }` blocks, so
+     `no-redeclare` correctly caught `port`/`wss`/`a`/`b`/`c`/`d` etc. silently reusing the same
+     binding across blocks that visibly look separately scoped (harmless today -- nothing actually
+     crossed a block boundary -- but not what the code visibly intends) -- converted to `let`,
+     restoring real block scoping. Left as warnings, not fixed: ~30 `catch(e)` sites where `e` is
+     genuinely unused, the same "silent catch, no diagnostic trace" gap `docs/refactoring-report.md`
+     already partially fixed -- ESLint now keeps the remaining instances visible instead of hidden.
+     Does this close REF-4/REF-5's `complexity`/`max-lines`/`max-depth`/`max-params`
+     recommendation, or the still-open naming/abbreviation item? No to both, checked directly: those
+     size/complexity rules weren't added this round (a real follow-up candidate now that REF-4/REF-5
+     have produced smaller files to set real limits against); ESLint can't perform the naming
+     rename itself, and a blunt `id-denylist` on `d` specifically would false-positive on every
+     unrelated one-letter use elsewhere -- not added, `docs/refactoring-report.md`'s own
+     file-by-file-when-touched call still stands. Recorded as REF-13 in STATUS.md's "Code quality &
+     refactoring backlog," continuing that table's own numbering.
+
+  **Environment note**: this pass started from a stale local checkout (last synced around commit
+  `8159ed6`, missing every REF-1..13/SEC-1..5/RETRO-1..3/i18n-rollout commit merged since) --
+  discovered only when `git push` was rejected as non-fast-forward. Merged `origin`'s ~150 commits
+  in rather than force-pushing over them; two real conflicts (this file's own STATUS.md section
+  restructuring from REF-11's session-log split, and a `bindStatementForm()` region in
+  `retro-join.js` that RETRO-2's pacing work had relocated) resolved by taking the current trunk
+  version and re-applying this session's own small fixes fresh against it, not by discarding either
+  side. `.github/workflows/tests.yml`'s conflict (a lint step added here vs. REF-8's `npm ci`
+  migration landing independently) resolved by keeping both.
+
+  Verified: 184/184 unit tests, relay's own protocol/storage/rate-limit test suites (all green,
+  including the rewritten `rate-limits.test.js`), `npm run lint` (0 errors, 30 pre-existing-pattern
+  warnings). Playwright itself could not be run in this environment (Chromium build mismatch
+  between the pinned `playwright==1.62.0` and what was pre-installed, with browser downloads
+  disabled) -- honest gap, not glossed over: every code change this round is a narrow,
+  behavior-identical safety/style fix (direct `.hasOwnProperty()` calls, `var`-in-blocks) verified
+  against the suites that could run; nothing here changes behavior for any input the Playwright
+  suite already exercises, but that suite itself did not confirm it this round.

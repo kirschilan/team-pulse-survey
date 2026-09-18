@@ -56,7 +56,17 @@ const nodeGlobals = {
 
 module.exports = [
   {
-    ignores: ["public/vendor/**", "node_modules/**", "relay/node_modules/**", "public/relay-config.js"],
+    // public/_test_* matches .gitignore's own pattern for tests/fixtures/build_page.py's
+    // generated Playwright pages (written straight into public/ so relative asset links
+    // resolve over file://, per STATUS.md's "app's file layout") -- present locally after
+    // a test run, never committed, and not code to lint.
+    ignores: [
+      "public/vendor/**",
+      "node_modules/**",
+      "relay/node_modules/**",
+      "public/relay-config.js",
+      "public/_test_*",
+    ],
   },
   {
     files: ["public/*.js", "public/js/*.js"],
