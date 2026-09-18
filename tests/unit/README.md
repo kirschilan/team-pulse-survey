@@ -6,8 +6,10 @@ the mechanics of this one tier.
 Plain Node tests (`node:test` + `node:assert/strict` -- ships with Node,
 nothing to install) for the app's pure logic: consolidation/scoring math
 (`helpers.js`), JSON board export serialization (`board-export.js`), import
-shape validation (`board-import-validate.js`), and import plan-building
-(`board-import-plan.js`), and `i18n.js`'s `t()` lookup/fallback/interpolation
+shape validation (`board-import-validate.js`), import plan-building
+(`board-import-plan.js`), `db.js`'s Firestore-style snapshot normalizers
+(`test_db_normalizers.js` -- REF-5, STATUS.md's "Code quality &
+refactoring backlog"), and `i18n.js`'s `t()` lookup/fallback/interpolation
 plus the English/Hebrew
 key-parity check (`test_i18n.js`) that mechanically enforces the product
 owner's "every future change supports every supported language" DOD (see
@@ -37,8 +39,8 @@ screens of UI, and read the result back out of the DOM -- correct, but slow
 and indirect. These pure functions have no DOM dependency at all, so they
 don't need a browser to test.
 
-`helpers.js`, `board-export.js`, `board-import-validate.js`, and
-`board-import-plan.js` each end with a small, guarded block:
+`helpers.js`, `board-export.js`, `board-import-validate.js`,
+`board-import-plan.js`, and `db.js` each end with a small, guarded block:
 
 ```js
 if (typeof module !== "undefined" && module.exports) {
