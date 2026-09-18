@@ -65,13 +65,8 @@
 # passes locally" and "CI is green" are now the same claim, checked the
 # same way -- not two different configurations that can silently diverge.
 #
-# REF-9: SHARD_COUNT is still set independently in both this script's own
-# default and .github/workflows/tests.yml's job-level env (there's no file
-# format both a bash script and a GitHub Actions workflow can read a shared
-# constant from) -- if one changes, check whether the other still matches
-# the suite's actual size. What's no longer duplicated is the PARTITIONING
-# RULE itself: select_shard_files() below is the one place that decides
-# which files belong to shard N, called identically whether this script is
+# REF-9: select_shard_files() below is the one place that decides which
+# files belong to shard N, called identically whether this script is
 # running every shard in sequence (the default, no-args, local path) or
 # just one (SHARD_INDEX=N, what CI's matrix job now passes) -- previously
 # CI reimplemented the same split as a separate `ls | awk 'NR % n == i'`
@@ -81,12 +76,24 @@
 # both correctly partitioning the full suite -- harmless in effect (every
 # file still ran exactly once across the 3 shards either way) but exactly
 # the kind of silent drift this backlog item exists to close off.
-SHARD_COUNT="${SHARD_COUNT:-3}"
-
+#
+# Codex review on PR #32: the shard COUNT itself was still a second,
+# independent hardcoded `3` here, separate from
+# .github/workflows/tests.yml's own copy -- REF-9's "one obvious source of
+# truth" acceptance criterion wasn't actually met by unifying the
+# partitioning rule alone. Fixed by moving the count into
+# tests/.shard_count (a plain checked-in file, same pattern as this
+# script's own tests/.timing_baseline below) -- both this script's default
+# and the workflow's `compute-shard-matrix` job now read that one file, so
+# there is exactly one place to change the shard count, the same way
+# select_shard_files() is exactly one place to change the partitioning
+# rule. SHARD_COUNT can still be overridden via the environment (e.g. for
+# a one-off local experiment) without touching the file.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
 JOBS="${TEST_JOBS:-2}"
+SHARD_COUNT="${SHARD_COUNT:-$(tr -d '[:space:]' < tests/.shard_count)}"
 
 if ! python3 -c 'import playwright' >/dev/null 2>&1; then
   echo "Playwright is unavailable to python3. Activate the project environment or install it with: python3 -m pip install -r tests/requirements.txt" >&2
