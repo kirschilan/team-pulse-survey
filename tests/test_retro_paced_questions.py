@@ -75,6 +75,18 @@ with sync_playwright() as p:
     print("facilitator's question 1 text:", facilitator_q1_text)
     assert facilitator_q1_text == "S1 for trust", "the facilitator should see the SAME text being presented to participants"
 
+    print("=== PO review follow-up #2: the current question reads clearly more prominent than a plain .hint line ===")
+    q_font_size = page.eval_on_selector('#pacingQuestionText', "el => getComputedStyle(el).fontSize")
+    q_font_weight = page.eval_on_selector('#pacingQuestionText', "el => getComputedStyle(el).fontWeight")
+    print("question text font-size/weight:", q_font_size, q_font_weight)
+    assert q_font_size == "16px", "expected a clearly larger size than the 12.5px .hint baseline the old markup used"
+    assert q_font_weight == "700"
+
+    print("=== PO review follow-up #2: green/red anchors show what a green vs. red answer means for THIS dimension ===")
+    anchors_text = page.eval_on_selector('#pacingQuestionAnchors', 'el => el.textContent')
+    print("question 1 anchors:", anchors_text)
+    assert "green trust" in anchors_text and "red trust" in anchors_text
+
     # ============ participant device: seeded with the paced session doc ============
     sdoc = json.dumps(session_info["doc"])
     seed_js = "STORE['sessions/" + sid + "'] = " + sdoc + ";"
@@ -125,6 +137,9 @@ with sync_playwright() as p:
     facilitator_q2_text = page.eval_on_selector('#pacingQuestionText', 'el => el.textContent')
     print("facilitator's question 2 text:", facilitator_q2_text)
     assert facilitator_q2_text == "S2 for trust"
+    q2_anchors_text = page.eval_on_selector('#pacingQuestionAnchors', 'el => el.textContent')
+    print("question 2 anchors (same dimension as question 1):", q2_anchors_text)
+    assert "green trust" in q2_anchors_text and "red trust" in q2_anchors_text
     mirror_session_to_participant(advanced_doc)
     part.wait_for_function("() => document.querySelector('#pacingCounter') && document.querySelector('#pacingCounter').textContent.indexOf('2') !== -1")
 
@@ -172,6 +187,10 @@ with sync_playwright() as p:
         facilitator_text = page.eval_on_selector('#pacingQuestionText', 'el => el.textContent')
         print("direct-rating question %d -- participant label: %r, facilitator text: %r" % (target_idx, dim_label, facilitator_text))
         assert facilitator_text == dim_label, "a direct-rating question shows the facilitator the same label a participant sees"
+        dim_key = ["release", "process", "value"][target_idx - 2]
+        dim_anchors_text = page.eval_on_selector('#pacingQuestionAnchors', 'el => el.textContent')
+        print("direct-rating question %d anchors: %r" % (target_idx, dim_anchors_text))
+        assert ("green " + dim_key) in dim_anchors_text and ("red " + dim_key) in dim_anchors_text
         color = ["good", "warn", "crit"][target_idx - 2]
         row.query_selector('.swatch.' + color).click()
 
