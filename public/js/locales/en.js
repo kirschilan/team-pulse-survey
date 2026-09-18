@@ -302,6 +302,13 @@ var LOCALE_EN = {
   "join.squadHealthCheckHeading": "Squad health check",
   "join.submitButton": "Submit",
   "join.submittingButton": "Submitting…",
+  "join.pacing.counter": "Question {current} of {total}",
+  "join.pacing.hint": "Your facilitator controls when everyone moves to the next question.",
+  "join.pacing.waitingHeading": "Hang on…",
+  "join.pacing.waitingHint": "Your facilitator has moved everyone past this question, but you haven't finished answering yet. Ask them to go back if you need more time — your answers so far won't be counted until you catch up.",
+  "join.pacing.submitFailedHeading": "Couldn't submit your answers",
+  "join.pacing.submitFailedHint": "Something went wrong sending your answers. Your answers are still saved on this device — tap retry to try again.",
+  "join.pacing.retryButton": "Retry",
 
   // Story 11: the retro FACILITATION flow (facilitator-facing screens) --
   // the session card (start/start-again, session code, live tally, reveal
@@ -312,6 +319,8 @@ var LOCALE_EN = {
   // untranslated, it's the admin's own authored content.
   "retro.noSession.heading": "Retro session",
   "retro.noSession.hint": "Start a live session using the board's current template (“{templateName}”) — teammates can join and answer on their own device.",
+  "retro.startOptions.pacingLabel": "One question at a time",
+  "retro.startOptions.pacingHint": "Instead of the whole survey at once, each teammate sees one question and you control when everyone moves to the next one.",
   "retro.startButton": "Start retro session",
   "retro.startingButton": "Starting…",
   "retro.inProgressHeading": "Retro session in progress",
@@ -319,6 +328,11 @@ var LOCALE_EN = {
   "retro.reveal.ariaLabel": "Reveal mode",
   "retro.reveal.hold": "Hold results",
   "retro.reveal.live": "Show live",
+  "retro.pacing.counter": "Question {current} of {total}",
+  "retro.pacing.prevButton": "◀ Previous",
+  "retro.pacing.nextButton": "Next ▶",
+  "retro.pacing.finishButton": "Finish questions",
+  "retro.pacing.doneHint": "Every question has been shown.",
   "retro.countLine.one": "1 teammate has submitted so far.",
   "retro.countLine.many": "{count} teammates have submitted so far.",
   "retro.live.heading": "Live results",

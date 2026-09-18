@@ -129,6 +129,34 @@ test("retroDimensions/statementDimensions/directRatingDimensions split a session
   assert.deepEqual(helpers.directRatingDimensions(dims).map((d) => d.key), ["release"]);
 });
 
+test("pacingSequence() interleaves statement dimensions round-robin, then appends direct-rating dimensions", () => {
+  const dims = [
+    { key: "trust", order: 1, statements: ["t1", "t2"] },
+    { key: "comm", order: 2, statements: ["c1"] },
+    { key: "release", order: 3 },
+    { key: "morale", order: 4 },
+  ];
+  assert.deepEqual(helpers.pacingSequence(dims), [
+    { kind: "stmt", dimKey: "trust", idx: 0 },
+    { kind: "stmt", dimKey: "comm", idx: 0 },
+    { kind: "stmt", dimKey: "trust", idx: 1 },
+    { kind: "direct", dimKey: "release" },
+    { kind: "direct", dimKey: "morale" },
+  ]);
+});
+
+test("pacingSequence() returns an empty array for a template with no dimensions", () => {
+  assert.deepEqual(helpers.pacingSequence([]), []);
+});
+
+test("pacingSequence() with only direct-rating dimensions skips the statement phase entirely", () => {
+  const dims = [{ key: "release", order: 1 }, { key: "morale", order: 2 }];
+  assert.deepEqual(helpers.pacingSequence(dims), [
+    { kind: "direct", dimKey: "release" },
+    { kind: "direct", dimKey: "morale" },
+  ]);
+});
+
 test("liveOr() runs the live branch when connected, local branch otherwise", () => {
   global.state = { live: true, db: {} };
   assert.equal(helpers.liveOr(() => "live", () => "local"), "live");
