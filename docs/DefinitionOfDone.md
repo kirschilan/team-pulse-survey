@@ -218,6 +218,41 @@ and to every one already covered:
   two concurrent sessions and a local checkout all committing straight to
   `claude/optimistic-keller-holuql` at once, needing repeated manual merges
   to untangle. See STATUS.md's session log for the incident.)
+- **A branch isn't "landed" until its PR is open (or it's merged) — never
+  push a branch with a complete, tested fix and end the session there.**
+  A branch that only exists on origin, with no PR, is indistinguishable
+  from a lost branch to every other session, tool, or person working in
+  this repo — nothing surfaces it, nothing links it to the backlog item it
+  closes, and a parallel effort can complete the same work again without
+  ever knowing it already existed. Before ending a session that pushed one
+  or more branches, confirm each one has an open PR or has already
+  merged — `gh pr list --head <branch> --state all` (or the equivalent
+  GitHub MCP `list_pull_requests` call with `state: "all"`), not the bare
+  `--head <branch>` form: it defaults to open PRs only, so it silently
+  reports `[]` for a branch whose PR already merged — confirmed against
+  `ref-3-board-sync-state-machine` (PR #23, merged): the bare form returns
+  nothing, `--state all` returns it. Once found with `--state all`, confirm
+  it's genuinely MERGED, not just closed unmerged — `gh pr list`'s own
+  STATE column (and the GitHub MCP `list_pull_requests` tool's own
+  `merged` field) can't always be trusted for this distinction; the
+  single-PR `gh pr view <number>` (or the MCP `pull_request_read` tool's
+  `get` method) reports the real `merged` boolean reliably. If a session
+  genuinely runs out of room to open the PR itself, say so explicitly in
+  `STATUS.md`'s session log (branch name,
+  what it contains, why the PR wasn't opened) rather than leaving it
+  silent. (Adopted 2026-09-17 after a full branch audit — prompted by the
+  PO reporting that this session, another Claude Code session, Codex, and
+  VSCode each had a different view of what was done — found three
+  branches, `sec-1-relay-abuse-bounds`, `perf-1-idle-tab-sync-loop`,
+  `sec-2-crypto-session-codes`, pushed to origin with complete, tested
+  fixes and no PR ever opened; they sat invisible while a parallel effort
+  merged as PR #14 without them. See STATUS.md's session log for the full
+  incident and how it was ported back in.) Run this same check — every
+  remote branch has an open PR or is merged — as a normal part of any
+  session that's about to do a broad status review or backlog cleanup,
+  not only after confusion has already been reported; it's cheap (one
+  branch listing, one PR listing, diffed against each other) and it's the
+  only thing standing between a real fix and it quietly disappearing.
 - **Before acting on another agent's or tool's analysis of "current" repo
   state — a bot-generated performance ranking, a static-analysis report,
   anything claiming to describe what's slow/broken/present right now —

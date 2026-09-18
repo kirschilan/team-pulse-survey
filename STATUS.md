@@ -3979,3 +3979,42 @@ there are smaller, single-responsibility files to set real size/complexity limit
   ETHICS.md... same place any deployment secret belongs" line, written a few entries above this
   one, before the correction). Docs-only; no runtime code touched. Full suite re-verified green:
   167/167 unit tests, all Playwright files.
+- 2026-09-17 — Closed the other half of the branch-audit gap PR #25 (`ETHICS.md`, the TDD skill's
+  refactor-vs-behavior split, the code-review-skill DoD addition) didn't touch, per a review of #25
+  from another Claude session working on `dr-agile-standards` (a sister repo collecting working
+  agreements across Dr. Agile's Claude-assisted projects), relayed by the PO. Verified the claim
+  independently before acting on it (it named specific branches and an "audit" this session has no
+  memory of running) rather than trusting it at face value: `git log`/`STATUS.md` confirmed the
+  2026-09-17 full branch audit and its three orphaned branches
+  (`sec-1-relay-abuse-bounds`/`perf-1-idle-tab-sync-loop`/`sec-2-crypto-session-codes`) are real,
+  already-recorded history from earlier in this session; a fresh `list_branches`/`list_pull_requests`
+  check confirmed every CURRENT remote branch has an open or merged PR, so there's no live orphan
+  right now, only a missing standing rule. Added to `docs/DefinitionOfDone.md`'s Delivery workflow:
+  a branch isn't "landed" until its PR is open (or merged) -- never end a session having pushed a
+  branch with nothing pointing at it; if a session genuinely can't open the PR itself, say so
+  explicitly in this log rather than leaving it silent. On the "should the audit become a standing
+  periodic check" question the review raised: folded it into the SAME per-session-end discipline
+  (check before ending any session that pushed a branch) plus a lighter recommendation to re-run it
+  during any broader status/backlog review, rather than a separate scheduled job -- the root cause
+  was a session ending without opening a PR, so the fix belongs at session end, not a separate
+  periodic check needing its own infra this repo doesn't have. (The review's other two points: a
+  proposed "who this app is for, in what priority order" document, distinct from `ETHICS.md`'s
+  security/trust-hygiene scope -- put to the PO directly rather than decided here, per the review's
+  own explicit ask; and an FYI about `dr-agile-standards` existing, with the branch-audit pattern
+  being added there -- no action needed on this repo for that one.) Docs-only change; no runtime
+  code touched. Full suite re-verified green: 167/167 unit tests, all Playwright files (unaffected
+  by a docs-only change, run anyway per this repo's own full-suite-every-time convention).
+- 2026-09-17 — Fixed a real P2 finding from a Codex review of PR #26, verified independently before
+  acting (found the exact same result Codex reported, not just trusted the claim): the audit
+  command this PR's own new DoD rule prescribed, `gh pr list --head <branch>`, defaults to OPEN PRs
+  only -- it can never distinguish "landed" (merged) from "never opened" for exactly the branches
+  this rule exists to catch. Reproduced directly: the GitHub MCP `list_pull_requests` tool's bare
+  `head` filter (no `state`) returns `[]` for `ref-3-board-sync-state-machine`, whose PR (#23) is
+  definitely merged; adding `state: "all"` returns it. Found one more nuance beyond what Codex's
+  own finding named: even with `state: "all"`, the LIST tool's own `merged` field reported `false`
+  for that same, definitely-merged PR -- only the single-PR `get` call (`gh pr view`/the MCP
+  `pull_request_read` tool's `get` method) reported the real `merged: true` reliably. Updated the
+  DoD's audit instructions to use `--state all` to find a branch's PR at all, then a single-PR view
+  to confirm it's genuinely merged rather than closed-unmerged, rather than trusting either list
+  command's own state/merged columns for that distinction. Docs-only; no runtime code touched. Full
+  suite re-verified green: 167/167 unit tests, all Playwright files.
