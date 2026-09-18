@@ -279,6 +279,37 @@ and to every one already covered:
   push to `main` on your own judgment. This is unchanged by the branching
   model above: `claude/optimistic-keller-holuql` is a PREVIEW branch, not a
   path around that gate.
+- **A PR check stuck on "pending" is never assumed to be a display/caching
+  bug — confirm it against the check provider's own status page AND both
+  of GitHub's own check surfaces, and never declare a PR "safe to merge"
+  while any check is non-`success`, even if the merge button itself is
+  clickable.** (Adopted 2026-09-18 after Copilot told the PO a stuck
+  `Vercel` PR check was "just a stale GitHub UI render" and safe to merge,
+  without checking anything beyond the merge box screenshot. The affected
+  commit was `6a0955d` on PR #41's branch (`template-load-closes-open-
+  retro`) — corrected here after Codex's and Claude Code's review of PR
+  #43 found the original version of this entry misattributed it to PR
+  #38, which had already merged cleanly hours earlier. It was a real
+  Vercel platform incident ("Elevated Errors Triggering Deployments",
+  vercel-status.com, incident posted 20:32 UTC on 2026-09-18) —
+  `6a0955d`'s Vercel status went `pending` at 20:27 UTC and never
+  resolved, and PR #41's own merge commit got no Vercel status posted at
+  all. GitHub exposes checks through two separate surfaces — the legacy
+  Statuses API (what a Vercel-style integration posts to, e.g. `gh api
+  repos/<owner>/<repo>/commits/<sha>/statuses`) and the separate Checks
+  API (what GitHub Actions posts to) — checking only one, as an earlier
+  version of this rule did, silently misses whichever kind of check the
+  other surface carries; use `gh pr checks <number>` or the
+  `statusCheckRollup` field (or the equivalent status-checks tool), which
+  cover both, not `.../statuses` alone. This repo also has no branch
+  protection requiring status checks to pass before merging (confirmed
+  via `gh api repos/<owner>/<repo>/branches/<branch>/protection` returning
+  404), so nothing technically stops a merge while a check is still
+  pending; that gap makes this a human/AI judgment call today; enabling
+  required status checks on `claude/optimistic-keller-holuql` would
+  remove the judgment call entirely and is the recommended fix — ask the
+  product owner before applying it, since it changes shared repo
+  settings.)
 - A real, non-trivial change gets a session-log entry in `docs/session-log.md`
   (moved there from `STATUS.md` itself on 2026-09-18, REF-11 — see nearly
   every existing entry there for the expected level of detail: what
