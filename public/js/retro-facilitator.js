@@ -262,9 +262,32 @@ function renderSessionCardHtml(sq){
     var atEnd = qIdx >= pacingSeq.length;
     var nextLabel = qIdx === pacingSeq.length - 1 ? t("retro.pacing.finishButton") : t("retro.pacing.nextButton");
     var qText = atEnd ? null : pacingQuestionText(activeDims, pacingSeq, qIdx);
-    var questionTextHtml = qText
-      ? '<p class="hint pacing-current-question" id="pacingQuestionText" style="margin:0 0 8px;font-weight:600;" dir="auto">'+esc(qText)+'</p>'
-      : "";
+    // PO review follow-up: a plain 12.5px .hint line was too easy for a
+    // facilitator to miss next to the Previous/Next controls -- this now
+    // gets its own accent-tinted box (see .pacing-question-box/.pacing-
+    // current-question, styles.css) plus the same green/red anchor text a
+    // direct-rating participant sees before answering (directRowHtml(),
+    // retro-join.js), so the facilitator can interpret what a green vs. red
+    // answer means for THIS dimension without a second device open.
+    var questionTextHtml = "";
+    if(qText){
+      var curItem = pacingSeq[qIdx];
+      var curDim = activeDims.filter(function(d){ return d.key===curItem.dimKey; })[0];
+      var curGreen = curDim ? localizedDimText(curDim, "green") : "";
+      var curRed = curDim ? localizedDimText(curDim, "red") : "";
+      var pacingAnchorsHtml = (curGreen || curRed)
+        ? '<p class="hint" id="pacingQuestionAnchors" style="margin:8px 0 0;">' +
+            (curGreen ? '<b>'+esc(t("tribe.legend.greenLabel"))+'</b> <span dir="auto">'+esc(curGreen)+'</span> ' : '') +
+            (curRed ? '<b>'+esc(t("tribe.legend.redLabel"))+'</b> <span dir="auto">'+esc(curRed)+'</span>' : '') +
+          '</p>'
+        : "";
+      questionTextHtml =
+        '<div class="pacing-question-box">' +
+          '<p class="field-label" style="margin:0 0 4px;">'+esc(t("retro.pacing.currentQuestionLabel"))+'</p>' +
+          '<p class="pacing-current-question" id="pacingQuestionText" dir="auto">'+esc(qText)+'</p>' +
+          pacingAnchorsHtml +
+        '</div>';
+    }
     pacingHtml =
       questionTextHtml +
       '<div class="pacing-controls" style="display:flex;align-items:center;gap:10px;margin:0 0 10px;">' +

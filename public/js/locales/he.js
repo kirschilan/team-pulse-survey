@@ -306,6 +306,7 @@ var LOCALE_HE = {
   "retro.reveal.ariaLabel": "מצב חשיפה",
   "retro.reveal.hold": "עצירת תוצאות",
   "retro.reveal.live": "הצגה בזמן אמת",
+  "retro.pacing.currentQuestionLabel": "השאלה הנוכחית",
   "retro.pacing.counter": "שאלה {current} מתוך {total}",
   "retro.pacing.prevButton": "◀ הקודם",
   "retro.pacing.nextButton": "הבא ▶",

@@ -3609,6 +3609,54 @@ back in `STATUS.md`.
   tag and confirming it fails with that exact tag named in the assertion output, then restored
   the file (`git status` confirmed clean). Full suite re-verified green: `node --test
   tests/unit/test_*.js` (182/182), `tests/run_all.sh` (all Playwright files passing).
+- 2026-09-18 -- PO request: paced ("one question at a time") session's current question, shown
+  on the facilitator's own card, needed to be more prominent (a plain 12.5px `.hint` line was too
+  easy to miss next to the Previous/Next controls) and to also show what a green vs. red answer
+  means for that dimension. Test-first: extended `tests/test_retro_paced_questions.py` with
+  assertions on `#pacingQuestionText`'s computed `font-size`/`font-weight` (expected 16px/700,
+  confirmed failing first at the old 12.5px/600 `.hint` values) and on a new `#pacingQuestionAnchors`
+  element's text, checked across a statement dimension's two questions (same dimension, same
+  anchors both times) and all three direct-rating dimensions (anchors track the CURRENT question's
+  dimension as the facilitator advances). Implementation: `retro-facilitator.js`'s pacing-question
+  markup now wraps the question in a `.pacing-question-box` (new CSS, `styles.css`) with a
+  `.field-label` eyebrow ("Current question" -- new `retro.pacing.currentQuestionLabel` key, both
+  locales) above a `.pacing-current-question` question line (16px/700/full-strength `--text`, not
+  muted), plus the same green/red anchor markup a direct-rating participant already sees before
+  answering (`directRowHtml()`, `retro-join.js`) so the facilitator can interpret answers without a
+  second device open. Verified visually too, not just via computed-style assertions: a manual
+  screenshot (not committed, scratchpad-only) confirmed the box actually reads as a clear focal
+  point on the card. Full suite green: `node --test tests/unit/test_*.js` (182/182), `tests/run_all.sh`
+  (all Playwright files passing, 77s).
+- 2026-09-18 -- Revisited four backlog/deferred items at the user's request (ESLint config,
+  naming/abbreviation consistency, `state.editing`'s dual shape, splitting
+  `dimensions-templates.js`, from `docs/refactoring-report.md`; SEC-3a) to check whether any were
+  now stale against the actual codebase, rather than trusting `STATUS.md`'s own "Deferred /
+  low-value / YAGNI" section at face value. Found two real staleness bugs:
+  - **REF-4's own row said "PR open (2026-09-17), not yet merged"** -- confirmed via GitHub
+    (`pull_request_read`) it actually merged as PR #24 on 2026-09-18. Corrected the row.
+  - **The "Deferred" section's `state.editing`/`dimensions-templates.js` bullet was wrong, not just
+    stale**: it framed both as still-open, lower-urgency "next time that file is touched" items,
+    but `docs/refactoring-report.md`'s own top "Status" line already said both were fixed in a
+    2026-09-12 follow-up round -- whoever wrote that STATUS.md bullet apparently cited the report's
+    deliberately-unedited body text (its "Suggested order" item 6, left stale on purpose per the
+    report's own disclaimer) instead of its own Status line, and nobody had re-verified against the
+    live tree since. Confirmed directly: `public/js/dimensions-templates.js` no longer exists
+    (`ls` -- split into `dimensions.js`/`templates.js`, further reorganized by REF-4 since), and
+    `state.editing` no longer exists either -- `grep`'d `public/js/modals.js`, which uses two
+    plainly-named slots, `state.editingCell`/`state.editingOverride`, exactly the fix the report
+    proposed. Corrected the bullet to say so plainly.
+  - **Naming/abbreviation consistency**: spot-checked (`grep -c` for `sq`/`sess` as whole words
+    across `squads.js`/`dimensions.js`/`retro-facilitator.js`/`retro-join.js`) -- still genuinely
+    present and unaddressed, correctly deferred, no change needed.
+  - **ESLint config**: still correctly not introduced, but its own stated trigger ("once REF-4's
+    split lands") is now true (confirmed above) -- flagged this explicitly rather than leaving a
+    now-satisfied condition silently unactioned, without unilaterally deciding to add it myself
+    (a new dev-tool/config choice like this fits this repo's established "needs an explicit nod"
+    pattern, same as REF-11/REF-12 earlier today).
+  - **SEC-3a**: re-checked -- no embed deployment is active, still correctly YAGNI/PO-gated, no
+    change.
+  Docs-only change; fast unit suite re-run as a sanity check after merging in PR #38's changes
+  (182/182, including PR #38's two new `test_script_loading.js` cases).
 - 2026-09-18 -- Bug report: given a retro is in process, when loading a template, then a
   confirmation should appear that the current retro will be closed without saving, closing it (no
   consolidation applied) only if confirmed, leaving it open and the template unloaded if declined.
