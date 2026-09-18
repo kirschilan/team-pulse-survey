@@ -40,8 +40,12 @@ thing: specific architecture/product choices already made, not the bar every cha
   2026-09-12 via real testing on one). **The relay is deployed on Render.com** (confirmed by the PO
   2026-09-17 — this was done at the very start of implementing the retro feature, but never got
   logged here at the time; see the relay bullet below and `relay/README.md` for the deploy shape).
-  Per `ETHICS.md`, the actual `SQUAD_PULSE_RELAY_URL` value isn't recorded in this file or in chat —
-  it lives in Vercel's own env var config, same place any deployment secret belongs.
+  The actual `SQUAD_PULSE_RELAY_URL` value isn't hardcoded here — it's a real, live Vercel env var
+  that differs per environment (Production/Preview) and would go stale the moment it's rotated;
+  `relay/README.md` documents how to find/set it. (Not a secrets concern — a Codex review on PR #25
+  caught this file, and `ETHICS.md`, both drawing the wrong conclusion about why: the URL is a
+  public, build-time-emitted service endpoint, not a credential — see `ETHICS.md`'s own corrected
+  Section 1.)
 - **Retro sessions now sync across real devices.** `relay/` is a small standalone Node/`ws`
   WebSocket server; `public/js/relay-client.js` + `public/js/crypto.js` route every
   `sessions`-rooted `db` call to it (encrypted, per the decision below) instead of `localStorage`,
@@ -3944,3 +3948,34 @@ there are smaller, single-responsibility files to set real size/complexity limit
   first (a `Promise.all`/`allSettled` bug, a fixed-timer test flake, two documentation-accuracy
   bugs). Not a claim that external review becomes unnecessary -- a self-review pass ahead of it,
   same reasoning as the new TDD section's documentation-claims rule.
+- 2026-09-17 — Fixed three real P2 findings from a Codex review of PR #25, all verified
+  independently against primary sources before acting (per this session's own established
+  discipline for an externally-relayed claim) rather than taken at face value: (1) the DoD's new
+  self-review bullet named `code-review`, a Claude-Code-specific built-in skill, as a requirement
+  binding on every contributor -- but this repo's own working agreements explicitly bind Copilot,
+  Codex, and humans too, none of whom can invoke a skill by that name. Rewrote the bullet as a
+  tool-independent checklist (the same four categories the original wording named -- Promise.all/
+  allSettled, fixed-timer waits, untested documentation claims, diff-matches-description) that
+  anyone can walk directly; a Claude Code session's own `code-review` skill remains the fastest way
+  to satisfy it, now stated as a convenience, not the requirement. (2) The TDD skill's new
+  behavior-vs-refactor section (added earlier this same day) carved out an exception to
+  `docs/DefinitionOfDone.md`'s own unconditional "every change gets a failing test first" rule --
+  but never updated DoD itself to acknowledge it, so the two documents actively contradicted each
+  other (DoD is supposed to be authoritative; the skill is supposed to satisfy it, not silently
+  diverge). Added a cross-reference in DoD's own Testing section naming the exception and pointing
+  at the skill's fuller treatment. (3) The most substantive finding: `ETHICS.md`'s own motivating
+  example -- declining to paste `SQUAD_PULSE_RELAY_URL` into chat -- was framed as protecting a
+  secret, but it isn't one. Verified directly against `scripts/generate-relay-config.js`: it writes
+  this exact value into `public/relay-config.js` at build time, a plain static file this repo's own
+  build serves to every visitor's browser, unauthenticated -- readable via view-source or a
+  browser's Network tab the instant the app loads, and knowing it grants no access at all (the
+  relay authenticates nothing beyond rate limits; every real guarantee comes from the per-team
+  secret, which the relay never sees). Rewrote `ETHICS.md`'s Section 1 to use this app's ACTUAL
+  secrets as the illustrative examples (a hosting account's own API token; the per-team encryption
+  secret) and added an explicit correction distinguishing a public service endpoint from a
+  credential -- a preference against casually sharing one, if there is one, is a separate, weaker
+  concern (unnecessary exposure, not confidentiality) and shouldn't borrow this section's
+  reasoning. Corrected the same mischaracterization in this file's own earlier entry (the "Per
+  ETHICS.md... same place any deployment secret belongs" line, written a few entries above this
+  one, before the correction). Docs-only; no runtime code touched. Full suite re-verified green:
+  167/167 unit tests, all Playwright files.

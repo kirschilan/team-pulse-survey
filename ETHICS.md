@@ -3,25 +3,30 @@
 A short, standing set of ethical/security-hygiene rules for anyone —
 human or AI agent (Claude Code, Codex, Copilot, whoever's next) — working
 in this repo. Like `docs/DefinitionOfDone.md`, this is a bar every
-contributor clears, not a growing log. Added 2026-09-17, after a chat
-request to paste this app's deployed `SQUAD_PULSE_RELAY_URL` value
-directly into conversation was correctly declined and the PO asked for
-the principle to be written down rather than left as one contributor's
-one-off good judgment.
+contributor clears, not a growing log. Added 2026-09-17, prompted by a
+chat request to paste this app's deployed `SQUAD_PULSE_RELAY_URL` value
+directly into conversation, which was declined pending a closer look —
+see Section 1's own note below on what that value actually turned out to
+be, corrected the same day after a Codex review checked it against the
+real build output rather than accepting the original framing.
 
 ## 1. Secrets never travel through chat, commit messages, or committed docs
 
-If a value is a credential, an API key, a deployed service's connection
-string, or anything else that grants access rather than just describing
-behavior, it does not get pasted into a chat message, a commit message, a
-PR description, or any file that becomes part of this repo's history —
+If a value is a credential, an API key, an account token, or anything
+else that GRANTS ACCESS rather than just describing where something is,
+it does not get pasted into a chat message, a commit message, a PR
+description, or any file that becomes part of this repo's history —
 **even when a human explicitly asks for it to be pasted there.** Chat
 transcripts and git history are both effectively permanent and both reach
 a wider audience than the person asking; declining isn't second-guessing
 the person, it's recognizing that "please paste it here" and "I've
 weighed where this value ends up and I'm fine with that" are different
 things, and the second one isn't established just because the first one
-was said.
+was said. Real examples for this app: a Render.com or Vercel account's
+own API token or deploy hook; the app's own per-team encryption secret
+(`crypto.js`'s `generateSecret()` — high-entropy, shared only via a join
+link/QR, never sent to the relay at all, by explicit design — see
+`docs/standalone-plan.md`).
 
 What to do instead, in rough order of preference:
 - Point at *where* the value already lives (a secrets manager, a hosting
@@ -34,16 +39,25 @@ What to do instead, in rough order of preference:
   (a `.env.example`, a doc explaining what env var to set), name the env
   var, never its value.
 
-This isn't a new invention for this app — `crypto.js`/`board-sync.js`'s
-own design already lives by the same principle at the product level (a
-team's real secret is never sent to the relay, only a one-way hash of it
-for routing; see `docs/standalone-plan.md`). This section just states the
-same value explicitly for how contributors — including an AI agent acting
-on direct instructions — handle credentials in their own workflow, since
-"the app is careful with secrets" and "everyone touching the app is
-careful with secrets" are two different guarantees, and only writing down
-the first one left the second one resting on whoever happened to notice
-in the moment.
+**A public service endpoint is not a credential, and this document
+originally conflated the two — a real correction, not a hypothetical
+one.** The `SQUAD_PULSE_RELAY_URL` value that prompted this document is
+exactly that: a WebSocket address, not a secret. `scripts/
+generate-relay-config.js` writes it verbatim into `public/relay-config.js`
+at build time — a plain static file this repo's own build serves to every
+visitor's browser, unauthenticated, readable via view-source or a
+browser's Network tab the moment the app loads. Knowing it grants no
+access at all: the relay is deliberately content-blind and authenticates
+nothing beyond rate limits (see `docs/DefinitionOfDone.md`'s Delivery
+Workflow / `relay/README.md`), and every real guarantee comes from the
+per-team secret above, which the relay itself never even sees. Declining
+to paste an app's own public connection endpoint into chat isn't wrong,
+exactly — it's just not a SECRETS decision, so don't reach for this
+section's reasoning to justify it. If there's a reason to still prefer
+not sharing an endpoint casually (avoiding needless exposure that could
+make it a more convenient target for scripted abuse, say, even though
+`SEC-1`'s rate-limiting already bounds that), say so as its own,
+separate, weaker preference — not dressed up as protecting a credential.
 
 ## 2. Every "verified"/"passing"/"confirmed" claim is backed by an actual run
 
