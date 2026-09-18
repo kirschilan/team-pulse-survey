@@ -69,6 +69,106 @@ with sync_playwright() as p:
     assert "revealMode" not in session_after or session_after.get("revealMode") == "hold", \
         "closing without saving must not run finish-and-apply consolidation"
 
+    print("=== PENDING WRITE: template load waits for the close to actually land, doesn't race ahead ===")
+    page.click('.view-btn[data-view="squad"]')
+    page.click('.squad-pick-btn[data-id="squad-1"]')
+    page.click('#startSessionBtn')
+    page.wait_for_function(
+        "() => Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/') && window.__FAKE_STORE__[k].status === 'open').length === 1"
+    )
+    session_id_2 = page.evaluate(
+        "Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/') && window.__FAKE_STORE__[k].status === 'open')[0].split('/')[1]"
+    )
+    dims_before_pending = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('dimensions/')).sort()")
+    # Patch the sessions collection's close write to resolve slowly, exactly
+    # like a real in-flight network write -- so a test can observe the
+    # in-between "pending" state, not just its eventual outcome.
+    page.evaluate("""() => {
+      var origCollection = state.db.collection.bind(state.db);
+      state.db.collection = function(name){
+        var coll = origCollection(name);
+        if(name !== "sessions") return coll;
+        var origDoc = coll.doc.bind(coll);
+        coll.doc = function(id){
+          var ref = origDoc(id);
+          var origUpdate = ref.update.bind(ref);
+          ref.update = function(patch){
+            return new Promise(function(resolve, reject){
+              setTimeout(function(){ origUpdate(patch).then(resolve, reject); }, 250);
+            });
+          };
+          return ref;
+        };
+        return coll;
+      };
+    }""")
+    page.click('.view-btn[data-view="admin"]')
+    page.click('#templatesBtn')
+    page.wait_for_selector('#tplList .tpl-row[data-id="starter-tuckman"]', state="attached")
+    # Tuckman, not the already-active Spotify template -- its dimension keys
+    # (forming/storming/...) are disjoint from Spotify's, so an errant load
+    # that raced ahead of the pending close would show up as a real change
+    # to the dimension key set, not just a same-keys rewrite.
+    page.click('#tplList .tpl-row[data-id="starter-tuckman"] [data-action="load"]')
+    page.wait_for_selector('#confirmBackdrop:not([hidden])', state="attached")
+    page.click('#confirmOk')
+    # Immediately after confirming -- well before the patched 250ms close
+    # write resolves -- neither the session nor the board's dimensions
+    # should have changed yet. A template load that raced ahead of the
+    # close (the original bug's shape) would fail this.
+    assert page.evaluate("window.__FAKE_STORE__['sessions/%s'].status" % session_id_2) == "open", \
+        "must not close/load until the pending close write actually resolves"
+    dims_during_pending = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('dimensions/')).sort()")
+    assert dims_during_pending == dims_before_pending, \
+        "must not load the template while the close write is still pending"
+    page.wait_for_function(
+        "() => window.__FAKE_STORE__['sessions/%s'].status === 'closed'" % session_id_2
+    )
+    page.wait_for_function("() => window.__FAKE_STORE__['dimensions/forming'] !== undefined")
+    print("pending-write case: close landed, then (and only then) the template loaded")
+
+    print("=== REJECTED WRITE: a failed close must stop the load, not silently proceed ===")
+    page.click('.view-btn[data-view="squad"]')
+    page.click('.squad-pick-btn[data-id="squad-2"]')
+    page.click('#startSessionBtn')
+    page.wait_for_function(
+        "() => Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/') && window.__FAKE_STORE__[k].status === 'open').length === 1"
+    )
+    session_id_3 = page.evaluate(
+        "Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('sessions/') && window.__FAKE_STORE__[k].status === 'open')[0].split('/')[1]"
+    )
+    dims_before_rejected = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('dimensions/')).sort()")
+    page.evaluate("""() => {
+      var origCollection = state.db.collection.bind(state.db);
+      state.db.collection = function(name){
+        var coll = origCollection(name);
+        if(name !== "sessions") return coll;
+        var origDoc = coll.doc.bind(coll);
+        coll.doc = function(id){
+          var ref = origDoc(id);
+          ref.update = function(){ return Promise.reject({ code: "unavailable", message: "simulated close failure" }); };
+          return ref;
+        };
+        return coll;
+      };
+    }""")
+    page.click('.view-btn[data-view="admin"]')
+    page.click('#templatesBtn')
+    page.wait_for_selector('#tplList .tpl-row', state="attached")
+    page.eval_on_selector('#tplList .tpl-row [data-action="load"]', 'el => el.click()')
+    page.wait_for_selector('#confirmBackdrop:not([hidden])', state="attached")
+    page.click('#confirmOk')
+    page.wait_for_function("() => document.getElementById('diagLog').textContent.includes('NOT loaded')")
+    diag_text = page.eval_on_selector("#diagLog", "el => el.textContent")
+    assert "Close session failed" in diag_text, "the underlying write failure should still be logged, not just the load being aborted"
+    assert page.evaluate("window.__FAKE_STORE__['sessions/%s'].status" % session_id_3) == "open", \
+        "a failed close must leave the in-progress retro open, not silently mark it closed"
+    dims_after_rejected = page.evaluate("Object.keys(window.__FAKE_STORE__).filter(k => k.startsWith('dimensions/')).sort()")
+    assert dims_after_rejected == dims_before_rejected, \
+        "a failed close must stop the template load entirely -- the board must not end up on a template " \
+        "the still-open retro's dimensions no longer match"
+    print("rejected-write case: close failed, template load correctly aborted, diag log shows why")
+
     print("errors:", errors)
     assert errors == []
     page.screenshot(path=str(test_output_path("shot_template_load_closes_open_retro.png")), full_page=True)

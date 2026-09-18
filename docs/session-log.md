@@ -3635,3 +3635,26 @@ back in `STATUS.md`.
   its own dedicated test now; grepped every other test file that loads a template and confirmed
   none of them shared this ordering. Full suite green: `node --test tests/unit/test_*.js`
   (184/184), `tests/run_all.sh` (all Playwright files passing, 78s).
+- 2026-09-18 -- PR #41 review follow-up: a Claude Code review found a real gap in the fix above --
+  the Load button's `onConfirm` fired every `closeSession(s.id)` call and then called
+  `loadTemplate(tpl)` immediately, without waiting for the close write(s) to actually land, and
+  `closeSession()` itself swallowed a rejected write (logged via `diag()`, but the caller had no way
+  to know it failed). Reproduced with a forced-rejection close write: the template loaded while the
+  session it was supposed to have closed stayed open. Test-first: extended
+  `tests/test_template_load_closes_open_retro.py` with two new scenarios, both monkey-patching
+  `state.db.collection("sessions").doc(id).update` on the page (the fake store's own docRef, no new
+  test-only backdoor needed) -- a PENDING case (the close write resolves after an artificial 250ms
+  delay) confirming the template load only happens after that write actually lands, not
+  immediately on confirm; and a REJECTED case (the write always rejects) confirming the session
+  stays open, the board's dimensions are untouched, and `#diagLog` shows why. Both confirmed failing
+  first against the unfixed code (the pending case failed because the dimension set changed before
+  the close resolved). Implementation: `closeSession()` (`retro-facilitator.js`) now returns the
+  write's own promise instead of discarding it, and re-throws after logging via `diag()` instead of
+  swallowing the rejection -- the three existing fire-and-forget call sites (the plain close button,
+  the empty-retro finish confirm, `finishRetroAndApply()`) each got a no-op `.catch(function(){})`
+  appended so this doesn't turn into an unhandled-rejection regression for them (diag() has already
+  logged the failure by the time they'd see it). The Load handler (`templates.js`) now
+  `Promise.all()`s every `closeSession()` call, only calls `loadTemplate()` once all of them
+  resolve, and on any rejection logs a `diag()` message naming the template that was NOT loaded
+  instead of proceeding. Full suite green: `node --test tests/unit/test_*.js` (184/184),
+  `tests/run_all.sh` (all Playwright files passing, 71s).

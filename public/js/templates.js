@@ -73,8 +73,20 @@ function renderTemplateList(){
         t("templates.confirmLoadTitle", {name: tpl.name}),
         message,
         function(){
-          openSessions.forEach(function(s){ closeSession(s.id); });
-          loadTemplate(tpl);
+          // Await every close before rewriting the board's shared dimension
+          // set -- closeSession() can fail (a rejected write, same as any
+          // other live write in this app), and loading on top of a retro
+          // that's still actually open would leave it running against
+          // dimensions the newly-active template no longer matches, exactly
+          // the bug this confirm dialog exists to prevent. diag() (already
+          // called inside closeSession() on failure) is this app's
+          // established visible-failure channel -- the Admin panel's own
+          // log, not a separate alert.
+          Promise.all(openSessions.map(function(s){ return closeSession(s.id); }))
+            .then(function(){ loadTemplate(tpl); })
+            .catch(function(){
+              diag("Template '" + tpl.name + "' NOT loaded: failed to close an in-progress retro session first.");
+            });
         },
         t("templates.confirmLoadButton")
       );
