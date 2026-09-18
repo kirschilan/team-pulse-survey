@@ -3594,3 +3594,18 @@ back in `STATUS.md`.
   tests/unit/test_*.js` (180/180), `tests/run_all.sh` (all Playwright files passing). Not yet
   deployed -- the live site needs a redeploy of this branch/commit for the fix to take effect
   there.
+- 2026-09-18 -- PR #38 follow-up: a Claude Code review of the `defer` fix above found no correctness
+  bugs (verified independently -- ran the full suite itself, re-ran
+  `test_relay_config_injection.py` standalone, confirmed no inline `<script>` tags exist in
+  `index.html` to interact badly with `defer`, grepped `public/js/*.js` for
+  `DOMContentLoaded`/`readyState` ordering assumptions that could behave differently under
+  `defer` -- none found) and approved, with one optional suggestion: nothing guarded against
+  someone silently reintroducing a non-`defer`'d script tag one file at a time. Added
+  `tests/unit/test_script_loading.js` (plain Node, no DOM -- this is text parsing, not
+  browser-dependent behavior, per the TDD skill): asserts every same-origin `<script src>` in
+  `index.html` carries `defer`, and separately asserts no inline `<script>` tags exist at all
+  (the SEC-3 CSP requirement the `defer`-fix diagnosis leaned on). Verified the new test is a
+  real regression guard, not a false-positive pass, by temporarily stripping `defer` from one
+  tag and confirming it fails with that exact tag named in the assertion output, then restored
+  the file (`git status` confirmed clean). Full suite re-verified green: `node --test
+  tests/unit/test_*.js` (182/182), `tests/run_all.sh` (all Playwright files passing).
