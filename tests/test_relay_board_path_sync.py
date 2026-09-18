@@ -181,8 +181,48 @@ try:
         print("read with the SAME routing id but a wrong secret, from a fresh connection:", read_with_wrong_secret)
         assert read_with_wrong_secret["exists"] is False, "same room, wrong key -- decryption must fail, not fall back to plaintext or the path-derived key"
 
-        print("=== ALL ERRORS: a=", a_errors, "b=", b_errors)
-        assert a_errors == [] and b_errors == []
+        print("=== REF-6: getRoom()'s CACHE HIT refuses a mismatched secret on the SAME connection ===")
+        # Deliberately a fresh context, unlike right_page/wrong_page above --
+        # this specifically needs relay-client.js's `rooms` cache to already
+        # hold an entry for "ROUTINGONLY" on THIS page before the mismatched
+        # call below, which is exactly the getRoom()-level cache-reuse case
+        # the wrong_page check above does NOT exercise (a brand-new page has
+        # no cache to hit yet).
+        cache_ctx = browser.new_context()
+        cache_ctx.add_init_script(point_at_test_relay)
+        cache_page = cache_ctx.new_page()
+        cache_errors = []
+        cache_page.on("pageerror", lambda e: cache_errors.append(str(e)))
+        cache_page.goto(INDEX_URL, wait_until="domcontentloaded")
+
+        primed = cache_page.evaluate("""async () => {
+          const db = await window.claude.use("db");
+          const snap = await db.doc("boards/ROUTINGONLY", "the-real-secret").get();
+          return { exists: snap.exists, data: snap.data() };
+        }""")
+        print("first call on this page, correct secret (primes the getRoom() cache):", primed)
+        assert primed["exists"] is True
+        assert primed["data"]["hello"] == "with a secret"
+
+        mismatched = cache_page.evaluate("""async () => {
+          const db = await window.claude.use("db");
+          const snap = await db.doc("boards/ROUTINGONLY", "a-different-guess").get();
+          return { exists: snap.exists, unavailable: snap.unavailable };
+        }""")
+        print("SECOND call, same page, same routing id, a DIFFERENT secret:", mismatched)
+        # Before the REF-6 fix, getRoom()'s cache-hit branch returned
+        # `rooms[code]` unconditionally -- this call would have silently
+        # gotten back the room opened with "the-real-secret" above (still
+        # decrypting fine, `exists: true`), with zero error and zero
+        # diagnostic. The fix returns a fresh, dedicated, already-
+        # unavailable room instead, same shape every other getRoom()
+        # failure already returns -- `unavailable: true` is what makes this
+        # distinguishable from an ordinary "not found".
+        assert mismatched["exists"] is False
+        assert mismatched["unavailable"] is True, "a same-page secret mismatch on an existing routing code must surface as unavailable, not a silent reuse of the wrong key"
+
+        print("=== ALL ERRORS: a=", a_errors, "b=", b_errors, "cache=", cache_errors)
+        assert a_errors == [] and b_errors == [] and cache_errors == []
         browser.close()
 finally:
     relay_proc.terminate()
