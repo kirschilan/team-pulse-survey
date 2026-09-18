@@ -291,17 +291,26 @@ and to every one already covered:
   #43 found the original version of this entry misattributed it to PR
   #38, which had already merged cleanly hours earlier. It was a real
   Vercel platform incident ("Elevated Errors Triggering Deployments",
-  vercel-status.com, incident posted 20:32 UTC on 2026-09-18) —
-  `6a0955d`'s Vercel status went `pending` at 20:27 UTC and never
-  resolved, and PR #41's own merge commit got no Vercel status posted at
-  all. GitHub exposes checks through two separate surfaces — the legacy
-  Statuses API (what a Vercel-style integration posts to, e.g. `gh api
-  repos/<owner>/<repo>/commits/<sha>/statuses`) and the separate Checks
-  API (what GitHub Actions posts to) — checking only one, as an earlier
-  version of this rule did, silently misses whichever kind of check the
-  other surface carries; use `gh pr checks <number>` or the
-  `statusCheckRollup` field (or the equivalent status-checks tool), which
-  cover both, not `.../statuses` alone. This repo also has no branch
+  vercel-status.com, opened 20:32 UTC, resolved 21:22 UTC on 2026-09-18).
+  As observed live during the incident: `6a0955d`'s Vercel status went
+  `pending` at 20:27:01 UTC and had not resolved by the time PR #41
+  merged at 20:38:06 UTC; its merge commit (`cf0052d`) had no Vercel
+  status posted at all as of that point — **second correction, Codex's
+  follow-up review: an earlier version of this entry said `6a0955d`
+  "never resolved," which live data now contradicts — it actually
+  resolved to `success` at 21:13:03 UTC (matching vercel-status.com's own
+  "fix implemented" update, also posted at 21:13 UTC).** `cf0052d` later
+  got a `pending` status at 21:30:56 UTC and was still `pending` as of
+  this correction — don't treat either commit's state as still current by
+  the time you're reading this; re-check live data if it matters, exactly
+  as this rule itself asks. GitHub exposes checks through two separate
+  surfaces — the legacy Statuses API (what a Vercel-style integration
+  posts to, e.g. `gh api repos/<owner>/<repo>/commits/<sha>/statuses`) and
+  the separate Checks API (what GitHub Actions posts to) — checking only
+  one, as an earlier version of this rule did, silently misses whichever
+  kind of check the other surface carries; use `gh pr checks <number>` or
+  the `statusCheckRollup` field (or the equivalent status-checks tool),
+  which cover both, not `.../statuses` alone. This repo also has no branch
   protection requiring status checks to pass before merging (confirmed
   via `gh api repos/<owner>/<repo>/branches/<branch>/protection` returning
   404), so nothing technically stops a merge while a check is still
