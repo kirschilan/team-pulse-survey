@@ -71,16 +71,16 @@ function send(client, msg){ client.ws.send(JSON.stringify(msg)); }
 async function main(){
   console.log("=== transport payload ceiling rejects an oversized frame before JSON parsing ===");
   {
-    var port = nextPort++;
-    var wss = startServer({ port: port, limits: { maxMessageBytes: 500 } });
-    var a = await connect("BIGMSG", port);
+    let port = nextPort++;
+    let wss = startServer({ port: port, limits: { maxMessageBytes: 500 } });
+    let a = await connect("BIGMSG", port);
     await waitFor(a, function(m){ return m.op === "snapshot"; });
     // A single frame well over the 500-byte ceiling -- ws's own maxPayload
     // terminates the connection at the transport level; the server's
     // "message" handler (and its JSON.parse) never even runs.
-    var hugeEnvelope = { iv: "x", ct: "y".repeat(2000) };
+    let hugeEnvelope = { iv: "x", ct: "y".repeat(2000) };
     a.ws.send(JSON.stringify({ op: "put", path: "BIGMSG", envelope: hugeEnvelope }));
-    var close = await waitForClose(a);
+    let close = await waitForClose(a);
     console.log("oversized frame closed the connection:", close);
     assert.ok(close.code !== 1000, "an oversized frame must not close normally, as if nothing happened");
     wss.close();
@@ -89,19 +89,19 @@ async function main(){
 
   console.log("=== per-room concurrent-client cap: a full room rejects a new joiner, a DIFFERENT room is unaffected ===");
   {
-    var port = nextPort++;
-    var wss = startServer({ port: port, limits: { maxClientsPerRoom: 2 } });
-    var a = await connect("FULLROOM", port);
+    let port = nextPort++;
+    let wss = startServer({ port: port, limits: { maxClientsPerRoom: 2 } });
+    let a = await connect("FULLROOM", port);
     await waitFor(a, function(m){ return m.op === "snapshot"; });
-    var b = await connect("FULLROOM", port);
+    let b = await connect("FULLROOM", port);
     await waitFor(b, function(m){ return m.op === "snapshot"; });
-    var c = await connect("FULLROOM", port);
-    var cClose = await waitForClose(c);
+    let c = await connect("FULLROOM", port);
+    let cClose = await waitForClose(c);
     console.log("third client into a 2-client-capped room:", cClose);
     assert.strictEqual(cClose.code, 1013);
 
-    var d = await connect("OTHERROOM", port);
-    var dSnap = await waitFor(d, function(m){ return m.op === "snapshot"; });
+    let d = await connect("OTHERROOM", port);
+    let dSnap = await waitFor(d, function(m){ return m.op === "snapshot"; });
     console.log("a different room still accepts a new client normally:", !!dSnap);
     assert.ok(dSnap);
 
@@ -112,9 +112,9 @@ async function main(){
 
   console.log("=== per-connection message-rate cap, with recovery on a fresh connection ===");
   {
-    var port = nextPort++;
-    var wss = startServer({ port: port, limits: { maxMessagesPerWindow: 3, messageRateWindowMs: 400 } });
-    var a = await connect("RATEROOM", port);
+    let port = nextPort++;
+    let wss = startServer({ port: port, limits: { maxMessagesPerWindow: 3, messageRateWindowMs: 400 } });
+    let a = await connect("RATEROOM", port);
     await waitFor(a, function(m){ return m.op === "snapshot"; });
 
     send(a, { op: "put", path: "RATEROOM/d1", envelope: { iv: "i", ct: "1" }, opId: "op1" });
@@ -125,18 +125,18 @@ async function main(){
 
     // The 4th write in the SAME window must be refused, not silently queued.
     send(a, { op: "put", path: "RATEROOM/d4", envelope: { iv: "i", ct: "4" }, opId: "op4" });
-    var rateErr = await waitFor(a, function(m){ return m.op === "error"; });
+    let rateErr = await waitFor(a, function(m){ return m.op === "error"; });
     console.log("4th write in the same window:", rateErr);
-    var aClose = await waitForClose(a);
+    let aClose = await waitForClose(a);
     console.log("connection closed after the violation:", aClose);
     assert.strictEqual(aClose.code, 1013);
 
     // Recovery: a genuinely NEW connection gets its own fresh budget, not
     // inheriting the closed connection's exhausted one.
-    var b = await connect("RATEROOM", port);
+    let b = await connect("RATEROOM", port);
     await waitFor(b, function(m){ return m.op === "snapshot"; });
     send(b, { op: "put", path: "RATEROOM/d5", envelope: { iv: "i", ct: "5" }, opId: "op5" });
-    var ack5 = await waitFor(b, function(m){ return m.op === "ack" && m.opId === "op5"; });
+    let ack5 = await waitFor(b, function(m){ return m.op === "ack" && m.opId === "op5"; });
     console.log("a fresh connection can write immediately:", ack5.forOp);
     assert.strictEqual(ack5.forOp, "put");
 
@@ -147,23 +147,23 @@ async function main(){
 
   console.log("=== room-creation rate cap: throttles NEW rooms, never blocks joining an EXISTING one ===");
   {
-    var port = nextPort++;
-    var wss = startServer({ port: port, limits: { maxNewRoomsPerWindow: 2, roomCreationRateWindowMs: 500 } });
-    var a = await connect("NEWROOM1", port);
+    let port = nextPort++;
+    let wss = startServer({ port: port, limits: { maxNewRoomsPerWindow: 2, roomCreationRateWindowMs: 500 } });
+    let a = await connect("NEWROOM1", port);
     await waitFor(a, function(m){ return m.op === "snapshot"; });
-    var b = await connect("NEWROOM2", port);
+    let b = await connect("NEWROOM2", port);
     await waitFor(b, function(m){ return m.op === "snapshot"; });
 
     // A THIRD brand-new code, still inside the same window, must be refused.
-    var c = await connect("NEWROOM3", port);
-    var cClose = await waitForClose(c);
+    let c = await connect("NEWROOM3", port);
+    let cClose = await waitForClose(c);
     console.log("3rd brand-new room within the rate window:", cClose);
     assert.strictEqual(cClose.code, 1013);
 
     // But re-joining an ALREADY-created room is not a "creation" at all --
     // must succeed even while the creation window is still exhausted.
-    var a2 = await connect("NEWROOM1", port);
-    var a2Snap = await waitFor(a2, function(m){ return m.op === "snapshot"; });
+    let a2 = await connect("NEWROOM1", port);
+    let a2Snap = await waitFor(a2, function(m){ return m.op === "snapshot"; });
     console.log("re-joining an existing room during the same window still works:", !!a2Snap);
     assert.ok(a2Snap);
 
@@ -174,28 +174,28 @@ async function main(){
 
   console.log("=== per-IP concurrent-connection cap, with recovery once a slot frees up ===");
   {
-    var port = nextPort++;
+    let port = nextPort++;
     // Real test connections here all come from the same loopback address,
     // which is exactly the code path this cap exercises -- no simulation
     // needed. maxConnectionsPerIp counts CONCURRENT connections, not a
     // rate, so a generous connection-rate limit is set here to isolate it
     // from the separate global-rate test below.
-    var wss = startServer({ port: port, limits: { maxConnectionsPerIp: 2, maxNewConnectionsPerWindow: 1000 } });
-    var a = await connect("IPROOM1", port);
+    let wss = startServer({ port: port, limits: { maxConnectionsPerIp: 2, maxNewConnectionsPerWindow: 1000 } });
+    let a = await connect("IPROOM1", port);
     await waitFor(a, function(m){ return m.op === "snapshot"; });
-    var b = await connect("IPROOM2", port);
+    let b = await connect("IPROOM2", port);
     await waitFor(b, function(m){ return m.op === "snapshot"; });
 
-    var c = await connect("IPROOM3", port);
-    var cClose = await waitForClose(c);
+    let c = await connect("IPROOM3", port);
+    let cClose = await waitForClose(c);
     console.log("3rd concurrent connection from the same address:", cClose);
     assert.strictEqual(cClose.code, 1013);
 
     // Recovery: closing one frees a slot for a genuinely new connection.
     a.ws.close();
     await sleep(100);
-    var d = await connect("IPROOM4", port);
-    var dSnap = await waitFor(d, function(m){ return m.op === "snapshot"; });
+    let d = await connect("IPROOM4", port);
+    let dSnap = await waitFor(d, function(m){ return m.op === "snapshot"; });
     console.log("a new connection succeeds once a slot frees up:", !!dSnap);
     assert.ok(dSnap);
 
@@ -206,24 +206,24 @@ async function main(){
 
   console.log("=== global new-connection rate cap, with recovery once the window passes ===");
   {
-    var port = nextPort++;
-    var wss = startServer({ port: port, limits: { maxNewConnectionsPerWindow: 3, connectionRateWindowMs: 400, maxConnectionsPerIp: 1000 } });
-    var a = await connect("RATEC1", port);
+    let port = nextPort++;
+    let wss = startServer({ port: port, limits: { maxNewConnectionsPerWindow: 3, connectionRateWindowMs: 400, maxConnectionsPerIp: 1000 } });
+    let a = await connect("RATEC1", port);
     await waitFor(a, function(m){ return m.op === "snapshot"; });
-    var b = await connect("RATEC2", port);
+    let b = await connect("RATEC2", port);
     await waitFor(b, function(m){ return m.op === "snapshot"; });
-    var c = await connect("RATEC3", port);
+    let c = await connect("RATEC3", port);
     await waitFor(c, function(m){ return m.op === "snapshot"; });
 
-    var d = await connect("RATEC4", port);
-    var dClose = await waitForClose(d);
+    let d = await connect("RATEC4", port);
+    let dClose = await waitForClose(d);
     console.log("4th new connection within the rate window:", dClose);
     assert.strictEqual(dClose.code, 1013);
 
     // Recovery: once the window passes, new connections succeed again.
     await sleep(450);
-    var e = await connect("RATEC5", port);
-    var eSnap = await waitFor(e, function(m){ return m.op === "snapshot"; });
+    let e = await connect("RATEC5", port);
+    let eSnap = await waitFor(e, function(m){ return m.op === "snapshot"; });
     console.log("a new connection after the window passes:", !!eSnap);
     assert.ok(eSnap);
 

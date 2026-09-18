@@ -83,7 +83,7 @@ function i18nPanelHtml(d){
   var sourceHint = hasI18n
     ? t("dimManager.i18n.sourceDefault", {template: state.config.activeTemplateName || ""})
     : t("dimManager.i18n.sourceNone");
-  var isOpen = openI18nPanels.hasOwnProperty(d.key) ? openI18nPanels[d.key] : hasI18n;
+  var isOpen = Object.prototype.hasOwnProperty.call(openI18nPanels, d.key) ? openI18nPanels[d.key] : hasI18n;
   return '<button class="i18n-toggle" type="button" aria-expanded="'+(isOpen?"true":"false")+'" data-key="'+esc(d.key)+'">' +
       (hasI18n ? esc(t("dimManager.i18n.editedToggle")) : esc(t("dimManager.i18n.addToggle"))) +
       '<svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>' +
