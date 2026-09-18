@@ -3627,3 +3627,33 @@ back in `STATUS.md`.
   screenshot (not committed, scratchpad-only) confirmed the box actually reads as a clear focal
   point on the card. Full suite green: `node --test tests/unit/test_*.js` (182/182), `tests/run_all.sh`
   (all Playwright files passing, 77s).
+- 2026-09-18 -- Revisited four backlog/deferred items at the user's request (ESLint config,
+  naming/abbreviation consistency, `state.editing`'s dual shape, splitting
+  `dimensions-templates.js`, from `docs/refactoring-report.md`; SEC-3a) to check whether any were
+  now stale against the actual codebase, rather than trusting `STATUS.md`'s own "Deferred /
+  low-value / YAGNI" section at face value. Found two real staleness bugs:
+  - **REF-4's own row said "PR open (2026-09-17), not yet merged"** -- confirmed via GitHub
+    (`pull_request_read`) it actually merged as PR #24 on 2026-09-18. Corrected the row.
+  - **The "Deferred" section's `state.editing`/`dimensions-templates.js` bullet was wrong, not just
+    stale**: it framed both as still-open, lower-urgency "next time that file is touched" items,
+    but `docs/refactoring-report.md`'s own top "Status" line already said both were fixed in a
+    2026-09-12 follow-up round -- whoever wrote that STATUS.md bullet apparently cited the report's
+    deliberately-unedited body text (its "Suggested order" item 6, left stale on purpose per the
+    report's own disclaimer) instead of its own Status line, and nobody had re-verified against the
+    live tree since. Confirmed directly: `public/js/dimensions-templates.js` no longer exists
+    (`ls` -- split into `dimensions.js`/`templates.js`, further reorganized by REF-4 since), and
+    `state.editing` no longer exists either -- `grep`'d `public/js/modals.js`, which uses two
+    plainly-named slots, `state.editingCell`/`state.editingOverride`, exactly the fix the report
+    proposed. Corrected the bullet to say so plainly.
+  - **Naming/abbreviation consistency**: spot-checked (`grep -c` for `sq`/`sess` as whole words
+    across `squads.js`/`dimensions.js`/`retro-facilitator.js`/`retro-join.js`) -- still genuinely
+    present and unaddressed, correctly deferred, no change needed.
+  - **ESLint config**: still correctly not introduced, but its own stated trigger ("once REF-4's
+    split lands") is now true (confirmed above) -- flagged this explicitly rather than leaving a
+    now-satisfied condition silently unactioned, without unilaterally deciding to add it myself
+    (a new dev-tool/config choice like this fits this repo's established "needs an explicit nod"
+    pattern, same as REF-11/REF-12 earlier today).
+  - **SEC-3a**: re-checked -- no embed deployment is active, still correctly YAGNI/PO-gated, no
+    change.
+  Docs-only change; fast unit suite re-run as a sanity check after merging in PR #38's changes
+  (182/182, including PR #38's two new `test_script_loading.js` cases).
