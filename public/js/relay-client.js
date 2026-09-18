@@ -275,20 +275,66 @@ var SquadPulseRelay = (function(){
   // exactly this way: two team-synced devices, after either one had ever
   // joined a retro session and then reloaded, could no longer decrypt each
   // other's board pushes at all.
-  function getRoom(code, secret, remember){
-    if(rooms[code]) return rooms[code];
-    if(remember) rememberCode(code, secret);
-
+  function makeRoom(code, secret){
     var room = {
-      code: code, docs: {},
+      code: code, secret: secret, docs: {},
       ws: null, wsOpen: false, sendQueue: [],
       collListeners: [], docListeners: [],
       ready: null, reconnectDelayMs: 250, reconnectAttempts: 0,
       unavailable: false,
       pendingWrites: {} // opId -> {resolve, reject, msg, awaitingAck} -- see sendTracked()
     };
-    rooms[code] = room;
     room.ready = new Promise(function(res){ room.resolveReady = res; });
+    return room;
+  }
+
+  // REF-6 (STATUS.md's "Code quality & refactoring backlog"): a cache hit
+  // above used to return `rooms[code]` unconditionally, without ever
+  // checking that THIS caller's secret matches the secret the cached room
+  // was actually derived from -- a second caller for the same routing code
+  // but a DIFFERENT secret silently got back the first caller's room,
+  // decrypting/encrypting under a key that was never theirs, with zero
+  // error and zero diagnostic.
+  //
+  // Only an EXPLICIT, truthy `secret` argument is checked against the
+  // cache -- a call that passes none at all is trusting whatever's already
+  // open for this code, not making a claim about what the key should be.
+  // That's not a hypothetical: `retro-facilitator.js`'s reveal-mode/status/
+  // experiment-note updates all go through
+  // `state.db.collection("sessions").doc(sessionId).update(...)` with NO
+  // secret argument, by design -- they only ever run against a session
+  // this exact device already opened correctly (via
+  // coFacilitateSessionByCode()/startSession()), and rely on getRoom()
+  // reusing that already-connected room. Comparing `secret || code`
+  // (the actual key-derivation input) against every such call would treat
+  // its own room as a "mismatch" the instant a caller upstream omitted the
+  // secret -- confirmed as a real regression this fix introduced and then
+  // removed: test_cofacilitator_join.py's reveal-mode step failed against
+  // an earlier version of this fix that compared `secret || code`
+  // unconditionally.
+  function getRoom(code, secret, remember){
+    var cached = rooms[code];
+    if(cached){
+      if(secret && cached.secret !== secret){
+        // Deliberately NOT stored in `rooms[code]` -- overwriting the cache
+        // here would apply the SAME bug in the other direction, clobbering
+        // the legitimate owner's still-good room the next time THEY call
+        // getRoom(code, ...). Return a fresh, dedicated, already-unavailable
+        // room instead: same shape every other getRoom() failure path
+        // already returns (see the "no relay configured"/malformed-URL
+        // branches below), so docRef()/collRef() need no special case --
+        // `.get()` resolves `{exists:false, unavailable:true}`, exactly
+        // like any other unavailable room.
+        var mismatchRoom = makeRoom(code, secret);
+        giveUp(mismatchRoom, "requested with a secret that doesn't match the room already cached for routing code \"" + code + "\" -- refusing to silently decrypt/encrypt under the wrong key");
+        return mismatchRoom;
+      }
+      return cached;
+    }
+    if(remember) rememberCode(code, secret);
+
+    var room = makeRoom(code, secret || code);
+    rooms[code] = room;
 
     if(!RELAY_URL){
       // Nothing to connect to at all -- e.g. deployed with no relay
@@ -313,7 +359,7 @@ var SquadPulseRelay = (function(){
       return room;
     }
 
-    var keyPromise = SquadPulseCrypto.deriveKey(secret || code);
+    var keyPromise = SquadPulseCrypto.deriveKey(room.secret);
     room.keyPromise = keyPromise; // putDoc() below reuses this rather than re-deriving
     connectRoom(room, keyPromise);
 
