@@ -34,10 +34,17 @@
 #
 # Usage: tests/run_all.sh                    (default: every test_*.py file, sharded -- see below)
 #        TEST_JOBS=4 tests/run_all.sh
-#        tests/run_all.sh tests/test_a.py tests/test_b.py   (run only these -- CI's
-#                                                             per-shard matrix job uses this,
-#                                                             and an explicit list is NEVER
-#                                                             re-sharded, only default discovery is)
+#        tests/run_all.sh tests/test_a.py tests/test_b.py   (run only these; an
+#                                                             explicit list is NEVER re-sharded,
+#                                                             only default discovery is)
+#        SHARD_INDEX=1 tests/run_all.sh        (run only shard 1's files, same partitioning
+#                                                the no-args path uses -- .github/workflows/
+#                                                tests.yml's per-shard matrix job uses THIS,
+#                                                not an explicit file list, so there is exactly
+#                                                one implementation of "which files are in
+#                                                shard N" for both CI and local use -- see
+#                                                REF-9, STATUS.md's "Code quality &
+#                                                refactoring backlog")
 #
 # Sharding the DEFAULT (no-args) file list, found the hard way: -P 2 was
 # measured safe for the whole suite back when it had ~30 files, but that
@@ -58,16 +65,35 @@
 # passes locally" and "CI is green" are now the same claim, checked the
 # same way -- not two different configurations that can silently diverge.
 #
-# SHARD_COUNT here is a local copy of .github/workflows/tests.yml's own
-# SHARD_COUNT env var, not read from it (a bash script and a GitHub Actions
-# workflow have no shared source of truth to draw from) -- if one changes,
-# check whether the other still matches the suite's actual size.
-SHARD_COUNT="${SHARD_COUNT:-3}"
-
+# REF-9: select_shard_files() below is the one place that decides which
+# files belong to shard N, called identically whether this script is
+# running every shard in sequence (the default, no-args, local path) or
+# just one (SHARD_INDEX=N, what CI's matrix job now passes) -- previously
+# CI reimplemented the same split as a separate `ls | awk 'NR % n == i'`
+# line in the workflow file itself, using 1-indexed NR against this
+# script's 0-indexed loop counter, which (confirmed) picked a DIFFERENT
+# physical file group for "shard 0" than this script's own shard 0 despite
+# both correctly partitioning the full suite -- harmless in effect (every
+# file still ran exactly once across the 3 shards either way) but exactly
+# the kind of silent drift this backlog item exists to close off.
+#
+# Codex review on PR #32: the shard COUNT itself was still a second,
+# independent hardcoded `3` here, separate from
+# .github/workflows/tests.yml's own copy -- REF-9's "one obvious source of
+# truth" acceptance criterion wasn't actually met by unifying the
+# partitioning rule alone. Fixed by moving the count into
+# tests/.shard_count (a plain checked-in file, same pattern as this
+# script's own tests/.timing_baseline below) -- both this script's default
+# and the workflow's `compute-shard-matrix` job now read that one file, so
+# there is exactly one place to change the shard count, the same way
+# select_shard_files() is exactly one place to change the partitioning
+# rule. SHARD_COUNT can still be overridden via the environment (e.g. for
+# a one-off local experiment) without touching the file.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
 JOBS="${TEST_JOBS:-2}"
+SHARD_COUNT="${SHARD_COUNT:-$(tr -d '[:space:]' < tests/.shard_count)}"
 
 if ! python3 -c 'import playwright' >/dev/null 2>&1; then
   echo "Playwright is unavailable to python3. Activate the project environment or install it with: python3 -m pip install -r tests/requirements.txt" >&2
@@ -84,6 +110,15 @@ esac
 case "$SHARD_COUNT" in
   ''|*[!0-9]*|0) echo "SHARD_COUNT must be a positive integer" >&2; exit 2 ;;
 esac
+if [ -n "${SHARD_INDEX:-}" ]; then
+  case "$SHARD_INDEX" in
+    *[!0-9]*) echo "SHARD_INDEX must be a non-negative integer" >&2; exit 2 ;;
+  esac
+  if [ "$SHARD_INDEX" -ge "$SHARD_COUNT" ]; then
+    echo "SHARD_INDEX ($SHARD_INDEX) must be less than SHARD_COUNT ($SHARD_COUNT)" >&2
+    exit 2
+  fi
+fi
 
 if [ "$#" -gt 0 ]; then
   printf '%s\n' "$@" | xargs -n 1 -P "$JOBS" tests/_run_one.sh
@@ -96,11 +131,16 @@ if [ "$#" -gt 0 ]; then
   exit "$status"
 fi
 
-status=0
-START_TIME=$(date +%s)
-for shard in $(seq 0 $((SHARD_COUNT - 1))); do
+# The one place that decides which files belong to shard N -- see REF-9's
+# comment above SHARD_COUNT's own definition for why this used to also be
+# reimplemented, slightly differently, in .github/workflows/tests.yml
+# itself. Populates the global `files` array; not called with a subshell
+# (no `$(...)`) specifically so that assignment is visible to the caller.
+select_shard_files(){
+  local shard="$1"
   files=()
-  file_index=0
+  local file_index=0
+  local file
   for file in tests/test_*.py; do
     [ -f "$file" ] || continue
     if [ $((file_index % SHARD_COUNT)) -eq "$shard" ]; then
@@ -108,6 +148,29 @@ for shard in $(seq 0 $((SHARD_COUNT - 1))); do
     fi
     file_index=$((file_index + 1))
   done
+}
+
+if [ -n "${SHARD_INDEX:-}" ]; then
+  select_shard_files "$SHARD_INDEX"
+  echo "--- shard $SHARD_INDEX/$SHARD_COUNT: ${#files[@]} file(s) ---"
+  printf '  %s\n' "${files[@]}"
+  status=0
+  if [ "${#files[@]}" -gt 0 ]; then
+    printf '%s\n' "${files[@]}" | xargs -n 1 -P "$JOBS" tests/_run_one.sh
+    status=$?
+  fi
+  if [ "$status" -eq 0 ]; then
+    echo "All Playwright tests passed (TEST_JOBS=$JOBS, shard $SHARD_INDEX/$SHARD_COUNT)."
+  else
+    echo "One or more Playwright tests FAILED (TEST_JOBS=$JOBS, shard $SHARD_INDEX/$SHARD_COUNT) -- see above."
+  fi
+  exit "$status"
+fi
+
+status=0
+START_TIME=$(date +%s)
+for shard in $(seq 0 $((SHARD_COUNT - 1))); do
+  select_shard_files "$shard"
   echo "--- shard $shard/$SHARD_COUNT: ${#files[@]} file(s) ---"
   if [ "${#files[@]}" -eq 0 ]; then
     continue
