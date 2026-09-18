@@ -4004,3 +4004,17 @@ there are smaller, single-responsibility files to set real size/complexity limit
   being added there -- no action needed on this repo for that one.) Docs-only change; no runtime
   code touched. Full suite re-verified green: 167/167 unit tests, all Playwright files (unaffected
   by a docs-only change, run anyway per this repo's own full-suite-every-time convention).
+- 2026-09-17 — Fixed a real P2 finding from a Codex review of PR #26, verified independently before
+  acting (found the exact same result Codex reported, not just trusted the claim): the audit
+  command this PR's own new DoD rule prescribed, `gh pr list --head <branch>`, defaults to OPEN PRs
+  only -- it can never distinguish "landed" (merged) from "never opened" for exactly the branches
+  this rule exists to catch. Reproduced directly: the GitHub MCP `list_pull_requests` tool's bare
+  `head` filter (no `state`) returns `[]` for `ref-3-board-sync-state-machine`, whose PR (#23) is
+  definitely merged; adding `state: "all"` returns it. Found one more nuance beyond what Codex's
+  own finding named: even with `state: "all"`, the LIST tool's own `merged` field reported `false`
+  for that same, definitely-merged PR -- only the single-PR `get` call (`gh pr view`/the MCP
+  `pull_request_read` tool's `get` method) reported the real `merged: true` reliably. Updated the
+  DoD's audit instructions to use `--state all` to find a branch's PR at all, then a single-PR view
+  to confirm it's genuinely merged rather than closed-unmerged, rather than trusting either list
+  command's own state/merged columns for that distinction. Docs-only; no runtime code touched. Full
+  suite re-verified green: 167/167 unit tests, all Playwright files.

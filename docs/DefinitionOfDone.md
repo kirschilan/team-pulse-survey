@@ -225,10 +225,20 @@ and to every one already covered:
   this repo — nothing surfaces it, nothing links it to the backlog item it
   closes, and a parallel effort can complete the same work again without
   ever knowing it already existed. Before ending a session that pushed one
-  or more branches, confirm each one has an open PR (or has already
-  merged) — `gh pr list --head <branch>` or the equivalent GitHub MCP call
-  is enough to check. If a session genuinely runs out of room to open the
-  PR itself, say so explicitly in `STATUS.md`'s session log (branch name,
+  or more branches, confirm each one has an open PR or has already
+  merged — `gh pr list --head <branch> --state all` (or the equivalent
+  GitHub MCP `list_pull_requests` call with `state: "all"`), not the bare
+  `--head <branch>` form: it defaults to open PRs only, so it silently
+  reports `[]` for a branch whose PR already merged — confirmed against
+  `ref-3-board-sync-state-machine` (PR #23, merged): the bare form returns
+  nothing, `--state all` returns it. Once found with `--state all`, confirm
+  it's genuinely MERGED, not just closed unmerged — `gh pr list`'s own
+  STATE column (and the GitHub MCP `list_pull_requests` tool's own
+  `merged` field) can't always be trusted for this distinction; the
+  single-PR `gh pr view <number>` (or the MCP `pull_request_read` tool's
+  `get` method) reports the real `merged` boolean reliably. If a session
+  genuinely runs out of room to open the PR itself, say so explicitly in
+  `STATUS.md`'s session log (branch name,
   what it contains, why the PR wasn't opened) rather than leaving it
   silent. (Adopted 2026-09-17 after a full branch audit — prompted by the
   PO reporting that this session, another Claude Code session, Codex, and
