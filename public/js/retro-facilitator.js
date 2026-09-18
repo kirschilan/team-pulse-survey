@@ -68,7 +68,7 @@ function coFacilitateSessionByCode(secret){
   });
 }
 
-function startSession(sq){
+function startSession(sq, pacingEnabled){
   // snapshot dimensions the same way saveCurrentAsTemplate()/loadTemplate()
   // do, carrying statements/scoreBands/strategies (and any Hebrew
   // translation the dimension has -- see state.js's localizedDimText())
@@ -88,7 +88,15 @@ function startSession(sq){
     dimensions: dimsSnapshot,
     status: "open", revealMode: "hold",
     overrides: {}, experimentNote: "",
-    createdAt: nowIso()
+    createdAt: nowIso(),
+    // RETRO-2: paced ("one question at a time") is a session-level choice
+    // made once, at start -- default false, preserving today's all-at-once
+    // survey unchanged for every existing session and every facilitator who
+    // doesn't opt in. `currentQuestionIndex` is only ever meaningful when
+    // `pacingEnabled` is true; it's still written (at 0) either way so
+    // there's one consistent shape to read, not an optional field callers
+    // have to guard against being absent.
+    pacingEnabled: !!pacingEnabled, currentQuestionIndex: 0
   };
   // SEC-2: a live session's room id and its encryption key are no longer
   // the same value -- see crypto.js's header comment. generateSecret()/
@@ -146,6 +154,11 @@ function renderSessionCardHtml(sq){
     return '<div class="card session-card">' +
       '<h2>'+esc(t("retro.noSession.heading"))+'</h2>' +
       '<p class="hint">'+esc(t("retro.noSession.hint", {templateName: state.config.activeTemplateName||"Custom"}))+'</p>' +
+      '<label class="check-row" style="display:flex;align-items:center;gap:8px;margin:0 0 12px;">' +
+        '<input type="checkbox" id="pacingToggle">' +
+        '<span dir="auto">'+esc(t("retro.startOptions.pacingLabel"))+'</span>' +
+      '</label>' +
+      '<p class="hint" style="margin:-6px 0 12px;">'+esc(t("retro.startOptions.pacingHint"))+'</p>' +
       '<button class="btn primary" id="startSessionBtn" type="button">'+esc(t("retro.startButton"))+'</button>' +
     '</div>';
   }
@@ -158,6 +171,29 @@ function renderSessionCardHtml(sq){
   var coFacilitateUrl = coFacilitateUrlFor(sessSecret);
   var activeDims = retroDimensions(sess.dimensions);
   var revealMode = sess.revealMode || "hold";
+  // RETRO-2: shown only for a session started with pacing on. `total` is
+  // recomputed from `sess.dimensions` on every render rather than stored --
+  // see helpers.js's pacingSequence() header comment for why that's safe
+  // (a pure function of the same snapshot every device already has).
+  // `currentQuestionIndex` ranges 0..total inclusive: 0..total-1 is a real
+  // question; `total` itself is the "questioning finished" sentinel every
+  // participant's own auto-submit watches for (retro-join.js) -- Previous
+  // stays enabled there too, so the facilitator can still go back and let a
+  // straggler catch up after finishing.
+  var pacingHtml = "";
+  var pacingSeq = pacingSequence(sess.dimensions);
+  if(sess.pacingEnabled && pacingSeq.length){
+    var qIdx = sess.currentQuestionIndex || 0;
+    var atStart = qIdx <= 0;
+    var atEnd = qIdx >= pacingSeq.length;
+    var nextLabel = qIdx === pacingSeq.length - 1 ? t("retro.pacing.finishButton") : t("retro.pacing.nextButton");
+    pacingHtml =
+      '<div class="pacing-controls" style="display:flex;align-items:center;gap:10px;margin:0 0 10px;">' +
+        '<button class="btn" id="pacingPrevBtn" type="button"'+(atStart?" disabled":"")+'>'+esc(t("retro.pacing.prevButton"))+'</button>' +
+        '<span class="hint" id="pacingCounter" style="margin:0;">'+esc(atEnd ? t("retro.pacing.doneHint") : t("retro.pacing.counter", {current: qIdx+1, total: pacingSeq.length}))+'</span>' +
+        (atEnd ? "" : '<button class="btn primary" id="pacingNextBtn" type="button">'+esc(nextLabel)+'</button>') +
+      '</div>';
+  }
   var liveHtml = "";
   if(activeDims.length){
     var responses = state.sessionResponses || [];
@@ -248,6 +284,7 @@ function renderSessionCardHtml(sq){
   return '<div class="card session-card">' +
     '<h2>'+esc(t("retro.inProgressHeading"))+'</h2>' +
     '<p class="hint">'+esc(t("retro.retroLabel", {name: sess.templateName}))+'</p>' +
+    pacingHtml +
     liveHtml +
     experimentHtml +
     '<div class="join-share-block" style="margin-top:14px;">' +
@@ -307,7 +344,8 @@ function bindSessionCardEvents(sq){
       startingSessionFor[sq.id] = true;
       startBtn.disabled = true;
       startBtn.textContent = t("retro.startingButton");
-      startSession(sq).then(function(){
+      var pacingToggle = document.getElementById("pacingToggle");
+      startSession(sq, pacingToggle && pacingToggle.checked).then(function(){
         delete startingSessionFor[sq.id];
       }).catch(function(err){
         delete startingSessionFor[sq.id];
@@ -368,6 +406,19 @@ function bindSessionCardEvents(sq){
       if(!sess) return;
       setRevealMode(sess, btn.getAttribute("data-reveal"));
     });
+  });
+
+  var pacingPrevBtn = document.getElementById("pacingPrevBtn");
+  if(pacingPrevBtn) pacingPrevBtn.addEventListener("click", function(){
+    var sess = openSessionForSquad(sq.id);
+    if(!sess) return;
+    setCurrentQuestionIndex(sess, (sess.currentQuestionIndex || 0) - 1);
+  });
+  var pacingNextBtn = document.getElementById("pacingNextBtn");
+  if(pacingNextBtn) pacingNextBtn.addEventListener("click", function(){
+    var sess = openSessionForSquad(sq.id);
+    if(!sess) return;
+    setCurrentQuestionIndex(sess, (sess.currentQuestionIndex || 0) + 1);
   });
 
   document.querySelectorAll(".override-btn").forEach(function(btn){
@@ -436,6 +487,27 @@ function setRevealMode(sess, mode){
     });
   }, function(){
     sess.revealMode = mode;
+    renderSquadView();
+  });
+}
+
+// RETRO-2: moves the paced session's shared "current question" pointer.
+// Clamped to [0, pacingSequence(sess.dimensions).length] -- the upper bound
+// is the "questioning finished" sentinel every participant's join screen
+// watches for (see retro-join.js), not an out-of-range value to guard
+// against; going lower than 0 (Previous past the first question) is simply
+// a no-op, same shape bindSessionCardEvents()'s own disabled-Prev-button
+// already prevents from the UI, but checked here too since this is the one
+// function that actually writes the shared value.
+function setCurrentQuestionIndex(sess, index){
+  var total = pacingSequence(sess.dimensions).length;
+  var clamped = Math.max(0, Math.min(index, total));
+  liveOr(function(){
+    return state.db.collection("sessions").doc(sess.id).update({ currentQuestionIndex: clamped }).catch(function(err){
+      diag("Set current question index failed: " + (err && err.code ? err.code : String(err)));
+    });
+  }, function(){
+    sess.currentQuestionIndex = clamped;
     renderSquadView();
   });
 }

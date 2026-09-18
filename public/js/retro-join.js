@@ -120,6 +120,93 @@ function interleavedStatements(dims){
   return out;
 }
 
+// One interleaved statement row's markup -- pulled out of renderJoinScreen()
+// so RETRO-2's paced (one-question-at-a-time) rendering can build the exact
+// same row for a SINGLE item that the all-at-once survey builds for every
+// item, with nothing to keep in sync between the two.
+function stmtRowHtml(item){
+  return '<div class="stmt-row" data-dim="'+esc(item.dim.key)+'" data-idx="'+item.idx+'"><div class="stmt-text" dir="auto">'+esc(item.text)+'</div>' +
+    '<div class="scale-btns">' +
+      '<button type="button" class="scale-btn" data-value="1">'+esc(t("join.scale.rarely"))+'</button>' +
+      '<button type="button" class="scale-btn" data-value="2">'+esc(t("join.scale.sometimes"))+'</button>' +
+      '<button type="button" class="scale-btn" data-value="3">'+esc(t("join.scale.usually"))+'</button>' +
+    '</div></div>';
+}
+// One direct-rating dimension's row markup -- see stmtRowHtml()'s own
+// comment above for why this is pulled out the same way.
+function directRowHtml(dim){
+  var greenText = localizedDimText(dim, "green");
+  var redText = localizedDimText(dim, "red");
+  var anchorsHtml = (greenText || redText) ?
+    '<p class="hint" style="margin:0 0 10px;">' +
+      (greenText ? '<b>'+esc(t("tribe.legend.greenLabel"))+'</b> <span dir="auto">'+esc(greenText)+'</span> ' : '') +
+      (redText ? '<b>'+esc(t("tribe.legend.redLabel"))+'</b> <span dir="auto">'+esc(redText)+'</span>' : '') +
+    '</p>' : "";
+  return '<div class="direct-row" data-dim="'+esc(dim.key)+'">' +
+    '<div class="stmt-text" dir="auto">'+esc(localizedDimText(dim, "label"))+'</div>' +
+    anchorsHtml +
+    '<div class="swatches">' +
+      '<button class="swatch good" data-color="good" type="button" title="'+esc(t("common.color.good"))+'"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 13l4 4 10-10"/></svg></button>' +
+      '<button class="swatch warn" data-color="warn" type="button" title="'+esc(t("common.color.warn"))+'"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 12h12"/></svg></button>' +
+      '<button class="swatch crit" data-color="crit" type="button" title="'+esc(t("common.color.crit"))+'"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
+    '</div>' +
+  '</div>';
+}
+
+// RETRO-2: true once every statement/direct-rating dimension in the draft
+// has a real answer -- the same completeness check both the all-at-once
+// Submit button (refreshSubmitEnabled(), bindStatementForm() below) and
+// the paced flow's auto-submit-at-the-end (renderJoinScreen() below) need,
+// pulled out so there's exactly one definition of "done answering."
+function isJoinDraftComplete(stmtDims, directDims){
+  var stmtsComplete = stmtDims.every(function(dim){
+    var draft = state.joinDraftAnswers[dim.key];
+    return !!draft && draft.length===dim.statements.length &&
+      draft.every(function(v){ return v===1 || v===2 || v===3; });
+  });
+  var directComplete = directDims.every(function(dim){
+    var v = state.joinDraftAnswers[dim.key];
+    return v==="good" || v==="warn" || v==="crit";
+  });
+  return stmtsComplete && directComplete;
+}
+
+// The one atomic write covering every dimension of both kinds -- pulled out
+// of bindStatementForm()'s Submit click handler so RETRO-2's paced flow can
+// call the exact same completion path once the facilitator advances past
+// the last question, instead of waiting on a Submit click that a paced
+// screen doesn't even show (advancement there is facilitator-controlled,
+// not participant-initiated -- see renderJoinScreen()'s pacing branch).
+// Reads straight from state.joinDraftAnswers rather than a local copy, so
+// it works whether or not this render pass actually built any rows.
+function submitJoinAnswers(stmtDims, directDims){
+  var results = {};
+  var payload = { answers:{}, submittedAt: nowIso() };
+  stmtDims.forEach(function(dim){
+    var draft = state.joinDraftAnswers[dim.key];
+    var sum = draft.reduce(function(a,b){ return a+b; }, 0);
+    results[dim.key] = { sum: sum, band: bandForScore(sum, dim.scoreBands) };
+    payload.answers[dim.key] = draft.slice();
+  });
+  directDims.forEach(function(dim){
+    var val = state.joinDraftAnswers[dim.key];
+    results[dim.key] = { band: val };
+    payload.answers[dim.key] = val;
+  });
+  var afterSubmit = function(){
+    Object.keys(results).forEach(function(k){ state.joinSubmittedResults[k] = results[k]; });
+    renderJoinScreen();
+  };
+  return liveOr(function(){
+    return state.db.doc("sessions/" + state.joinRoomId, state.joinSessionId).collection("responses").add(payload)
+      .then(afterSubmit)
+      .catch(function(err){
+        diag("Submit answer failed: " + (err && err.code ? err.code : String(err)));
+        throw err;
+      });
+  }, function(){ afterSubmit(); return Promise.resolve(); });
+}
+
 function renderJoinScreen(){
   var el = document.getElementById("joinCard");
   if(!el) return;
@@ -178,37 +265,73 @@ function renderJoinScreen(){
   }
 
   if(dims.length){
+    // RETRO-2: a paced session shows exactly one item from
+    // pacingSequence(sess.dimensions) at a time (facilitator-controlled,
+    // via sess.currentQuestionIndex), instead of the whole survey at once.
+    // Ensure every dim's draft exists BEFORE either branch below reads/
+    // checks it (same init bindStatementForm() always did, just no longer
+    // gated behind that function actually rendering a row for every dim --
+    // a paced render only builds ONE row per pass).
+    stmtDims.forEach(function(dim){
+      if(!state.joinDraftAnswers[dim.key]) state.joinDraftAnswers[dim.key] = new Array(dim.statements.length).fill(null);
+    });
+    directDims.forEach(function(dim){
+      if(!state.joinDraftAnswers.hasOwnProperty(dim.key)) state.joinDraftAnswers[dim.key] = null;
+    });
+
+    if(sess.pacingEnabled){
+      var pacingSeq = pacingSequence(sess.dimensions);
+      var qIdx = sess.currentQuestionIndex || 0;
+      if(qIdx >= pacingSeq.length){
+        // "Questioning finished" sentinel -- the facilitator has advanced
+        // past the last question. Auto-submit once (guarded by
+        // joinAutoSubmitting so a second onSnapshot delivery before the
+        // write settles doesn't fire a duplicate response) if every
+        // dimension is actually answered; otherwise this participant fell
+        // behind, and gets a friendly wait state rather than a bad partial
+        // submit or a silent no-op.
+        if(isJoinDraftComplete(stmtDims, directDims)){
+          if(!state.joinAutoSubmitting){
+            state.joinAutoSubmitting = true;
+            submitJoinAnswers(stmtDims, directDims).catch(function(){ state.joinAutoSubmitting = false; });
+          }
+          el.innerHTML =
+            '<h2>'+esc(t("join.joiningHeading", {squad: sess.squadName||"the squad"}))+'</h2>' +
+            '<p class="hint">'+esc(t("join.submittingButton"))+'</p>';
+        } else {
+          el.innerHTML =
+            '<h2>'+esc(t("join.pacing.waitingHeading"))+'</h2>' +
+            '<p class="hint pacing-waiting">'+esc(t("join.pacing.waitingHint"))+'</p>';
+        }
+        return;
+      }
+      var item = pacingSeq[qIdx];
+      var rowHtml;
+      if(item.kind==="stmt"){
+        var stmtDim = stmtDims.filter(function(d){ return d.key===item.dimKey; })[0];
+        var localizedStmts = localizedDimText(stmtDim, "statements");
+        var text = (localizedStmts && localizedStmts[item.idx]!==undefined) ? localizedStmts[item.idx] : stmtDim.statements[item.idx];
+        rowHtml = '<div class="stmt-list">' + stmtRowHtml({ dim: stmtDim, idx: item.idx, text: text }) + '</div>';
+      } else {
+        var directDim = directDims.filter(function(d){ return d.key===item.dimKey; })[0];
+        rowHtml = '<div class="direct-list">' + directRowHtml(directDim) + '</div>';
+      }
+      el.innerHTML =
+        '<h2>'+esc(t("join.joiningHeading", {squad: sess.squadName||"the squad"}))+'</h2>' +
+        '<p class="hint" id="pacingCounter">'+esc(t("join.pacing.counter", {current: qIdx+1, total: pacingSeq.length}))+'</p>' +
+        '<p class="hint">'+esc(t("join.pacing.hint"))+'</p>' +
+        '<div id="stmtForm">' + rowHtml + '</div>';
+      bindStatementForm(stmtDims, directDims);
+      return;
+    }
+
     var flatStatements = interleavedStatements(stmtDims);
     var statementListHtml = stmtDims.length ?
-      '<div class="stmt-list">' + flatStatements.map(function(item){
-        return '<div class="stmt-row" data-dim="'+esc(item.dim.key)+'" data-idx="'+item.idx+'"><div class="stmt-text" dir="auto">'+esc(item.text)+'</div>' +
-          '<div class="scale-btns">' +
-            '<button type="button" class="scale-btn" data-value="1">'+esc(t("join.scale.rarely"))+'</button>' +
-            '<button type="button" class="scale-btn" data-value="2">'+esc(t("join.scale.sometimes"))+'</button>' +
-            '<button type="button" class="scale-btn" data-value="3">'+esc(t("join.scale.usually"))+'</button>' +
-          '</div></div>';
-      }).join("") + '</div>' : "";
+      '<div class="stmt-list">' + flatStatements.map(stmtRowHtml).join("") + '</div>' : "";
     var directIntroHtml = (stmtDims.length && directDims.length) ?
       '<div class="field-label" style="margin-top:18px;">'+esc(t("join.squadHealthCheckHeading"))+'</div>' : "";
     var directListHtml = directDims.length ?
-      directIntroHtml + '<div class="direct-list">' + directDims.map(function(dim){
-        var greenText = localizedDimText(dim, "green");
-        var redText = localizedDimText(dim, "red");
-        var anchorsHtml = (greenText || redText) ?
-          '<p class="hint" style="margin:0 0 10px;">' +
-            (greenText ? '<b>'+esc(t("tribe.legend.greenLabel"))+'</b> <span dir="auto">'+esc(greenText)+'</span> ' : '') +
-            (redText ? '<b>'+esc(t("tribe.legend.redLabel"))+'</b> <span dir="auto">'+esc(redText)+'</span>' : '') +
-          '</p>' : "";
-        return '<div class="direct-row" data-dim="'+esc(dim.key)+'">' +
-          '<div class="stmt-text" dir="auto">'+esc(localizedDimText(dim, "label"))+'</div>' +
-          anchorsHtml +
-          '<div class="swatches">' +
-            '<button class="swatch good" data-color="good" type="button" title="'+esc(t("common.color.good"))+'"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 13l4 4 10-10"/></svg></button>' +
-            '<button class="swatch warn" data-color="warn" type="button" title="'+esc(t("common.color.warn"))+'"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 12h12"/></svg></button>' +
-            '<button class="swatch crit" data-color="crit" type="button" title="'+esc(t("common.color.crit"))+'"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
-          '</div>' +
-        '</div>';
-      }).join("") + '</div>' : "";
+      directIntroHtml + '<div class="direct-list">' + directDims.map(directRowHtml).join("") + '</div>' : "";
     el.innerHTML =
       '<h2>'+esc(t("join.joiningHeading", {squad: sess.squadName||"the squad"}))+'</h2>' +
       '<p class="hint">'+esc(t("join.retroLabel", {name: sess.templateName||"Custom"}))+' '+esc(t("join.formHint"))+'</p>' +
@@ -237,37 +360,18 @@ function renderJoinScreen(){
 function bindStatementForm(stmtDims, directDims){
   stmtDims = stmtDims || [];
   directDims = directDims || [];
+  // RETRO-2: no early return when this is null -- a paced render (see
+  // renderJoinScreen()) shows one question at a time with NO Submit
+  // button at all (advancement is facilitator-controlled), but its one
+  // rendered row still needs its click handler bound the same as any
+  // other. Every draft was already initialized by renderJoinScreen()
+  // before calling this, whether or not a row for every dim got rendered
+  // this pass, so nothing here depends on `submitBtn` existing.
   var submitBtn = document.getElementById("stmtSubmitBtn");
-  if(!submitBtn) return;
-
-  var drafts = {};
-  stmtDims.forEach(function(dim){
-    // NOTE: must fill with an explicit sentinel, not leave a sparse array --
-    // Array.prototype.every() skips holes in a sparse array (vacuously
-    // true), which would let an unanswered draft read as "complete" and
-    // enable Submit before every statement has a real answer.
-    drafts[dim.key] = state.joinDraftAnswers[dim.key] ||
-      (state.joinDraftAnswers[dim.key] = new Array(dim.statements.length).fill(null));
-  });
-  // A direct-rating dimension's draft is just the picked color (or null
-  // until picked), not an array -- same joinDraftAnswers map, keyed by
-  // dimension key same as the statement dimensions above, since a session
-  // never has two dimensions sharing a key.
-  directDims.forEach(function(dim){
-    if(!state.joinDraftAnswers.hasOwnProperty(dim.key)) state.joinDraftAnswers[dim.key] = null;
-  });
 
   function refreshSubmitEnabled(){
-    var stmtsComplete = stmtDims.every(function(dim){
-      var draft = drafts[dim.key];
-      return draft.length===dim.statements.length &&
-        draft.every(function(v){ return v===1 || v===2 || v===3; });
-    });
-    var directComplete = directDims.every(function(dim){
-      var v = state.joinDraftAnswers[dim.key];
-      return v==="good" || v==="warn" || v==="crit";
-    });
-    submitBtn.disabled = !(stmtsComplete && directComplete);
+    if(!submitBtn) return;
+    submitBtn.disabled = !isJoinDraftComplete(stmtDims, directDims);
   }
 
   // Statement rows are interleaved across dimensions in one flat list (see
@@ -276,7 +380,7 @@ function bindStatementForm(stmtDims, directDims){
   document.querySelectorAll('#stmtForm .stmt-list .stmt-row').forEach(function(row){
     var dimKey = row.getAttribute("data-dim");
     var idx = Number(row.getAttribute("data-idx"));
-    var draft = drafts[dimKey];
+    var draft = state.joinDraftAnswers[dimKey];
     if(!draft) return;
     row.querySelectorAll(".scale-btn").forEach(function(btn){
       var val = Number(btn.getAttribute("data-value"));
@@ -308,35 +412,13 @@ function bindStatementForm(stmtDims, directDims){
 
   refreshSubmitEnabled();
 
-  submitBtn.addEventListener("click", function(){
+  if(submitBtn) submitBtn.addEventListener("click", function(){
     submitBtn.disabled = true;
     submitBtn.textContent = t("join.submittingButton");
-    var results = {};
-    var payload = { answers:{}, submittedAt: nowIso() };
-    stmtDims.forEach(function(dim){
-      var draft = drafts[dim.key];
-      var sum = draft.reduce(function(a,b){ return a+b; }, 0);
-      results[dim.key] = { sum: sum, band: bandForScore(sum, dim.scoreBands) };
-      payload.answers[dim.key] = draft.slice();
+    submitJoinAnswers(stmtDims, directDims).catch(function(){
+      submitBtn.disabled = false;
+      submitBtn.textContent = t("join.submitButton");
     });
-    directDims.forEach(function(dim){
-      var val = state.joinDraftAnswers[dim.key];
-      results[dim.key] = { band: val };
-      payload.answers[dim.key] = val;
-    });
-    var afterSubmit = function(){
-      Object.keys(results).forEach(function(k){ state.joinSubmittedResults[k] = results[k]; });
-      renderJoinScreen();
-    };
-    liveOr(function(){
-      return state.db.doc("sessions/" + state.joinRoomId, state.joinSessionId).collection("responses").add(payload)
-        .then(afterSubmit)
-        .catch(function(err){
-          diag("Submit answer failed: " + (err && err.code ? err.code : String(err)));
-          submitBtn.disabled = false;
-          submitBtn.textContent = t("join.submitButton");
-        });
-    }, afterSubmit);
   });
 }
 

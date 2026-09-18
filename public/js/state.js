@@ -610,6 +610,11 @@ var state = {
   // local so this one browser knows what it's already answered/is drafting
   joinDraftAnswers: {},
   joinSubmittedResults: {},  // dimension key -> { sum, band } once submitted
+  // RETRO-2: guards the paced flow's auto-submit (renderJoinScreen()) against
+  // firing a second, duplicate response while the first write is still in
+  // flight -- a second onSnapshot delivery landing before that promise
+  // settles is a real possibility, not a hypothetical (see submitJoinAnswers()).
+  joinAutoSubmitting: false,
   // facilitator-side: live tally of anonymous submissions for whichever
   // session is currently shown in Squad view (see subscribeSessionResponses)
   sessionResponses: []

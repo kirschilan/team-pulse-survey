@@ -274,6 +274,31 @@ function statementDimensions(dims){
 function directRatingDimensions(dims){
   return retroDimensions(dims).filter(function(d){ return !isStatementDimension(d); });
 }
+// RETRO-2: the ordered sequence of individually-answerable "questions" a
+// PACED session steps through one at a time -- every interleaved statement
+// (same round-robin order retro-join.js's own interleavedStatements() uses:
+// the 1st statement of every statement dimension, then the 2nd of every
+// one, ...) followed by every direct-rating dimension's single pick. A pure
+// function of a session's own `dimensions` snapshot and nothing else, so
+// both the facilitator's device (which only needs the total count, to show
+// "Question X of N" and enable/disable Next/Previous) and a participant's
+// device (which needs the one item at the session doc's own
+// `currentQuestionIndex`) compute the exact SAME sequence independently --
+// nothing about the sequence itself needs to be written to the session
+// doc, only the numeric index into it.
+function pacingSequence(dims){
+  var stmtDims = statementDimensions(dims);
+  var directDims = directRatingDimensions(dims);
+  var out = [];
+  var maxLen = stmtDims.reduce(function(m,d){ return Math.max(m, (d.statements||[]).length); }, 0);
+  for(var i=0;i<maxLen;i+=1){
+    stmtDims.forEach(function(dim){
+      if(dim.statements && dim.statements[i]!==undefined) out.push({ kind:"stmt", dimKey: dim.key, idx: i });
+    });
+  }
+  directDims.forEach(function(dim){ out.push({ kind:"direct", dimKey: dim.key }); });
+  return out;
+}
 function dimByKey(key){
   for(var i=0;i<state.dimensions.length;i++){ if(state.dimensions[i].key===key) return state.dimensions[i]; }
   return null;
@@ -377,7 +402,7 @@ if (typeof module !== "undefined" && module.exports) {
     sortedDimensions: sortedDimensions, sortedSquads: sortedSquads,
     squadScore: squadScore, dimByKey: dimByKey, findSquad: findSquad,
     retroDimensions: retroDimensions, statementDimensions: statementDimensions,
-    directRatingDimensions: directRatingDimensions,
+    directRatingDimensions: directRatingDimensions, pacingSequence: pacingSequence,
     isStatementDimension: isStatementDimension, colorWord: colorWord, trendWord: trendWord,
     liveOr: liveOr, syncLiveIfConnected: syncLiveIfConnected, DIAG_LINES: DIAG_LINES,
     teamHashFor: teamHashFor, langParamFor: langParamFor, buildFragment: buildFragment,
