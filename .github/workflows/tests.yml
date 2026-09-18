@@ -19,6 +19,12 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Install lint dependencies
+        run: npm install
+
+      - name: Lint
+        run: npm run lint
+
       - name: Install relay dependencies
         working-directory: relay
         run: npm install

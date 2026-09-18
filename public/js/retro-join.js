@@ -282,7 +282,7 @@ function bindStatementForm(stmtDims, directDims){
   // dimension key same as the statement dimensions above, since a session
   // never has two dimensions sharing a key.
   directDims.forEach(function(dim){
-    if(!state.joinDraftAnswers.hasOwnProperty(dim.key)) state.joinDraftAnswers[dim.key] = null;
+    if(!Object.prototype.hasOwnProperty.call(state.joinDraftAnswers, dim.key)) state.joinDraftAnswers[dim.key] = null;
   });
 
   function refreshSubmitEnabled(){

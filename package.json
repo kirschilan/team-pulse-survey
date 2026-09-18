@@ -1,0 +1,13 @@
+{
+  "name": "team-pulse-survey",
+  "private": true,
+  "description": "Squad Pulse -- lint tooling and dev-only tooling live here; the app itself ships with zero build step (see STATUS.md).",
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0"
+  }
+}

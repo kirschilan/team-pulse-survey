@@ -31,16 +31,17 @@ docs in `docs/` are reference material this file points to, not duplicates of it
   failure modes). Both tiers run automatically on every push/PR via `.github/workflows/tests.yml`.
 - `vercel.json` is in place for zero-config static hosting (`outputDirectory: "public"`), and the
   repo **is now connected to Vercel** — feature branches deploy to preview URLs (confirmed
-  2026-09-12 via real testing on one). The relay is not part of that deployment and isn't deployed
-  anywhere yet (see the relay bullet below and `relay/README.md`) — a preview/production Vercel
-  deployment with no relay configured is expected to run the board fully, with live retro sessions
-  correctly reporting themselves unavailable rather than hanging (see "Deliberately not built yet").
-- **Retro sessions now sync across real devices.** `relay/` is a small standalone Node/`ws`
-  WebSocket server; `public/js/relay-client.js` + `public/js/crypto.js` route every
-  `sessions`-rooted `db` call to it (encrypted, per the decision below) instead of `localStorage`,
-  while squads/dimensions/templates/config stay local as before. Verified end to end — real relay
-  process, two independent browser contexts, real WebSocket, real AES-GCM — by
-  `tests/test_relay_cross_device_sync.py`. Not yet deployed anywhere public; see `relay/README.md`.
+  2026-09-12 via real testing on one).
+- **Retro sessions and board sync now work end to end on real deployments.** `relay/` is a small
+  standalone Node/`ws` WebSocket server; `public/js/relay-client.js` + `public/js/crypto.js` route
+  every `sessions`- and `boards`-rooted `db` call to it (encrypted, per the decision below) instead
+  of `localStorage`. **The relay is deployed (Render) and `SQUAD_PULSE_RELAY_URL` is set in
+  Vercel** — confirmed as of 2026-09-18 (the product owner confirmed it's set; a live retro
+  couldn't otherwise have worked). Both Vercel Preview and Production point at the **same** Render
+  relay instance rather than separate ones per environment — see "Suggested next step" below for
+  the one tradeoff that's worth knowing about, not fixing. Verified end to end pre-deployment by
+  `tests/test_relay_cross_device_sync.py` (real relay process, two independent browser contexts,
+  real WebSocket, real AES-GCM) and confirmed on the real deployed preview 2026-09-12.
 
 ## The app's file layout
 
@@ -431,20 +432,26 @@ Playwright + 38-test unit suite passing.
 
 | Not built | Why it's cut for now | What would trigger building it |
 |---|---|---|
-| Relay deployed anywhere public | Built, tested, and now deploy-ready (`render.yaml` + `SQUAD_PULSE_RELAY_URL`-driven build step — see `relay/README.md`), but this session has no hosting/Vercel account access to actually click "deploy" | Whoever has account access runs the Render blueprint (or any equivalent host) and sets the Vercel env var — see `relay/README.md`'s "Wiring the deployed static site to this relay" for the exact steps, including testing it on a Preview deployment before merging to `main` |
-| Save-board / Load-board-to-file | `local-store.js` already persists the board via `localStorage`, which covers the same browser/device | Once someone needs a board to move between browsers/devices without a relay |
-| Relay deployed on Vercel itself (one deployment, not two) | Deliberately rejected, not just deferred — see the locked decision above and `relay/README.md`'s "Why not a Vercel Function" | Only if Vercel's WebSocket support later guarantees same-instance routing without an external store, which would remove the reason this was rejected |
-| Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing | Once the marketing site (separate Claude Code project) is further along |
+| Save-board / Load-board-to-file (manual export/import over `localStorage`) | **Cut, not deferred — product-owner call, 2026-09-18.** Board sync (default-on, "Board sync" above) already moves a board between browsers/devices for the case that matters — live, automatic, over the relay. A manual file-based export/import would only add value for a device that's deliberately disconnected from team sync *and* needs to move a board without ever reconnecting — a narrow, unrequested case. | A real user hits that specific narrow case and asks for it — not before |
+| Relay deployed on Vercel itself (one deployment, not two) | **Rejected, not deferred** — see the locked decision above and `relay/README.md`'s "Why not a Vercel Function". Reconfirmed 2026-09-18: "we have a free working solution" (Render). | Only if Vercel's WebSocket support later guarantees same-instance routing without an external store, which would remove the reason this was rejected |
+| Embedding decision (subdomain+iframe vs. same-site route) | Blocked on the Dr. Agile marketing site's stack, which wasn't settled as of this writing. Reconfirmed 2026-09-18 as YAGNI until required — this originated as a PT item from Copilot, not a real near-term need. | Once the marketing site (separate Claude Code project) is further along, or a real embedding need shows up |
 
 ## Suggested next step
 
-**Deploy the relay.** No code changes needed — the static site is already live on Vercel; the
-relay just needs someone with a Render (or equivalent) account to run the `render.yaml`
-blueprint at the repo root, then set `SQUAD_PULSE_RELAY_URL` in Vercel's project settings (scope
-it to Preview first to test on this branch before merging to `main`, then Production). Full
-steps: `relay/README.md`'s "Deploying it" and "Wiring the deployed static site to this relay".
-This is the real unblock for testing cross-device retro sessions and board sync with a real team,
-not just in this repo's own tests.
+**Relay is deployed and wired (Render + `SQUAD_PULSE_RELAY_URL` in Vercel) — confirmed
+2026-09-18.** Nothing left to unblock cross-device retro/board-sync testing on real deployments.
+
+One accepted tradeoff worth naming, not fixing: Preview and Production both point at the **same**
+Render relay instance rather than one each. Two real consequences, both currently low-stakes for a
+single-team internal tool: (1) no isolated place to test a `relay/server.js`/wire-protocol change
+before it's live for Production traffic — everyone touching a Preview deploy shares the exact relay
+process real users are on; (2) a runaway Preview branch (e.g. a reconnect-storm bug like the one
+fixed 2026-09-12) could degrade the relay for Production users too, since there's no resource
+isolation between environments. Both are non-issues for read/write-a-few-docs-per-room traffic at
+current scale, and the fix (a second free Render instance + a second `SQUAD_PULSE_RELAY_URL`
+scoped to Preview) is cheap whenever it stops being a non-issue — e.g. the first time a relay-side
+change actually needs a safe place to test against real traffic patterns before shipping. Not
+worth doing preemptively.
 
 ## Session log
 
@@ -911,6 +918,15 @@ not just in this repo's own tests.
   since it's a distinct, separately-scoped resilience improvement to the wire protocol rather than
   a one-line fix, and wasn't confirmed as an infinite hang (only a real, repeated slowdown) in the
   captured diagnostics.
+
+  **2026-09-18 note:** the product owner doesn't recall reporting this specific symptom. Worth
+  being precise about what was and wasn't a user report here: the *stuck-starting-on-iPhone/iPad*
+  bug above was a real report; the *30-90s reconnect-cycling* explanation was this session's own
+  reading of the captured diagnostics, offered as a likely cause, not something reported directly
+  — and the entry above already says so ("very likely explained by," "not confirmed"). Downgraded
+  from "flagged follow-up" to **unconfirmed, unscheduled** — don't build the heartbeat/timeout fix
+  against this until the reconnect pattern is actually reproduced and confirmed as the cause of a
+  real complaint.
 - 2026-09-13 — Two small UI fixes from the same bug report. (1) The session card's "Close session"
   button sits right next to "Finish retro & apply results" and was reported as easy to mistake for
   also saving results -- renamed it and both confirm-dialog OK labels that lead to the same
@@ -924,3 +940,48 @@ not just in this repo's own tests.
   `test_uncaught_error_diagnostics.py` verify the REAL clipboard content (not just "didn't throw"),
   which needed granting the test's browser context `clipboard-write`/`clipboard-read` permissions
   Playwright doesn't have by default. Full 31-file Playwright + 38-test unit suite passing.
+- 2026-09-18 — **Backlog review + ESLint added.** Product-owner review of the outstanding items
+  above; several corrections and calls recorded inline where they live (the deploy status note,
+  the mobile-reconnect downgrade, and the "Deliberately not built yet" table). Summary: relay
+  deployment confirmed done (was previously listed as blocked on account access — it wasn't, the
+  product owner already had it wired); Save-board/Load-to-file and "Relay on Vercel" cut as YAGNI
+  (not merely deferred); Embedding decision reconfirmed deferred, noted as a Copilot-suggested item
+  with no real need yet.
+
+  Also added **ESLint** (`eslint.config.js`, flat config, root `package.json` with a `lint`
+  script, wired into `.github/workflows/tests.yml`'s existing fast `unit-and-relay` job): three
+  rule groups, not one, because the codebase genuinely has three different sharing models —
+  `public/js/*.js`/`public/app.js` are classic `<script>` files that deliberately share one global
+  scope (see "The app's file layout" above for why: Chromium blocks cross-file `import` over
+  `file://`), so `no-undef` is off there (ESLint lints one file at a time and can't see a sibling
+  file's declarations — leaving it on would be ~14 files' worth of false positives) and
+  `no-unused-vars` only checks nested/local scope, not top-level declarations (same reason, mirror
+  image: a function that looks unused in its own file is routinely called from another one).
+  `relay/`, `scripts/`, and `tests/unit/` are ordinary Node CommonJS files with no such split, so
+  they keep the full `no-undef` check. First real run found 2 real (if low-severity) findings, both
+  fixed: `helpers.js`'s `consolidateBand()` and `retro-join.js`'s per-dimension draft-answer init
+  both called `.hasOwnProperty()` directly on a plain object instead of
+  `Object.prototype.hasOwnProperty.call(obj, key)` — safe today only because nothing currently lets
+  a dimension key collide with an `Object.prototype` name, but CSV import and template
+  save/load both turn arbitrary user text into dimension keys, so it's a real latent gap, not a
+  style nit. Also surfaced 24 warnings, all the same shape: a `catch(e)` whose `e` is never used —
+  left as warnings (not fixed), since this is exactly the "silent catch, no diagnostic trace" gap
+  `docs/refactoring-report.md` already flagged and partially fixed (5 sites, 2026-09-12); ESLint
+  now makes the remaining instances visible and keeps new ones from hiding. Verified safe: 39-test
+  unit suite and relay's own protocol/storage tests re-run clean after both fixes (Playwright
+  itself wasn't runnable in this session — no `playwright` package installed here — but neither
+  fix touches Playwright-covered surface differently than before; both are behavior-identical for
+  every plain-object case the suite already exercises).
+
+  **Does ESLint cover `docs/refactoring-report.md`'s remaining open items?** Checked directly
+  rather than assumed: two of the three items raised this round are NOT actually still open —
+  `state.editing`'s dual shape and the `dimensions-templates.js` split were both finished
+  2026-09-12 (see that day's two session-log entries above); `docs/refactoring-report.md`'s own
+  "Status" note already says so. The only genuinely open item is naming/abbreviation consistency
+  (`sq`/`squad`, `sess`/`session`, `dim`/`d`/`dimension`). ESLint can partially help there
+  *prospectively* — an `id-denylist`-style rule banning the short forms would stop new instances
+  from creeping in — but it can't do the actual renaming pass itself (that's a real, if mechanical,
+  ~3400-line find-and-replace with genuine regression risk if done carelessly), and a blunt
+  denylist on `d` specifically would false-positive on every unrelated one-letter use. Not added
+  this round; the refactoring report's own call (do it file-by-file, next time that file is
+  touched for a real reason) still stands as the right-sized approach.

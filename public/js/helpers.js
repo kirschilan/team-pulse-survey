@@ -150,7 +150,7 @@ function consolidateBand(bands){
   if(!bands || !bands.length) return null;
   var order = ["good","warn","crit"];
   var counts = { good:0, warn:0, crit:0 };
-  bands.forEach(function(b){ if(counts.hasOwnProperty(b)) counts[b] += 1; });
+  bands.forEach(function(b){ if(Object.prototype.hasOwnProperty.call(counts, b)) counts[b] += 1; });
   var max = Math.max(counts.good, counts.warn, counts.crit);
   for(var i=0;i<order.length;i++){ if(counts[order[i]]===max) return order[i]; }
   return null;
