@@ -102,11 +102,18 @@ jobs:
         working-directory: relay
         run: npm ci
 
+      # REF-9: SHARD_INDEX hands the actual partitioning decision to
+      # tests/run_all.sh's own select_shard_files() -- this used to
+      # reimplement the same split independently here as
+      # `ls tests/test_*.py | awk 'NR % n == i'`, which (confirmed) picked
+      # a DIFFERENT physical file group for "shard 0" than run_all.sh's own
+      # 0-indexed shard 0, despite both correctly partitioning the full
+      # suite (harmless in effect, but exactly the silent-drift risk this
+      # backlog item exists to close). Now there is exactly one
+      # implementation of "which files are in shard N," used identically
+      # by CI and by a local `tests/run_all.sh` run.
       - name: Run this shard's Playwright files
         env:
           TEST_JOBS: 2
-        run: |
-          mapfile -t files < <(ls tests/test_*.py | awk -v n="$SHARD_COUNT" -v i="${{ matrix.shard }}" 'NR % n == i')
-          echo "Shard ${{ matrix.shard }}/$SHARD_COUNT running ${#files[@]} file(s):"
-          printf '  %s\n' "${files[@]}"
-          tests/run_all.sh "${files[@]}"
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: tests/run_all.sh
