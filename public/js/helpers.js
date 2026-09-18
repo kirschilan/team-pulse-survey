@@ -358,6 +358,20 @@ function findSquad(id){
   return null;
 }
 
+// Bug fix: loading a template (templates.js's loadTemplate()) rewrites the
+// board's shared dimension set and meta/config -- board-wide, not scoped to
+// any one squad, since Templates is opened from Admin with no "current
+// squad" context -- with no check for whether any squad has a retro IN
+// PROGRESS. Used to warn before loading, and to close those sessions
+// (without saving) if the facilitator confirms, rather than silently
+// leaving a retro running against dimensions the newly-active template no
+// longer matches.
+function openRetroSessionsInfo(){
+  return state.sessions
+    .filter(function(s){ return s.status==="open"; })
+    .map(function(s){ var sq = findSquad(s.squadId); return { id: s.id, squadName: sq ? sq.name : s.squadId }; });
+}
+
 // ---------- live/local write helpers ----------
 // Every mutation in this app follows one of two shapes depending on
 // whether it's safe to also apply locally before the live write confirms:
@@ -401,6 +415,7 @@ if (typeof module !== "undefined" && module.exports) {
     bandForResponse: bandForResponse, effectiveDimResult: effectiveDimResult,
     sortedDimensions: sortedDimensions, sortedSquads: sortedSquads,
     squadScore: squadScore, dimByKey: dimByKey, findSquad: findSquad,
+    openRetroSessionsInfo: openRetroSessionsInfo,
     retroDimensions: retroDimensions, statementDimensions: statementDimensions,
     directRatingDimensions: directRatingDimensions, pacingSequence: pacingSequence,
     isStatementDimension: isStatementDimension, colorWord: colorWord, trendWord: trendWord,

@@ -57,10 +57,25 @@ function renderTemplateList(){
     var tpl = findAnyTemplateById(id);
     if(!tpl) return;
     row.querySelector('[data-action="load"]').addEventListener("click", function(){
+      // Bug fix: loading a template rewrites the board's shared dimension
+      // set board-wide -- warn (and, if confirmed, close without saving)
+      // any squad's retro that's currently in progress, rather than
+      // silently leaving it open and running against dimensions the newly-
+      // active template no longer matches. See helpers.js's
+      // openRetroSessionsInfo() for why this checks every squad, not just
+      // one -- Templates has no single "current squad" context.
+      var openSessions = openRetroSessionsInfo();
+      var message = t("templates.confirmLoadMessage", {oldCount: state.dimensions.length, name: tpl.name, newCount: tpl.dimensions.length});
+      if(openSessions.length){
+        message += " " + t("templates.confirmLoadOpenSessionWarning", {squads: openSessions.map(function(s){ return s.squadName; }).join(", ")});
+      }
       openConfirm(
         t("templates.confirmLoadTitle", {name: tpl.name}),
-        t("templates.confirmLoadMessage", {oldCount: state.dimensions.length, name: tpl.name, newCount: tpl.dimensions.length}),
-        function(){ loadTemplate(tpl); },
+        message,
+        function(){
+          openSessions.forEach(function(s){ closeSession(s.id); });
+          loadTemplate(tpl);
+        },
         t("templates.confirmLoadButton")
       );
     });

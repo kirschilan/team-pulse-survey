@@ -3609,3 +3609,29 @@ back in `STATUS.md`.
   tag and confirming it fails with that exact tag named in the assertion output, then restored
   the file (`git status` confirmed clean). Full suite re-verified green: `node --test
   tests/unit/test_*.js` (182/182), `tests/run_all.sh` (all Playwright files passing).
+- 2026-09-18 -- Bug report: given a retro is in process, when loading a template, then a
+  confirmation should appear that the current retro will be closed without saving, closing it (no
+  consolidation applied) only if confirmed, leaving it open and the template unloaded if declined.
+  Actual (before this fix): `loadTemplate()` (`templates.js`) rewrote the board's shared dimension
+  set and `meta/config` -- board-wide, not scoped to any one squad, since Templates opens from
+  Admin with no "current squad" context -- with no check at all for an in-progress retro on ANY
+  squad, silently leaving it open and running against dimensions the newly-active template no
+  longer matched. Test-first: added `openRetroSessionsInfo()` (`helpers.js`, pure global-state
+  read alongside `findSquad()`) with two unit tests (`tests/unit/test_helpers.js`) confirmed
+  failing first (function didn't exist), then a full Playwright regression
+  (`tests/test_template_load_closes_open_retro.py`) covering both branches: CANCEL leaves the
+  session open and loads nothing (dimension keys unchanged); CONFIRM closes the session (via the
+  existing `closeSession()`, which already does exactly "close without saving" -- no consolidation
+  applied) THEN loads the template. Implementation: the Load button's click handler
+  (`templates.js`) now calls `openRetroSessionsInfo()` and, when any session is open, appends a new
+  sentence (`templates.confirmLoadOpenSessionWarning`, both locales, naming the affected squad(s))
+  to the EXISTING dimension-count-change confirm message -- one dialog, not two -- and its
+  `onConfirm` closes every listed session before calling `loadTemplate()`. Found and fixed a real
+  regression this surfaced in an EXISTING test: `test_security_headers.py`'s CSP walkthrough
+  started a session, then loaded a template while it was open, then tried to join THAT SAME
+  session as a participant -- exactly the sequence this fix now correctly disallows without an
+  explicit confirm. Reordered that test (template load, then session start, then join) since its
+  own purpose is CSP-violation coverage across a realistic flow, not this interaction, which has
+  its own dedicated test now; grepped every other test file that loads a template and confirmed
+  none of them shared this ordering. Full suite green: `node --test tests/unit/test_*.js`
+  (184/184), `tests/run_all.sh` (all Playwright files passing, 78s).
