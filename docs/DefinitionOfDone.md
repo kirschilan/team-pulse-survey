@@ -71,8 +71,8 @@ duplicated or contradicted elsewhere:
   drawing at least one real finding from external review that this same
   checklist would plausibly have caught first.)
 - **When the full suite's total serial wall-clock time is measured and has
-  moved meaningfully since the last figure recorded in STATUS.md, log the
-  new number there.** This isn't a gate — no change is blocked on it — but
+  moved meaningfully since the last figure recorded in `docs/session-log.md`,
+  log the new number there.** This isn't a gate — no change is blocked on it — but
   a rising trend is the signal to suggest a dedicated performance pass, the
   same way the 2026-09-15 wait-condition pass above got started: Copilot's
   own serial timing (146.910s, then corrected after a stale-checkout
@@ -94,7 +94,7 @@ duplicated or contradicted elsewhere:
   next bullet requires, before adding more Playwright files in the same
   pattern. If the growth is legitimate (a real increase in file count,
   not slop), update `tests/.timing_baseline` to the new number and say so
-  in STATUS.md. **This applies equally to every contributor working in
+  in `docs/session-log.md`. **This applies equally to every contributor working in
   this repo — Copilot, Codex, Claude Code, or a human writing a test by
   hand** — none of them can be expected to notice a compounding trend
   from their own one new test in isolation, so the check has to live
@@ -238,7 +238,7 @@ and to every one already covered:
   single-PR `gh pr view <number>` (or the MCP `pull_request_read` tool's
   `get` method) reports the real `merged` boolean reliably. If a session
   genuinely runs out of room to open the PR itself, say so explicitly in
-  `STATUS.md`'s session log (branch name,
+  `docs/session-log.md` (branch name,
   what it contains, why the PR wasn't opened) rather than leaving it
   silent. (Adopted 2026-09-17 after a full branch audit — prompted by the
   PO reporting that this session, another Claude Code session, Codex, and
@@ -302,8 +302,8 @@ and to every one already covered:
   paragraph.)
 - **A change that introduces a new data shape (a new field, a new nesting,
   a moved value) explicitly decides whether existing stored data needs a
-  migration path, and says so out loud — in the STATUS.md entry, or in the
-  PR/change description — rather than leaving it implicit.** Before this
+  migration path, and says so out loud — in the `docs/session-log.md` entry,
+  or in the PR/change description — rather than leaving it implicit.** Before this
   product is out in real use, "no migration needed, nothing real depends
   on the old shape yet" is a perfectly good answer — but it must be a
   stated decision, not an oversight discovered later. Once real boards
