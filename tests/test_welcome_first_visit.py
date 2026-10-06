@@ -24,7 +24,11 @@ with sync_playwright() as p:
     expect(page.locator('#aboutDialog')).to_be_visible()
     page.click('#about-credits summary')
     expect(page.locator('#about-credits')).to_contain_text('Kazuhiko Arase')
-    expect(page.locator('#about-credits a[href="licenses/qrcode-generator.txt"]')).to_be_visible()
+    # REF-12: this test page now lives under public/_test/, one directory
+    # deeper than public/ itself, so build_page.py's prefix_parent_dir()
+    # rewrites index.html's own relative href="licenses/..." links with a
+    # "../" prefix -- matching that here, not the pre-REF-12 bare path.
+    expect(page.locator('#about-credits a[href="../licenses/qrcode-generator.txt"]')).to_be_visible()
     page.click('#about-terms summary')
     expect(page.locator('#about-terms')).to_contain_text('2026-09-15')
     page.locator('#about-terms summary').evaluate("el => el.scrollIntoView({block:'start'})")
