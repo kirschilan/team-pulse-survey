@@ -63,13 +63,18 @@ module.exports = [
     // generated Playwright pages (REF-12: written into public/_test/ so their relative
     // asset links -- one "../" deeper than public/'s own -- still resolve over file://,
     // per STATUS.md's "app's file layout") -- present locally after a test run, never
-    // committed, and not code to lint.
+    // committed, and not code to lint. public/_test_* (the pre-REF-12 flat pattern) is
+    // kept alongside it, same reasoning as .gitignore's own pair of patterns: an existing
+    // checkout can still have flat leftovers from before this move, and nothing deletes
+    // them on update -- a Codex review of PR #46 found these otherwise get linted as real
+    // source (77 errors against one real checkout's actual leftover files).
     ignores: [
       "public/vendor/**",
       "node_modules/**",
       "relay/node_modules/**",
       "public/relay-config.js",
       "public/_test/**",
+      "public/_test_*",
       // Makefile's `make setup` creates this project-local Python venv,
       // which vendors Playwright's own JS driver -- discovered without
       // this ignore because ESLint (confirmed via `--print-config`) still

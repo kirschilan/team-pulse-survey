@@ -3922,3 +3922,20 @@ back in `STATUS.md`.
   warning count, zero new ones; `git status` after a run confirms `public/_test/` is genuinely
   untracked as a whole directory, not just individually-matched filenames. STATUS.md's REF-12 row
   updated to DONE with the implementation summary.
+- 2026-10-06 -- REF-12 fix (Codex review on the two commits above, P2): collapsing
+  `.gitignore`'s pre-REF-12 `public/_test_*.html`/`public/_test_*.js` patterns into the single new
+  `public/_test/` broke any checkout that already had flat `_test_*` artifacts left over from
+  before the move -- nothing deletes them on update, and they matched the OLD pattern but not the
+  new one, so they went untracked under git and, since `eslint.config.js`'s matching ignore entry
+  was collapsed the same way, unignored under ESLint too: the review's own real checkout hit 77
+  lint errors from its leftover files. Reproduced directly before fixing (not just taken on
+  faith): a simulated flat `.store.js` artifact showed up as untracked under `git status` and
+  produced a real `no-prototype-builtins` error under `npm run lint` against the collapsed
+  patterns. Fix: kept BOTH patterns in each file instead of replacing one with the other --
+  `.gitignore` now has `public/_test/` and `public/_test_*.html`/`public/_test_*.js` side by side;
+  `eslint.config.js`'s ignores list now has `public/_test/**` and `public/_test_*` side by side.
+  Re-ran the same repro after the fix: the simulated artifact is invisible to both `git status`
+  and `npm run lint` (0 errors, same 32 pre-existing warnings as before). Full unit suite
+  re-confirmed (184/184). No migration/cleanup script added -- keeping both ignore patterns
+  indefinitely is simpler and carries no real cost, unlike a one-time cleanup step that itself
+  needs maintaining and would still miss any checkout that runs it late.
