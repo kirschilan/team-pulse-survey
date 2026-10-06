@@ -7,6 +7,14 @@
 # inline <script> tags so test pages satisfy the same script-src 'self' CSP
 # the real app ships -- see its own comment).
 public/_test/
+# Pre-REF-12 pattern, kept alongside the one above rather than replaced:
+# an existing checkout can already have flat _test_*.html/.js files in
+# public/ itself from before this move, and nothing deletes them on
+# update (a Codex review of PR #46 caught this -- without both patterns,
+# those leftover files go untracked under git and unignored under ESLint,
+# which errors on them as real source).
+public/_test_*.html
+public/_test_*.js
 tests/output/
 __pycache__/
 *.pyc
