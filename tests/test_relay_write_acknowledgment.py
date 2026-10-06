@@ -18,6 +18,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 RELAY_DIR = REPO_ROOT / "relay"
 PUBLIC_DIR = REPO_ROOT / "public"
+TEST_DIR = PUBLIC_DIR / "_test"  # REF-12: generated test pages live here, not flat in public/
+TEST_DIR.mkdir(parents=True, exist_ok=True)
 CRYPTO_JS = (PUBLIC_DIR / "js" / "crypto.js").read_text(encoding="utf-8")
 RELAY_CLIENT_JS = (PUBLIC_DIR / "js" / "relay-client.js").read_text(encoding="utf-8")
 RELAY_PORT = 8797  # unused by any other test file (see grep across tests/*.py before picking)
@@ -102,7 +104,7 @@ def build_harness(out_name):
         "<script>window.diag = function(msg){ document.getElementById('diagLog').textContent += msg + \"\\n\"; };</script>"
         "</body></html>"
     )
-    out_path = PUBLIC_DIR / out_name
+    out_path = TEST_DIR / out_name
     out_path.write_text(html, encoding="utf-8")
     return out_path
 

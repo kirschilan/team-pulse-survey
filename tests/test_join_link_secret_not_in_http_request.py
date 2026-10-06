@@ -43,7 +43,9 @@ server_thread.start()
 
 try:
     out = build_page(out_name="_test_join_secret_http_request.html")
-    base_url = "http://127.0.0.1:%d/%s" % (port, out.name)
+    # REF-12: out now lives under public/_test/, not flat in public/ (the
+    # HTTP server's own served root) -- the URL path must include that.
+    base_url = "http://127.0.0.1:%d/%s" % (port, out.relative_to(PUBLIC_DIR).as_posix())
 
     with sync_playwright() as p:
         browser = p.chromium.launch()

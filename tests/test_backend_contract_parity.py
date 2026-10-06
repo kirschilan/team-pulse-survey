@@ -18,6 +18,8 @@ import pathlib, subprocess, os, time, socket
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PUBLIC_DIR = REPO_ROOT / "public"
+TEST_DIR = PUBLIC_DIR / "_test"  # REF-12: generated test pages live here, not flat in public/
+TEST_DIR.mkdir(parents=True, exist_ok=True)
 RELAY_DIR = REPO_ROOT / "relay"
 LOCAL_STORE_JS = (PUBLIC_DIR / "local-store.js").read_text(encoding="utf-8")
 CRYPTO_JS = (PUBLIC_DIR / "js" / "crypto.js").read_text(encoding="utf-8")
@@ -137,7 +139,7 @@ def build_local_store_harness(out_name):
         "window.__contractReady__ = window.claude.use('db').then(function(db){ window.__contractDb__ = db; });\n"
         "</script></body></html>"
     )
-    out_path = PUBLIC_DIR / out_name
+    out_path = TEST_DIR / out_name
     out_path.write_text(html, encoding="utf-8")
     return out_path
 
@@ -159,7 +161,7 @@ def build_relay_harness(out_name):
         "window.__contractReady__ = Promise.resolve();\n"
         "</script></body></html>"
     )
-    out_path = PUBLIC_DIR / out_name
+    out_path = TEST_DIR / out_name
     out_path.write_text(html, encoding="utf-8")
     return out_path
 

@@ -2,17 +2,26 @@
 
 The app (public/index.html + app.js + styles.css) is a real static site now,
 not a single inline-script fragment -- so a test page has to be a real
-sibling of index.html for its relative asset links (styles.css, vendor/
-qrcode.js, app.js) to resolve over file://. build_page() writes one into
-public/ itself (never index.html, and always a name .gitignore excludes) with
-the fake in-memory store (fake_store.html) spliced into <head>, so it loads
-before app.js runs.
+descendant of index.html's own directory for its relative asset links
+(styles.css, vendor/qrcode.js, app.js) to resolve over file://. build_page()
+writes one into public/_test/ (REF-12, STATUS.md's "Code quality &
+refactoring backlog" -- moved out of public/ itself, 2026-09-18's
+investigation having proven both relative-asset resolution and CSP behavior
+survive the extra nesting level; previously these lived flat in public/,
+unignorable noise next to the real production assets) -- never index.html,
+and always a name .gitignore excludes -- with the fake in-memory store
+(fake_store.html) spliced into <head>, so it loads before app.js runs.
+Every local src="..."/href="..." reference index.html itself carries gets
+rewritten with a "../" prefix (see prefix_parent_dir() below) since the test
+page now sits one directory deeper than the assets it points to.
 """
 import pathlib
 import re
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 PUBLIC_DIR = REPO_ROOT / "public"
+TEST_DIR = PUBLIC_DIR / "_test"
+TEST_DIR.mkdir(parents=True, exist_ok=True)
 FIXTURES_DIR = pathlib.Path(__file__).resolve().parent
 
 FAKE_STORE_SCRIPT = (FIXTURES_DIR / "fake_store.html").read_text(encoding="utf-8")
@@ -34,6 +43,26 @@ _TEST_INDEX_HTML = re.sub(
     r'<link rel="stylesheet" href="https://fonts\.googleapis\.com[^"]*">\n?', "", INDEX_HTML
 )
 assert _TEST_INDEX_HTML != INDEX_HTML, "expected to find and strip the Google Fonts <link> in index.html"
+
+# REF-12: index.html's own relative src="..."/href="..." references (styles.css,
+# vendor/qrcode.js, app.js, every js/*.js, the licenses/*.txt links, etc.) are
+# written relative to public/ itself. A test page written into public/_test/
+# instead needs each of those one directory higher -- an absolute (http(s)://,
+# //, #, or data:) reference is left untouched, since it isn't relative to
+# public/ at all. Matches double-quoted attributes only, which is all
+# index.html and every caller of this module ever uses.
+_LOCAL_ASSET_RE = re.compile(r'((?:src|href)=")(?!https?://|//|#|data:)([^"]+)(")')
+
+
+def prefix_parent_dir(html):
+    """Rewrites every local src="..."/href="..." reference in `html` to be
+    prefixed with "../", for a page written one directory deeper than the
+    asset root (public/_test/) its relative links were written against
+    (public/)."""
+    return _LOCAL_ASSET_RE.sub(lambda m: m.group(1) + "../" + m.group(2) + m.group(3), html)
+
+
+_TEST_INDEX_HTML = prefix_parent_dir(_TEST_INDEX_HTML)
 
 
 def _extract_script_body(html_or_script):
@@ -61,20 +90,20 @@ def _write_sibling_script(out_name, suffix, script_html):
     CSP relaxation, in test pages or in the real app.
     """
     js_name = out_name[:-len(".html")] + "." + suffix + ".js"
-    (PUBLIC_DIR / js_name).write_text(_extract_script_body(script_html), encoding="utf-8")
+    (TEST_DIR / js_name).write_text(_extract_script_body(script_html), encoding="utf-8")
     return '<script src="' + js_name + '"></script>'
 
 
 def build_page(extra_seed_js="", out_name="_test_preview.html", show_welcome=False):
-    """Write a test copy of index.html into public/, with the fake store
-    injected into <head> (so window.claude exists before app.js loads).
+    """Write a test copy of index.html into public/_test/, with the fake
+    store injected into <head> (so window.claude exists before app.js loads).
 
     extra_seed_js: extra JS statements spliced in right after the fake
     store's seed() call -- e.g. pre-loading a session doc so a second
     "device" (browser page) can join it, since each page's fake store is
     independent (no real network in this harness).
 
-    out_name: filename to write under public/ -- must be unique per
+    out_name: filename to write under public/_test/ -- must be unique per
     concurrently-open page within a test (the SM device and each simulated
     participant device need their own file so their fake stores don't share
     state). Always starts with "_test_" -- see .gitignore.
@@ -92,7 +121,7 @@ def build_page(extra_seed_js="", out_name="_test_preview.html", show_welcome=Fal
     html = _TEST_INDEX_HTML.replace("</head>", fake_script_tag + "\n</head>")
     if not show_welcome:
         html = returning_visitor(html, out_name)
-    out_path = PUBLIC_DIR / out_name
+    out_path = TEST_DIR / out_name
     out_path.write_text(html, encoding="utf-8")
     return out_path
 
@@ -116,21 +145,21 @@ def build_custom_page(extra_head_html, out_name):
     assert out_name.startswith("_test_"), "test preview files must match the _test_* .gitignore pattern"
     custom_script_tag = _write_sibling_script(out_name, "custom", extra_head_html)
     html = returning_visitor(_TEST_INDEX_HTML.replace("</head>", custom_script_tag + "\n</head>"), out_name)
-    out_path = PUBLIC_DIR / out_name
+    out_path = TEST_DIR / out_name
     out_path.write_text(html, encoding="utf-8")
     return out_path
 
 
 def write_plain_index(out_name):
-    """Write a copy of index.html into public/ with the Google Fonts <link>
-    stripped (see the module-level comment above) but otherwise completely
-    unmodified -- no fake store spliced in, so window.claude is left exactly
-    as a real deployment leaves it (undefined), for tests that need the
-    REAL local-store.js/relay-client.js path rather than the fake in-memory
-    store. Returns the written path; navigate to it instead of the real
-    public/index.html directly."""
+    """Write a copy of index.html into public/_test/ with the Google Fonts
+    <link> stripped (see the module-level comment above) but otherwise
+    completely unmodified -- no fake store spliced in, so window.claude is
+    left exactly as a real deployment leaves it (undefined), for tests that
+    need the REAL local-store.js/relay-client.js path rather than the fake
+    in-memory store. Returns the written path; navigate to it instead of the
+    real public/index.html directly."""
     assert out_name.startswith("_test_"), "test preview files must match the _test_* .gitignore pattern"
-    out_path = PUBLIC_DIR / out_name
+    out_path = TEST_DIR / out_name
     out_path.write_text(returning_visitor(_TEST_INDEX_HTML, out_name), encoding="utf-8")
     return out_path
 

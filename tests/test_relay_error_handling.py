@@ -31,6 +31,8 @@ import pathlib
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PUBLIC_DIR = REPO_ROOT / "public"
+TEST_DIR = PUBLIC_DIR / "_test"  # REF-12: generated test pages live here, not flat in public/
+TEST_DIR.mkdir(parents=True, exist_ok=True)
 CRYPTO_JS = (PUBLIC_DIR / "js" / "crypto.js").read_text(encoding="utf-8")
 RELAY_CLIENT_JS = (PUBLIC_DIR / "js" / "relay-client.js").read_text(encoding="utf-8")
 
@@ -52,7 +54,7 @@ def build_relay_isolation_harness(relay_url_js_literal, out_name):
         "<script>window.diag = function(msg){ document.getElementById('diagLog').textContent += msg + \"\\n\"; };</script>"
         "</body></html>"
     )
-    out_path = PUBLIC_DIR / out_name
+    out_path = TEST_DIR / out_name
     out_path.write_text(html, encoding="utf-8")
     return out_path
 

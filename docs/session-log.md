@@ -3894,3 +3894,31 @@ back in `STATUS.md`.
   where "merged" and "PO-approved" are tracked separately because they aren't the same claim).
   STATUS.md's "Facilitated retro backlog" table updated: each row's Status cell now reads
   "PO-confirmed DONE, 2026-09-18" alongside its existing merge record. Docs-only change.
+- 2026-10-06 -- REF-12 implemented: generated Playwright test pages now write into
+  `public/_test/`, not flat into `public/` -- exactly the 2026-09-18 investigation's own
+  recommendation and measured blast radius (see that dated entry below this one in file order,
+  above in time). `tests/fixtures/build_page.py` gained a `TEST_DIR` constant and a
+  `prefix_parent_dir()` helper (a regex rewriting every local, non-absolute `src="..."`/
+  `href="..."` reference with a `"../"` prefix), applied once to the shared `_TEST_INDEX_HTML`
+  template at module load; its three writer functions and `_write_sibling_script()` now target
+  `TEST_DIR` instead of `PUBLIC_DIR`. The 4 files with their own duplicated `PUBLIC_DIR`-write
+  logic (`test_backend_contract_parity.py`, `test_relay_error_handling.py`,
+  `test_relay_legacy_known_codes.py`, `test_relay_write_acknowledgment.py`) needed only the same
+  local `TEST_DIR` constant added -- none of their harnesses embed index.html's own relative
+  asset links, so nothing there needed path rewriting. `test_join_link_secret_not_in_http_request.py`
+  got the investigation's own named one-line fix (`out.name` -> `out.relative_to(PUBLIC_DIR).as_posix()`)
+  since its HTTP server is still rooted at `PUBLIC_DIR`. `test_relay_config_injection.py` now
+  imports `TEST_DIR`/`prefix_parent_dir` from `fixtures.build_page` and runs the same rewrite over
+  its own extracted index.html snippet before embedding it -- that snippet turned out to carry
+  3 script tags needing the prefix (`vendor/qrcode.js`, `relay-config.js`,
+  `js/relay-url-fallback.js`), one more than the investigation's own two-named examples; caught
+  automatically because the rewrite is a generic regex over the whole snippet, not a hand-picked
+  list of attributes to replace. `.gitignore`'s `public/_test_*.html`/`public/_test_*.js` patterns
+  collapsed into one `public/_test/`; `eslint.config.js`'s matching ignore entry and
+  `tests/README.md`'s description of the layout updated the same way. Verified directly: all 6
+  touched Playwright test files run clean individually (real relay subprocess, real HTTP server,
+  real browser, as each already did); the full unit suite (184/184) and the relay's own
+  protocol/rate-limit suite are both unaffected; `npm run lint` is clean at the same pre-existing
+  warning count, zero new ones; `git status` after a run confirms `public/_test/` is genuinely
+  untracked as a whole directory, not just individually-matched filenames. STATUS.md's REF-12 row
+  updated to DONE with the implementation summary.

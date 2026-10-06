@@ -59,16 +59,17 @@ const nodeGlobals = {
 
 module.exports = [
   {
-    // public/_test_* matches .gitignore's own pattern for tests/fixtures/build_page.py's
-    // generated Playwright pages (written straight into public/ so relative asset links
-    // resolve over file://, per STATUS.md's "app's file layout") -- present locally after
-    // a test run, never committed, and not code to lint.
+    // public/_test/** matches .gitignore's own pattern for tests/fixtures/build_page.py's
+    // generated Playwright pages (REF-12: written into public/_test/ so their relative
+    // asset links -- one "../" deeper than public/'s own -- still resolve over file://,
+    // per STATUS.md's "app's file layout") -- present locally after a test run, never
+    // committed, and not code to lint.
     ignores: [
       "public/vendor/**",
       "node_modules/**",
       "relay/node_modules/**",
       "public/relay-config.js",
-      "public/_test_*",
+      "public/_test/**",
       // Makefile's `make setup` creates this project-local Python venv,
       // which vendors Playwright's own JS driver -- discovered without
       // this ignore because ESLint (confirmed via `--print-config`) still

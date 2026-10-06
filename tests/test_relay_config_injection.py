@@ -1,7 +1,11 @@
 import subprocess
 import pathlib
 import os
+import sys
 from playwright.sync_api import sync_playwright
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from fixtures.build_page import TEST_DIR, prefix_parent_dir  # noqa: E402  (path inserted just above)
 
 # Regression coverage for the build-time relay URL injection added so a
 # Vercel deployment (the company's own subdomain/iframe embed, or anyone
@@ -68,12 +72,17 @@ try:
     snippet = index_html[start:end]
     assert "relay-config.js" in snippet, "expected relay-config.js to load before the smart-default block"
 
+    # REF-12: this harness is written into public/_test/, one directory
+    # deeper than the snippet's own src="..." paths were written against
+    # (public/), so they need the same "../" prefix build_page.py's
+    # generated pages already get.
+    snippet = prefix_parent_dir(snippet)
     harness = (
         "<!doctype html><html><head><meta charset='utf-8'>"
-        + snippet.replace('src="relay-config.js"', "src='relay-config.js'")
+        + snippet.replace('src="../relay-config.js"', "src='../relay-config.js'")
         + "</head><body></body></html>"
     )
-    harness_path = REPO_ROOT / "public" / "_test_relay_config_injection.html"
+    harness_path = TEST_DIR / "_test_relay_config_injection.html"
     harness_path.write_text(harness, encoding="utf-8")
 
     with sync_playwright() as p:

@@ -74,11 +74,13 @@ afterward, the way it did before 2026-09-15.
 ## How a test builds its page
 
 `tests/fixtures/build_page.py` writes a copy of `public/index.html` into
-`public/` itself (never `index.html` — always a name starting with `_test_`,
-which `.gitignore` excludes) with the fake store spliced into `<head>`. It has
-to live alongside the real `index.html` so its relative asset links
-(`styles.css`, `vendor/qrcode.js`, `app.js`) resolve the same way they will in
-production.
+`public/_test/` (REF-12 — never `index.html`, never flat in `public/` itself;
+always a name starting with `_test_`, which `.gitignore` excludes) with the
+fake store spliced into `<head>`. It has to live under the real `index.html`'s
+own directory so its relative asset links (`styles.css`, `vendor/qrcode.js`,
+`app.js`) resolve the same way they will in production — `build_page.py`
+rewrites each one with a `"../"` prefix before writing, since the test page
+now sits one directory deeper than production `public/` itself.
 
 ```python
 from fixtures.build_page import build_page, test_output_path
