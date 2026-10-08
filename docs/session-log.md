@@ -3984,3 +3984,32 @@ back in `STATUS.md`.
   Every commit from here forward in this session follows the same pattern: short-lived branch, PR
   opened, merge left to the user -- no exceptions, and no more self-merging based on an inferred
   rather than confirmed agreement.
+- 2026-10-08 -- Docs-only working-agreement change: the shared PREVIEW branch is now `staging`,
+  replacing `claude/optimistic-keller-holuql` (PO's call). `staging` was created by the PO at the
+  same commit as `main` (`40f164a`). `docs/DefinitionOfDone.md`'s "Delivery workflow" section
+  updated: (1) the shared-branch rule now names `staging`, and records the old name as retired;
+  (2) it now says to open a PR against `staging` and leave the merge to the product owner. The
+  old text said to merge your branch into the shared branch and push it yourself, which
+  contradicted the "no self-merging" finding the 2026-10-06 entry above recorded; (3) new rule: a
+  branch name an agent's environment assigns (e.g. a cloud session's "develop on `claude/...`"
+  instruction) is that session's own short-lived branch, never the shared one. This is the exact
+  misread behind the 2026-10-06 deviation, which was only possible because the shared branch was
+  itself named after one session's auto-assigned branch; (4) the `main` gate and the
+  required-status-checks recommendation now reference `staging`; promoting `staging` to `main` is
+  described as a `staging` -> `main` PR the PO opens or asks for, and merges. Historical mentions
+  of `claude/optimistic-keller-holuql` elsewhere (this log, STATUS.md's dated REF backlog
+  preamble) left as-is since they describe what was true at the time. This change itself is the
+  first run of the new process: branch `docs/staging-branch-workflow` cut from `origin/staging`,
+  PR opened against `staging`, left for the PO to merge. **Follow-up, Codex review on PR #48:**
+  the `staging` -> `main` promotion rule would have let GitHub's "Automatically delete head
+  branches" setting (enabled on this repo) delete `staging` itself after the first promotion,
+  since `staging` had no branch rule protecting it. The DoD now lists a deletion-blocking branch
+  rule on `staging` as a prerequisite for that PR, with a temporary `release/<date>` branch as the
+  fallback route until the rule is confirmed in place.
+  **Follow-up, same PR:** while setting up required status checks on `staging`, the PO asked how
+  to add the regression suite. GitHub lists each workflow job as its own check
+  (`unit-and-relay`, `playwright (0..2)`), not the workflow name, so the Playwright check names
+  depend on `tests/.shard_count`. Added a DoD rule (plus a pointer comment in
+  `.github/workflows/tests.yml`'s `compute-shard-matrix` job): changing the shard count means
+  updating the branch rules' required checks in the same PR, or a lowered count blocks every
+  merge on a check that never runs.
