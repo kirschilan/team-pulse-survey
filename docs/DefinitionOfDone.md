@@ -205,19 +205,37 @@ and to every one already covered:
 
 ## 3. Delivery workflow
 
-- **`claude/optimistic-keller-holuql` is the shared PREVIEW branch, not any
-  one session's individual workspace.** Do a unit of work on your own
-  short-lived branch, branched from the current tip of
-  `claude/optimistic-keller-holuql` — do not commit directly to it while
-  work is in progress. When the work is done and validated (full suite
-  green per the Testing section above), fetch the latest
-  `claude/optimistic-keller-holuql`, merge it into your branch (resolving
-  anything that needs it, re-validating afterward), then merge your branch
-  into `claude/optimistic-keller-holuql` and push that. Delete your branch
-  once it's merged. (Adopted 2026-09-13 after several real collisions —
-  two concurrent sessions and a local checkout all committing straight to
-  `claude/optimistic-keller-holuql` at once, needing repeated manual merges
-  to untangle. See STATUS.md's session log for the incident.)
+- **`staging` is the shared PREVIEW branch, not any one session's
+  individual workspace.** Do a unit of work on your own short-lived
+  branch, branched from the current tip of `staging` — never commit
+  directly to `staging`. When the work is done and validated (full suite
+  green per the Testing section above), fetch the latest `staging`, merge
+  it into your branch if it has moved (resolving anything that needs it,
+  re-validating afterward), push your branch, and **open a PR against
+  `staging`**. The product owner merges it — an agent never self-merges
+  its own PR, however green it is; "open a PR" and "merge it once
+  validated" are not the same agreement (see the 2026-10-06 entry in
+  `docs/session-log.md`). Delete your branch once it's merged.
+  (Adopted 2026-09-13 after several real collisions — two concurrent
+  sessions and a local checkout all committing straight to the shared
+  branch at once, needing repeated manual merges to untangle. See
+  `docs/session-log.md` for the incident. **Renamed 2026-10-08:** the
+  shared branch used to be `claude/optimistic-keller-holuql`, a name
+  inherited from one cloud session's auto-assigned branch; it was
+  replaced by `staging` so the integration branch no longer looks like any
+  one session's workspace. `claude/optimistic-keller-holuql` is retired —
+  don't branch from it or open PRs against it.)
+- **A branch name an agent's environment assigns it (e.g. a cloud
+  session's "develop on `claude/<something>`" instruction) names that
+  session's own short-lived branch, never the shared branch.** Treat it
+  exactly like any other short-lived branch above: start it from
+  `staging`, open its PR against `staging`, leave the merge to the product
+  owner. If the environment's instruction and this workflow ever seem to
+  conflict, this workflow wins — say so to the user rather than pushing
+  straight to `staging` or `main`. (Adopted 2026-10-08: this exact misread
+  — an assigned branch read as permission to commit straight to the shared
+  branch — caused the 2026-10-06 process deviation, and was only possible
+  because the shared branch and the assigned branch had the same name.)
 - **A branch isn't "landed" until its PR is open (or it's merged) — never
   push a branch with a complete, tested fix and end the session there.**
   A branch that only exists on origin, with no PR, is indistinguishable
@@ -277,8 +295,9 @@ and to every one already covered:
   as the more likely explanation than a real code bug.)
 - **`main` only moves when the product owner explicitly says so** — never
   push to `main` on your own judgment. This is unchanged by the branching
-  model above: `claude/optimistic-keller-holuql` is a PREVIEW branch, not a
-  path around that gate.
+  model above: `staging` is a PREVIEW branch, not a path around that
+  gate. Promoting `staging` to `main` is itself a PR (`staging` → `main`)
+  that the product owner opens or explicitly asks for, and merges.
 - **A PR check stuck on "pending" is never assumed to be a display/caching
   bug — confirm it against the check provider's own status page AND both
   of GitHub's own check surfaces, and never declare a PR "safe to merge"
@@ -315,7 +334,7 @@ and to every one already covered:
   via `gh api repos/<owner>/<repo>/branches/<branch>/protection` returning
   404), so nothing technically stops a merge while a check is still
   pending; that gap makes this a human/AI judgment call today; enabling
-  required status checks on `claude/optimistic-keller-holuql` would
+  required status checks on `staging` (and `main`) would
   remove the judgment call entirely and is the recommended fix — ask the
   product owner before applying it, since it changes shared repo
   settings.)
