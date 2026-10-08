@@ -348,6 +348,18 @@ and to every one already covered:
   remove the judgment call entirely and is the recommended fix — ask the
   product owner before applying it, since it changes shared repo
   settings.)
+- **Changing `tests/.shard_count` also means updating the required status
+  checks on the `staging` (and `main`) branch rules, in the same PR.** The
+  Playwright checks are named per shard — `playwright (0)`,
+  `playwright (1)`, `playwright (2)` at today's count of 3 — and the
+  required-checks list matches checks by exact name. Raise the count and
+  the new shards aren't required (they can fail without blocking a merge);
+  lower it and the rule waits forever on a check that no longer runs,
+  blocking every PR. The required list today is `unit-and-relay`, one
+  `playwright (N)` per shard, and `Vercel`. Updating the ruleset is a repo
+  settings change, so the PR changing the count says so and the product
+  owner applies it. (Adopted 2026-10-08, when required status checks were
+  first set up on `staging`.)
 - A real, non-trivial change gets a session-log entry in `docs/session-log.md`
   (moved there from `STATUS.md` itself on 2026-09-18, REF-11 — see nearly
   every existing entry there for the expected level of detail: what

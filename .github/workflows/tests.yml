@@ -58,6 +58,10 @@ jobs:
   # isolated check that bumping the count alone while leaving that list
   # unchanged silently skipped 15 of the 63 test files, every job still
   # reporting success.)
+  # Changing the shard count also changes the `playwright (N)` check names
+  # that the staging/main branch rules require by exact name -- update
+  # those rules in the same PR (see docs/DefinitionOfDone.md, Delivery
+  # workflow).
   compute-shard-matrix:
     runs-on: ubuntu-latest
     outputs:

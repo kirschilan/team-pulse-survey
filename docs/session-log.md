@@ -4006,3 +4006,10 @@ back in `STATUS.md`.
   since `staging` had no branch rule protecting it. The DoD now lists a deletion-blocking branch
   rule on `staging` as a prerequisite for that PR, with a temporary `release/<date>` branch as the
   fallback route until the rule is confirmed in place.
+  **Follow-up, same PR:** while setting up required status checks on `staging`, the PO asked how
+  to add the regression suite. GitHub lists each workflow job as its own check
+  (`unit-and-relay`, `playwright (0..2)`), not the workflow name, so the Playwright check names
+  depend on `tests/.shard_count`. Added a DoD rule (plus a pointer comment in
+  `.github/workflows/tests.yml`'s `compute-shard-matrix` job): changing the shard count means
+  updating the branch rules' required checks in the same PR, or a lowered count blocks every
+  merge on a check that never runs.
