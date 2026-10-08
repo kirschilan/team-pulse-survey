@@ -4000,4 +4000,9 @@ back in `STATUS.md`.
   of `claude/optimistic-keller-holuql` elsewhere (this log, STATUS.md's dated REF backlog
   preamble) left as-is since they describe what was true at the time. This change itself is the
   first run of the new process: branch `docs/staging-branch-workflow` cut from `origin/staging`,
-  PR opened against `staging`, left for the PO to merge.
+  PR opened against `staging`, left for the PO to merge. **Follow-up, Codex review on PR #48:**
+  the `staging` -> `main` promotion rule would have let GitHub's "Automatically delete head
+  branches" setting (enabled on this repo) delete `staging` itself after the first promotion,
+  since `staging` had no branch rule protecting it. The DoD now lists a deletion-blocking branch
+  rule on `staging` as a prerequisite for that PR, with a temporary `release/<date>` branch as the
+  fallback route until the rule is confirmed in place.

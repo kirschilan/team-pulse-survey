@@ -298,6 +298,16 @@ and to every one already covered:
   model above: `staging` is a PREVIEW branch, not a path around that
   gate. Promoting `staging` to `main` is itself a PR (`staging` → `main`)
   that the product owner opens or explicitly asks for, and merges.
+  **Prerequisite: `staging` must carry a branch rule that blocks
+  deletion** (a repository ruleset or classic branch protection on
+  `staging` with "Restrict deletions"). This repo has GitHub's
+  "Automatically delete head branches" setting on, so merging a `staging`
+  → `main` PR deletes `staging` itself unless a branch rule protects it.
+  Until that rule is confirmed in place, promote through a temporary
+  branch instead: cut `release/<YYYY-MM-DD>` from `staging`, open the PR
+  `release/<YYYY-MM-DD>` → `main`, and let auto-delete remove the release
+  branch after the merge. (Added 2026-10-08 after Codex's review of PR #48
+  caught this gap.)
 - **A PR check stuck on "pending" is never assumed to be a display/caching
   bug — confirm it against the check provider's own status page AND both
   of GitHub's own check surfaces, and never declare a PR "safe to merge"
