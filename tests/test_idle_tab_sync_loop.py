@@ -1,5 +1,5 @@
 from playwright.sync_api import sync_playwright
-import pathlib, subprocess, os, time, socket
+import pathlib, subprocess, os, time, socket, json
 import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import write_plain_index
@@ -56,6 +56,73 @@ INSTALL_COUNTERS_JS = """
 """
 READ_COUNTERS_JS = "() => Object.assign({}, window.__PERF1__)"
 
+# Failure diagnostics for the cross-context relay waits below, which have
+# timed out intermittently in CI (Actions runs 37462013227 and 39770227256:
+# context C never saw tab A's edit) but never locally, even under full CPU
+# stress -- so the next CI failure has to carry its own evidence. Relay
+# traffic is recorded from OUTSIDE the page via Playwright's own
+# page.on("websocket") (nothing injected into the app under test), with
+# timestamps on one shared clock so all three pages' timelines line up.
+# Only op/path/opId are kept, never envelopes. The dump is deliberately
+# compact (3 lines per page) and raised as the final assertion message:
+# tests/_run_one.sh only prints a failing file's last 30 lines in CI.
+T0 = time.monotonic()
+WS_FRAMES = {}
+
+
+def record_ws(label, page):
+    frames = WS_FRAMES.setdefault(label, [])
+
+    def stamp(text):
+        frames.append("%.2f %s" % (time.monotonic() - T0, text))
+
+    def summarize(direction, payload):
+        try:
+            msg = json.loads(payload)
+        except (TypeError, ValueError):
+            return stamp(direction + "?")
+        text = direction + str(msg.get("op"))
+        if msg.get("op") == "snapshot":
+            text += "[%d doc(s)]" % len(msg.get("docs") or {})
+        if msg.get("opId"):
+            text += "#" + str(msg["opId"])
+        if msg.get("message"):
+            text += "(" + str(msg["message"]) + ")"
+        stamp(text)
+
+    def on_websocket(ws):
+        stamp("OPEN")
+        ws.on("framesent", lambda payload: summarize(">", payload))
+        ws.on("framereceived", lambda payload: summarize("<", payload))
+        ws.on("close", lambda _ws: stamp("CLOSE"))
+
+    page.on("websocket", on_websocket)
+
+
+DUMP_PAGE_JS = """
+() => ({
+  names: Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).map(i => i.value),
+  diag: (typeof DIAG_LINES !== 'undefined' ? DIAG_LINES : []).filter(l => /Team sync|Relay/.test(l))
+})
+"""
+
+
+def wait_or_dump(page, expression, pages, what):
+    try:
+        page.wait_for_function(expression)
+    except Exception as e:
+        lines = ["%s -- %s" % (what, str(e).splitlines()[0]),
+                 "relay frames are '<seconds since test start> >sent/<received op[#opId]'"]
+        for label, pg in pages:
+            try:
+                info = pg.evaluate(DUMP_PAGE_JS)
+            except Exception as dump_err:
+                info = {"names": "(evaluate failed: %s)" % str(dump_err).splitlines()[0], "diag": []}
+            lines.append("[%s] squads: %s" % (label, info["names"]))
+            lines.append("[%s] sync diag: %s" % (label, " | ".join(info["diag"][-6:])))
+            lines.append("[%s] relay: %s" % (label, " ".join(WS_FRAMES.get(label, []))))
+        raise AssertionError("\n".join(lines)) from None
+
 
 def wait_for_port(port, timeout=5.0):
     deadline = time.time() + timeout
@@ -105,6 +172,7 @@ try:
         # Playwright's default 30s timeout firing first with a generic one.
         ctx.set_default_timeout(45000)
         a = ctx.new_page()
+        record_ws("A", a)
         a_errors = []
         a.on("pageerror", lambda e: a_errors.append(str(e)))
         a.goto(INDEX_URL, wait_until="domcontentloaded")
@@ -114,6 +182,7 @@ try:
 
         # ============ tab B: same context, same team link ============
         b = ctx.new_page()
+        record_ws("B", b)
         b_errors = []
         b.on("pageerror", lambda e: b_errors.append(str(e)))
         b.goto(team_link, wait_until="domcontentloaded")
@@ -204,17 +273,24 @@ try:
         c_ctx = browser.new_context(viewport={"width": 1280, "height": 1000})
         c_ctx.add_init_script(point_at_test_relay)
         c = c_ctx.new_page()
+        record_ws("C", c)
         c_errors = []
         c.on("pageerror", lambda e: c_errors.append(str(e)))
         c.goto(team_link, wait_until="domcontentloaded")
-        c.wait_for_function(
-            "() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).some(i => i.value === 'New squad')"
+        wait_or_dump(
+            c,
+            "() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).some(i => i.value === 'New squad')",
+            [("A", a), ("B", b), ("C", c)],
+            "separate context C never saw tab A's edit via the relay",
         )
         print("separate context C sees A's edit via the relay: OK")
 
         b.click("#addSquadBtn")
-        c.wait_for_function(
-            "() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).filter(i => i.value === 'New squad').length === 2"
+        wait_or_dump(
+            c,
+            "() => Array.from(document.querySelectorAll('#adminSquadList input.admin-squad-name')).filter(i => i.value === 'New squad').length === 2",
+            [("A", a), ("B", b), ("C", c)],
+            "separate context C never saw tab B's edit via the relay",
         )
         print("separate context C sees B's edit too: OK")
 
