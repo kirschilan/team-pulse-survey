@@ -4087,3 +4087,15 @@ back in `STATUS.md`.
   this session ("open a docs PR and merge into staging"), after CI was green. That is a direct
   instruction, not an inferred agreement, so the 2026-10-06 rule against self-merging on
   assumption doesn't apply.
+- 2026-10-22 -- Docs-only: added the "Team Radar backlog" section to `STATUS.md`, shaped with the
+  PO in this session. It presents the pulse survey as a squad radar (teammates as dots, the squad
+  aggregate as the shaded area) and a tribe radar (squads as dots, the tribe aggregate as the
+  area), reached through 1–5 attribute scales first. It records the PO's decisions: Team Radar is
+  a new template and the existing three are untouched; the scale belongs to the template (1–5 for
+  now, at least 5 levels); no conversion between red/yellow/green and 1–5; a statistic choice of
+  mean, median, min, max or mode, with mode added for backward compatibility; unattributed
+  individual responses are stored and showing them is optional; the tribe aggregate is computed
+  over squad aggregates; dot size is YAGNI for now. Nine ranked stories (RADAR-1..9), each a
+  visible slice, plus ten open issues, four of which block rank 1. A correction recorded along the
+  way: today's `consolidateBand()` is a majority with a calmer-color tie-break, not "most
+  optimistic". No code or tests touched; ran lint and the unit suite as a sanity check.
