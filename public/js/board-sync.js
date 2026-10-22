@@ -519,9 +519,10 @@ function runPendingRemoteApply(){
 var hydrateAttemptedForSecret = null;
 
 // The last content signature (see boardContentSignature() above) this
-// device actually pushed -- reset alongside hydrateAttemptedForSecret
-// whenever a hydrate attempt runs (fresh boot, or switching to a
-// different team), so a genuinely different team's board never gets
+// device actually pushed (or, after a remote apply, last applied) -- reset
+// at the start of every hydrate attempt (fresh boot, or switching to a
+// different team; see hydrateFromTeamIfConnected()), so a genuinely
+// different team's board never gets
 // silently skipped just because its content happens to coincide with
 // whatever this device last pushed to a PREVIOUS team.
 var lastPushedBoardContent = null;
@@ -529,6 +530,15 @@ var lastPushedBoardContent = null;
 function hydrateFromTeamIfConnected(){
   var secret = getTeamSecret();
   if(!secret || !state.db) return Promise.resolve();
+  // Forget the previous team's dedup baseline at the START of the attempt.
+  // It used to be cleared only once the attempt finished -- after
+  // maybeApplyRemote() below had already set it to the board it just
+  // applied -- which made every joining device push that just-downloaded
+  // board straight back to the relay (identical content, fresh updatedAt),
+  // and every other connected device then re-applied it
+  // (tests/test_board_sync_hydrate_on_boot.py).
+  lastPushedBoardContent = null;
+  var foundRemoteBoard = false;
   return SquadPulseCrypto.roomIdFor(secret).then(function(roomId){
     return state.db.doc(teamBoardPath(roomId), secret).get().then(function(snap){
       if(!snap.exists) return; // no device has pushed this team's board yet
@@ -538,20 +548,27 @@ function hydrateFromTeamIfConnected(){
       // team's board with the team just left. Only apply if `secret` (the
       // one THIS call was invoked for) is still the current one.
       if(getTeamSecret() !== secret) return;
+      foundRemoteBoard = true;
       return maybeApplyRemote(roomId, snap.data());
     });
   }).catch(function(err){
     diag("Team sync hydrate failed: " + (err && err.code ? err.code : String(err)));
   }).then(function(){
     // Same staleness check as above, for this call's own bookkeeping: a
-    // stale call setting hydrateAttemptedForSecret/lastPushedBoardContent
-    // back to ITS secret after a newer call already set them for the
-    // CURRENT team would corrupt pushBoardSnapshotIfConnected()'s own guard
-    // for that current team (it requires hydrateAttemptedForSecret to match
-    // getTeamSecret() before pushing anything).
+    // stale call setting hydrateAttemptedForSecret back to ITS secret after
+    // a newer call already set it for the CURRENT team would corrupt
+    // pushBoardSnapshotIfConnected()'s own guard for that current team (it
+    // requires hydrateAttemptedForSecret to match getTeamSecret() before
+    // pushing anything).
     if(getTeamSecret() !== secret) return;
     hydrateAttemptedForSecret = secret;
-    lastPushedBoardContent = null;
+    // Still clear the baseline here when there was no team board to apply:
+    // a live apply from the team this device just LEFT can finish after the
+    // reset above and set the baseline to that old team's board, which
+    // would make the genesis push below look like "nothing changed" for a
+    // brand-new team. When a board WAS found, maybeApplyRemote() owns the
+    // baseline -- clearing it here is exactly the echo push described above.
+    if(!foundRemoteBoard) lastPushedBoardContent = null;
     // If hydrate found nothing to apply (a genuinely new team -- the
     // common "just created a link" case), no local write happened to
     // naturally re-trigger db.js's listeners, so nothing else would ever
