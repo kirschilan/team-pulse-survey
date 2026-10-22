@@ -1,5 +1,5 @@
 from playwright.sync_api import sync_playwright
-import pathlib, subprocess, os, time, socket
+import pathlib, subprocess, os, time, socket, json
 import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fixtures.build_page import write_plain_index
@@ -21,6 +21,14 @@ from fixtures.build_page import write_plain_index
 #   4. Device A reloads -- hydrates B's newer state on its next boot, and
 #      now sees B's squad too. Last-write-wins works both directions, not
 #      just "second device catches up once".
+#   5. Across all of that, device B sent exactly ONE board push: its own
+#      edit. Hydrating A's board must not echo that same board straight
+#      back to the relay -- previously hydrateFromTeamIfConnected() reset
+#      the push-dedup baseline right after maybeApplyRemote() had set it to
+#      the just-applied content, so every joining device re-pushed the
+#      board it had just downloaded (fresh updatedAt, identical content),
+#      and every other connected device then re-applied it. Found while
+#      tracing test_idle_tab_sync_loop.py's intermittent CI timeout.
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 RELAY_DIR = REPO_ROOT / "relay"
@@ -105,6 +113,14 @@ try:
         b_ctx = browser.new_context()
         b_ctx.add_init_script(point_at_test_relay)
         b = b_ctx.new_page()
+        # Counted from OUTSIDE the page (Playwright's own websocket events),
+        # so the app under test is untouched -- envelopes are encrypted, so
+        # only the op itself is inspected.
+        b_board_puts = []
+        b.on("websocket", lambda ws: ws.on(
+            "framesent",
+            lambda payload: b_board_puts.append(1) if json.loads(payload).get("op") == "put" else None,
+        ))
         b_errors = []
         b.on("pageerror", lambda e: b_errors.append(str(e)))
         b.goto(team_link, wait_until="domcontentloaded")
@@ -144,6 +160,16 @@ try:
         a_squad_names_after_reload = a.eval_on_selector_all("#adminSquadList input.admin-squad-name", "els=>els.map(e=>e.value)")
         print("device A's board after reload:", a_squad_names_after_reload)
         assert a_squad_names_after_reload.count("New squad") == 2, "A should now see BOTH squads named 'New squad' -- its own original push, plus B's later one"
+
+        # A's reload above already proves B's edit push reached the relay,
+        # and hydrate's own follow-up push (the one under test) always runs
+        # before that edit could, so by now every push B was ever going to
+        # make has been sent -- no timer needed.
+        print("=== device B's board pushes over the whole run:", len(b_board_puts), "===")
+        assert len(b_board_puts) == 1, (
+            "device B should push exactly once (its own edit), not echo the board it just hydrated "
+            "back to the relay first -- got %d push(es)" % len(b_board_puts)
+        )
 
         print("=== ALL ERRORS: a=", a_errors, "b=", b_errors)
         assert a_errors == [] and b_errors == []

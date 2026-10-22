@@ -4037,6 +4037,24 @@ back in `STATUS.md`.
   inside the gitignored `.venv`. Re-verified: all three shells resolve `python3` to the venv with
   the user's own PATH entries still present behind it, zsh honors a custom `ZDOTDIR`, the prompt
   shows `(.venv)`, missing-venv still errors; `shellcheck` clean; `make test` green.
+- 2026-10-22 -- Fix: a device joining a team no longer echoes the board it just hydrated back to
+  the relay. Found while tracing `tests/test_idle_tab_sync_loop.py`'s intermittent CI timeout (see
+  the diagnostics entry/PR for that): the relay timeline showed every joining device send a `put`
+  right after hydrating -- identical content, fresh `updatedAt` -- which every other connected
+  device (and every tab sharing its `localStorage`) then re-applied. Cause:
+  `hydrateFromTeamIfConnected()` cleared `lastPushedBoardContent` in its final step, AFTER
+  `maybeApplyRemote()` had set it to the just-applied board, so the follow-up
+  `pushBoardSnapshotIfConnected()` saw "changed" and pushed. Test first: extended
+  `tests/test_board_sync_hydrate_on_boot.py` to count device B's board `put` frames (from outside the
+  page, via Playwright's `page.on("websocket")`) and assert exactly one over the whole run -- its
+  own edit; confirmed red ("got 2 push(es)") before the fix. Fix: clear the baseline at the START
+  of each hydrate attempt (still forgets the previous team's baseline on a team switch), and at
+  the end only when no team board was found -- self-review caught that dropping the end-of-attempt
+  reset entirely would let a still-finishing live apply from the team being LEFT set the baseline
+  to that old board and suppress a brand-new team's genesis push. Red/green re-verified by
+  stashing the fix; the new assertion was stable over 10 runs; all 10 `test_board_sync_*` files,
+  `test_idle_tab_sync_loop.py` and `test_relay_cross_device_sync.py` green; `make test` green.
+  Not claimed to fix the intermittent timeout itself -- that still waits on the diagnostics.
 - 2026-10-22 -- Failure diagnostics for `tests/test_idle_tab_sync_loop.py`'s cross-context relay
   waits (test-only; no app code changed). Its relay step -- separate browser context C waiting to
   see tab A's edit -- timed out intermittently in CI (Actions runs 37462013227 on 2026-10-06 and
