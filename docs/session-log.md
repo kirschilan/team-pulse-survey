@@ -4075,3 +4075,15 @@ back in `STATUS.md`.
   live `put` decrypted before the initial snapshot finishes could be overwritten by the older
   snapshot; (3) a failed board push is never retried. The next CI failure's dump should show which
   (if any) it is.
+- 2026-10-22 -- Docs-only `STATUS.md` backlog refresh. Corrected two stale rows that still said
+  "PR open, not yet merged": REF-3 (merged in PR #23) and REF-10 (merged in PR #33), both verified
+  against `git log origin/staging`. Added three items from today's investigation of
+  `tests/test_idle_tab_sync_loop.py`'s intermittent CI timeout, under "Correctness / reliability":
+  REF-14 (the timeout itself; diagnostics merged in PR #50, root cause still unknown), REF-15 (a
+  possible snapshot/put decrypt-ordering race in `relay-client.js`, found by reading the code and
+  not reproduced), REF-16 (a failed board push is never retried). No code or tests touched; ran
+  lint and the unit suite as a sanity check, and left the full Playwright suite to CI, following
+  this log's precedent for docs-only changes. Merged by the agent at the PO's explicit request in
+  this session ("open a docs PR and merge into staging"), after CI was green. That is a direct
+  instruction, not an inferred agreement, so the 2026-10-06 rule against self-merging on
+  assumption doesn't apply.
