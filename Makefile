@@ -27,7 +27,7 @@ VENV_BIN := $(VENV)/bin
 help:
 	@echo "Targets:"
 	@echo "  make setup    - create a project virtualenv ($(VENV)) and install everything needed (Python/Playwright + relay + root lint deps)"
-	@echo "  make shell    - open a subshell with $(VENV) active (python3/pip/playwright resolve to it); 'exit' to leave"
+	@echo "  make shell    - open a subshell with $(VENV) activated (python3/pip/playwright resolve to it); 'exit' to leave"
 	@echo "  make check    - fast sanity check that setup actually worked, no tests run"
 	@echo "  make lint     - ESLint over the whole repo (CI runs this too -- see .github/workflows/tests.yml)"
 	@echo "  make unit     - frontend unit tests (tests/unit/*.js)"
@@ -56,17 +56,15 @@ setup:
 # `make` can't activate the venv in the shell that invoked it -- every
 # recipe runs in its own child process, so `source $(VENV)/bin/activate`
 # in a recipe is undone the moment it returns. This target does the next
-# best thing: execs a fresh copy of the user's own $SHELL with the same
-# two variables activate itself sets (VIRTUAL_ENV, and $(VENV_BIN) first
-# on PATH), so running a single test file by hand (`python3
+# best thing: opens a fresh interactive copy of the user's own $SHELL with
+# the venv activated, so running a single test file by hand (`python3
 # tests/test_x.py`) uses the venv's pinned Playwright without remembering
-# the activate step. `exit` returns to the original shell, venv-free.
-# The prompt isn't changed (activate's PS1 edit doesn't survive the new
-# shell re-reading its rc files); `echo $$VIRTUAL_ENV` confirms you're in.
+# the activate step. `exit` returns to the original shell, venv-free. See
+# scripts/venv-shell.sh for why activation has to happen after the shell's
+# own startup files, not before.
 shell:
 	@test -x $(VENV_BIN)/python3 || (echo "MISSING: $(VENV) -- run 'make setup'" >&2; exit 1)
-	@echo "Subshell with $(VENV) active -- type 'exit' to leave."
-	@VIRTUAL_ENV="$(CURDIR)/$(VENV)" PATH="$(CURDIR)/$(VENV_BIN):$$PATH" exec "$${SHELL:-/bin/sh}"
+	@scripts/venv-shell.sh $(VENV)
 
 # Fast (no network, no browser launch) verification that `make setup`
 # actually left this checkout ready -- the same two guard checks

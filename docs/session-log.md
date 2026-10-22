@@ -4025,3 +4025,15 @@ back in `STATUS.md`.
   `playwright==1.62.0`, so the Playwright run used it via a scratch `PLAYWRIGHT_BROWSERS_PATH`
   symlink; nothing in the repo changed for that. Branch cut from `origin/staging`, PR opened
   against `staging`, merge left to the PO.
+  **Follow-up, Codex review on PR #49 (P2):** the first version exported `VIRTUAL_ENV` and
+  prepended `.venv/bin` *before* exec'ing `$SHELL`, so any interactive startup file that prepends
+  its own dir (pyenv/conda init, `export PATH=~/bin:$PATH`) pushed the venv back down --
+  `VIRTUAL_ENV` pointed at the venv while `python3` resolved elsewhere. Reproduced for bash, zsh
+  and fish (pty-driven, with a startup file prepending a dir holding a fake `python3`). Fixed by
+  moving the logic into `scripts/venv-shell.sh`, which loads the user's own startup files first
+  and sources the venv's `activate` last: bash via `--rcfile` (shim sources `~/.bashrc`), zsh via
+  a `ZDOTDIR` shim that sources the real `.zshenv`/`.zshrc` and restores `ZDOTDIR`, fish via
+  `--init-command`; other shells keep the old behavior with a printed warning. Shims are generated
+  inside the gitignored `.venv`. Re-verified: all three shells resolve `python3` to the venv with
+  the user's own PATH entries still present behind it, zsh honors a custom `ZDOTDIR`, the prompt
+  shows `(.venv)`, missing-venv still errors; `shellcheck` clean; `make test` green.
