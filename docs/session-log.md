@@ -4037,3 +4037,23 @@ back in `STATUS.md`.
   inside the gitignored `.venv`. Re-verified: all three shells resolve `python3` to the venv with
   the user's own PATH entries still present behind it, zsh honors a custom `ZDOTDIR`, the prompt
   shows `(.venv)`, missing-venv still errors; `shellcheck` clean; `make test` green.
+- 2026-10-22 -- Failure diagnostics for `tests/test_idle_tab_sync_loop.py`'s cross-context relay
+  waits (test-only; no app code changed). Its relay step -- separate browser context C waiting to
+  see tab A's edit -- timed out intermittently in CI (Actions runs 37462013227 on 2026-10-06 and
+  39770227256 on 2026-10-22, both on docs-only commits, same line, same 30s timeout), but never
+  reproduced locally: 20 plain runs, then 50 more under `stress-ng` on all 4 cores with two copies in
+  parallel, all green (caveat: this container runs Chromium 141, CI the pinned 151). The counter
+  values printed before the failure (`renders: 2, pushes: 18, remoteApplies: 1`) are also the most
+  common values in passing runs, so the existing output can't tell the two apart. Rather than guess
+  at a fix, both C waits now go through `wait_or_dump()`: on timeout it raises one compact
+  assertion -- per page, its squad names, its sync-related diag lines, and its relay traffic
+  (op/path/opId only, recorded from outside the page via Playwright's `page.on("websocket")`, on one
+  shared clock) -- sized to fit the last-30-lines window `tests/_run_one.sh` shows in CI. Verified
+  by forcing the wait to fail through `tests/_run_one.sh` itself. Investigation also turned up three
+  candidate causes, none yet proven to be this one: (1) every joining device re-pushes the board it
+  just hydrated (`hydrateFromTeamIfConnected()` resets `lastPushedBoardContent` right after
+  `maybeApplyRemote()` set it), making every connected tab re-apply it -- confirmed in the relay
+  timeline, to be fixed as its own PR; (2) a possible ordering race in `relay-client.js` where a
+  live `put` decrypted before the initial snapshot finishes could be overwritten by the older
+  snapshot; (3) a failed board push is never retried. The next CI failure's dump should show which
+  (if any) it is.
