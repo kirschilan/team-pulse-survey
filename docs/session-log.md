@@ -4013,3 +4013,15 @@ back in `STATUS.md`.
   `.github/workflows/tests.yml`'s `compute-shard-matrix` job): changing the shard count means
   updating the branch rules' required checks in the same PR, or a lowered count blocks every
   merge on a check that never runs.
+- 2026-10-22 -- New `make shell` target (root `Makefile`, REF-10 follow-up): opens a subshell of
+  the user's own `$SHELL` with `.venv` active (`VIRTUAL_ENV` set, `.venv/bin` first on `PATH`), so
+  running a single Playwright file by hand uses the venv's pinned Playwright without a manual
+  `source .venv/bin/activate`. The PO asked for a make command that "loads" the venv. A make recipe
+  can't change the shell that invoked it, so a subshell is the closest equivalent; `exit` leaves
+  it. Fails fast with "run 'make setup'" if `.venv` doesn't exist. Verified both paths by hand
+  (missing venv -> clear error, exit 2; with venv -> `python3` resolves to `.venv/bin/python3` and
+  imports Playwright), then `make test` green (lint 0 errors, 184 unit, relay, all 65 Playwright
+  files). Note: this cloud container only has Chromium 141 preinstalled, not the build pinned by
+  `playwright==1.62.0`, so the Playwright run used it via a scratch `PLAYWRIGHT_BROWSERS_PATH`
+  symlink; nothing in the repo changed for that. Branch cut from `origin/staging`, PR opened
+  against `staging`, merge left to the PO.
