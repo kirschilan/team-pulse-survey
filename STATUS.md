@@ -937,6 +937,92 @@ Stories 1–9, already DONE; these are new, not part of that closed backlog). No
 | P2 | RETRO-2 — Facilitation option: progress one question at a time | As a facilitator running a live session, optionally pace the group through statements one at a time instead of everyone seeing the full survey at once. Add a session-level toggle (default off, preserving today's all-at-once survey) that, when on, shows each participant only the current question and advances everyone together as the facilitator moves forward; revisiting an earlier question doesn't discard that participant's existing answer to it. | **Merged (2026-09-18, PR #30)** — **PO-confirmed DONE, 2026-09-18.** See session log (corrected here: a prior row said "PR open, not yet merged", stale after the PR merged without this row being updated). A session-level `pacingEnabled`/`currentQuestionIndex` pair, chosen once via a checkbox at "Start retro session" (default off). `helpers.js`'s new `pacingSequence(dims)` (pure, order-matched to the existing `interleavedStatements()`) gives every device the same ordered list of individually-answerable items independently, so nothing about the sequence itself needs to be stored — only the shared index into it. The facilitator's session card gets Previous/Next controls (`setCurrentQuestionIndex()`, same `liveOr()`/`.update()` shape `setRevealMode()` already uses); a participant's join screen shows exactly the one item at that index, retaining (never discarding) whatever they'd already answered on an earlier visit to it, and auto-submits the whole draft, unchanged atomic-submission shape, once the facilitator advances past the last question — a participant who hasn't finished answering by then sees a friendly wait state instead of a silent partial submit. **PO review follow-up (2026-09-18)**: two gaps fixed, see session log — (1) the facilitator's own card only showed a bare "Question X of N" counter with no way to know what that question actually asks; `pacingQuestionText()` now shows the exact same text a participant sees. (2) the sprint-experiment note's "Saved" confirmation was a 1.8s timed flash that could be missed, and could even be wiped out mid-flash by an unrelated re-render (any live sessions/responses update re-renders the whole card); it's now a durable, state-derived indicator (`savedExperimentNoteFor`) that survives re-renders and only clears once the note is actually edited again. A Codex review of that same follow-up then found "Saved" could still show for a write that never landed (the click handler didn't await the save's promise, and the promise itself swallowed errors); fixed by returning/rejecting the promise properly and adding a render-time-derived failure hint (`noteSaveFailedFor`), same pattern as `savedExperimentNoteFor` — see session log. |
 | P3 | RETRO-3 — Facilitation option: choose which questions to include | As a facilitator, exclude statements/dimensions from the active template that don't apply to this particular retro. Let the facilitator deselect specific questions/dimensions when starting (or before opening) a session, without altering the saved template itself; excluded ones are omitted from the join survey and from that session's consolidation/results. | **Merged (2026-09-18, PR #34)** — **PO-confirmed DONE, 2026-09-18.** See session log (corrected here: this row still said "PR open, not yet merged" after the PR merged, the same stale-status pattern RETRO-2's own row above needed corrected twice already). Scoped to whole-DIMENSION exclusion, not individual statements within a statement dimension (a statement dimension's `scoreBands` are calibrated against summing ALL of its statements — dropping only some would silently shift what "good"/"warn"/"crit" mean; excluding the whole dimension has no such problem, and a direct-rating dimension IS already a single "question"). The "no session" card gets a collapsible checklist (`.dim-include-checkbox` per board dimension, checked/included by default); `startSession()` filters the dimension snapshot by the unchecked keys BEFORE it's ever written into the session doc, so the join survey, `pacingSequence()`, the live tally, and `finishRetroAndApply()` all correctly skip an excluded dimension with zero changes of their own — it was simply never in `sess.dimensions` to begin with. Start is disabled (with an inline hint) if every dimension is unchecked. A Codex review found the checklist's selection was pure DOM state with nothing backing it: `state.dimensions` changing AT ALL (even an unrelated dimension, from this device or a co-facilitator's) fires `db.js`'s own dimensions listener, which calls `renderAll()` and rebuilds this whole card from scratch, silently resetting every checkbox to checked -- reproduced exactly as described (exclude a dimension, trigger a board snapshot, the exclusion vanished). Fixed by adding `pendingDimExclusionsFor`, a squad-keyed draft object outside the DOM (same shape/reasoning as this file's own pre-existing `startingSessionFor`), updated on each checkbox's `change` and read back by `renderSessionCardHtml()` to restore exactly what the facilitator chose instead of defaulting to "everything included"; cleared once a session actually starts. |
 
+## Team Radar backlog (2026-10-22)
+
+Present the pulse survey as a team radar: a **squad radar** for its retro (each teammate's response
+as a dot on its dimension's axis, the shaded area the squad's aggregate) and an **aggregate radar for
+the tribe** (each squad's aggregate as a dot, the shaded area the tribe aggregate). It is reached
+through **attribute scales** first: one row per dimension, on a 1–5 scale, with the same dots and
+aggregate. These are a radar unrolled, valuable on their own, and the accessible fallback once the
+radar exists. Shaped with the PO on 2026-10-22; nothing built yet.
+
+**Decisions made by the PO (2026-10-22). Don't re-litigate these:**
+
+- **New template, existing ones untouched.** "Team Radar" is a new starter template with its own
+  questions. Spotify Squad Health Check, The Five Dysfunctions of a Team and Tuckman stay exactly
+  as they are.
+- **The scale belongs to the template.** Team Radar uses 1–5 for now; a scale needs at least 5
+  levels (3 rings was ruled not good enough). Templates aren't expected to mix with one another,
+  though several templates' results on one dashboard may come later.
+- **No conversion between red/yellow/green and 1–5 (KISS).** A template is one mode or the other,
+  permanently. Switching an existing template from red/yellow/green to 1–5, or back, isn't
+  possible, and no data is converted. Scale views and radars apply only to 1–5 templates.
+- **A choice of statistic for every aggregate:** mean, median, min (pessimistic), max (optimistic)
+  and **mode**. Mode is included because it reproduces today's red/yellow/green behavior exactly,
+  so it keeps things backward compatible. Note for anyone reading the code: today's
+  `consolidateBand()` (`public/js/helpers.js`) is a **majority** with ties going to the calmer
+  color, not "most optimistic".
+- **Unattributed individual responses are stored** per dimension, from the first Team Radar retro
+  on, so any retro can be re-aggregated with any statistic later. **Showing** individual dots is
+  optional.
+- **The tribe aggregate is computed over squad aggregates** (each squad counts once), not over all
+  individuals.
+- **YAGNI for now:** dot size reflecting how many share a value (ranked late, below).
+
+Ranked by value. Each item is a single PR to `staging`, written test-first per the `tdd` skill, and
+in English and Hebrew with right-to-left support per `docs/DefinitionOfDone.md`. Items that ship
+nothing visible are avoided: each rank ships something a user can see and give feedback on.
+
+| Rank | Story | User value and acceptance criteria | Status |
+|---|---|---|---|
+| 1 | RADAR-1 — Team Radar template, 1–5 retro, attribute scales in Squad view | A squad runs a Team Radar retro and sees its results as scales. A new starter template; participants answer on 1–5; each dimension's squad result uses **mode** (tie rule: open issue 3) and appears as one row per dimension with a marker on a 1–5 scale. Unattributed individual responses are stored per dimension. Includes the spec (`docs/team-radar-spec.md`) and the pure, unit-tested scale/statistics model. The three existing templates are untouched. | Not started. Blocked on open issues 1–4. |
+| 2 | RADAR-2 — Statistic picker in Squad view | The same retro re-read as typical, optimistic or pessimistic: choose mean, median, min, max or mode, and the scales recalculate from the stored responses with no re-run. | Not started |
+| 3 | RADAR-3 — Optional individual dots in Squad view | The spread of opinion, not just the aggregate: each stored response shown as a dot on its dimension's scale, off by default and switched on with a toggle. | Not started |
+| 4 | RADAR-4 — Tribe view for Team Radar boards | Tribe-wide comparison on the same scales: each squad's aggregate as a dot per dimension, and the tribe aggregate computed over squad aggregates, with its own statistic picker. | Not started |
+| 5 | RADAR-5 — Squad radar chart | The squad radar: the ranks 1–3 model drawn as a radar. Inline SVG (no chart library, per the CSP and no-build-step constraints); the aggregate is the shaded area, and dots are optional on the axes. Needs at least 3 dimensions; the attribute scales stay as the fallback and as the accessible version. | Not started |
+| 6 | RADAR-6 — Tribe radar chart | The tribe radar: rank 4 drawn as a radar, under the same rules as rank 5. | Not started |
+| 7 | RADAR-7 — Dot size by how many share a value | Easier to read with larger teams: in both the scales and the radars, a dot grows with the number of responses (or squads) at that value. Until then, overlapping dots get a combined screen-reader label. | Not started (YAGNI for now) |
+| 8 | RADAR-8 — Retro history and a before/now outline | A trend shown as a change in shape: keep more than `lastRetro` (which today holds only the latest retro) and draw the previous and current outlines together. | Not started |
+| 9 | RADAR-9 — Choose the default presentation | Whether the radar or the scales become the default view, with today's views collapsed. The PO's call, after ranks 5–6. | Not started |
+
+### Open issues
+
+Needed before rank 1:
+
+1. **Team Radar's content:** its dimensions, the questions, and Hebrew translations, plus
+   attribution and licensing if they come from an existing model. The PO supplies or approves
+   this; assessment content isn't invented. Also: one question per dimension, or several
+   averaged into one 1–5 value?
+2. **Overrides on 1–5 templates:** red/yellow/green templates keep today's color override. For
+   1–5 templates, is a scrum master's override a value on the 1–5 scale, or is there no override?
+3. **Tie and median rules on 1–5:** a tied mode picks the higher value (the counterpart of
+   today's calmer-color tie-break) unless decided otherwise; for an even number of responses, is
+   the median the average of the middle two (it can be x.5), or the lower or upper of the two?
+4. **Switching templates when the board already has data:** loading a template replaces the
+   board's dimensions. Moving between a red/yellow/green template and Team Radar must not show
+   old colors as scale values, or 1–5 data as colors. Should switching modes start with empty
+   results?
+
+Needed before ranks 2–4:
+
+5. **Where the statistic choice and dots toggle live:** per viewer (remembered in that browser)
+   or saved on the board for everyone?
+6. **Privacy with very small squads:** with individual dots shown, a lone outlier in a 3-person
+   squad may identify someone. Is a minimum number of responses needed before dots can be
+   switched on, or is the toggle enough?
+7. **The rest of Tribe view for Team Radar boards:** the stat row, ranking, hotspots and grid
+   are color-based today. On a 1–5 board, should they hide, gain scale versions (e.g. hotspot =
+   lowest aggregate), or wait? And how is "at risk" defined without colors?
+8. **Manual editing:** Squad view lets you set a color by hand today. Can 1–5 values be
+   hand-edited outside a retro, or does only a retro set them?
+
+Can wait:
+
+9. **Trend arrows on 1–5 templates:** set by hand today; could be computed once retro history
+   (rank 8) exists.
+10. **Several templates on one dashboard** (a possible future change): nothing in ranks 1–9
+    should block it. Each result keeps its template and scale.
+
 ## Code quality & refactoring backlog (2026-09-17)
 
 Reviewed against a Copilot refactoring assessment (with two PO comments), re-verified directly
