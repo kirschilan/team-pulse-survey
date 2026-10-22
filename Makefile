@@ -6,7 +6,7 @@
 # with. Not wired into .github/workflows/tests.yml yet (see REF-10's own
 # acceptance criteria in STATUS.md: ship this first, wire CI to it once
 # proven locally, as a separate follow-up).
-.PHONY: help setup check lint unit relay browser test
+.PHONY: help setup shell check lint unit relay browser test
 
 # Codex review on PR #33: `python3 -m pip install` straight into whatever
 # python3 happens to be on PATH fails with `externally-managed-environment`
@@ -27,6 +27,7 @@ VENV_BIN := $(VENV)/bin
 help:
 	@echo "Targets:"
 	@echo "  make setup    - create a project virtualenv ($(VENV)) and install everything needed (Python/Playwright + relay + root lint deps)"
+	@echo "  make shell    - open a subshell with $(VENV) activated (python3/pip/playwright resolve to it); 'exit' to leave"
 	@echo "  make check    - fast sanity check that setup actually worked, no tests run"
 	@echo "  make lint     - ESLint over the whole repo (CI runs this too -- see .github/workflows/tests.yml)"
 	@echo "  make unit     - frontend unit tests (tests/unit/*.js)"
@@ -51,6 +52,19 @@ setup:
 	$(VENV_BIN)/python3 -m playwright install --with-deps chromium
 	cd relay && npm ci
 	npm ci
+
+# `make` can't activate the venv in the shell that invoked it -- every
+# recipe runs in its own child process, so `source $(VENV)/bin/activate`
+# in a recipe is undone the moment it returns. This target does the next
+# best thing: opens a fresh interactive copy of the user's own $SHELL with
+# the venv activated, so running a single test file by hand (`python3
+# tests/test_x.py`) uses the venv's pinned Playwright without remembering
+# the activate step. `exit` returns to the original shell, venv-free. See
+# scripts/venv-shell.sh for why activation has to happen after the shell's
+# own startup files, not before.
+shell:
+	@test -x $(VENV_BIN)/python3 || (echo "MISSING: $(VENV) -- run 'make setup'" >&2; exit 1)
+	@scripts/venv-shell.sh $(VENV)
 
 # Fast (no network, no browser launch) verification that `make setup`
 # actually left this checkout ready -- the same two guard checks

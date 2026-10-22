@@ -4013,3 +4013,27 @@ back in `STATUS.md`.
   `.github/workflows/tests.yml`'s `compute-shard-matrix` job): changing the shard count means
   updating the branch rules' required checks in the same PR, or a lowered count blocks every
   merge on a check that never runs.
+- 2026-10-22 -- New `make shell` target (root `Makefile`, REF-10 follow-up): opens a subshell of
+  the user's own `$SHELL` with `.venv` active (`VIRTUAL_ENV` set, `.venv/bin` first on `PATH`), so
+  running a single Playwright file by hand uses the venv's pinned Playwright without a manual
+  `source .venv/bin/activate`. The PO asked for a make command that "loads" the venv. A make recipe
+  can't change the shell that invoked it, so a subshell is the closest equivalent; `exit` leaves
+  it. Fails fast with "run 'make setup'" if `.venv` doesn't exist. Verified both paths by hand
+  (missing venv -> clear error, exit 2; with venv -> `python3` resolves to `.venv/bin/python3` and
+  imports Playwright), then `make test` green (lint 0 errors, 184 unit, relay, all 65 Playwright
+  files). Note: this cloud container only has Chromium 141 preinstalled, not the build pinned by
+  `playwright==1.62.0`, so the Playwright run used it via a scratch `PLAYWRIGHT_BROWSERS_PATH`
+  symlink; nothing in the repo changed for that. Branch cut from `origin/staging`, PR opened
+  against `staging`, merge left to the PO.
+  **Follow-up, Codex review on PR #49 (P2):** the first version exported `VIRTUAL_ENV` and
+  prepended `.venv/bin` *before* exec'ing `$SHELL`, so any interactive startup file that prepends
+  its own dir (pyenv/conda init, `export PATH=~/bin:$PATH`) pushed the venv back down --
+  `VIRTUAL_ENV` pointed at the venv while `python3` resolved elsewhere. Reproduced for bash, zsh
+  and fish (pty-driven, with a startup file prepending a dir holding a fake `python3`). Fixed by
+  moving the logic into `scripts/venv-shell.sh`, which loads the user's own startup files first
+  and sources the venv's `activate` last: bash via `--rcfile` (shim sources `~/.bashrc`), zsh via
+  a `ZDOTDIR` shim that sources the real `.zshenv`/`.zshrc` and restores `ZDOTDIR`, fish via
+  `--init-command`; other shells keep the old behavior with a printed warning. Shims are generated
+  inside the gitignored `.venv`. Re-verified: all three shells resolve `python3` to the venv with
+  the user's own PATH entries still present behind it, zsh honors a custom `ZDOTDIR`, the prompt
+  shows `(.venv)`, missing-venv still errors; `shellcheck` clean; `make test` green.
